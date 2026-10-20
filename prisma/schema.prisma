@@ -166,6 +166,8 @@ model ItemPedido {
   itemCardapio      ItemCardapio @relation(fields: [itemCardapioId], references: [id])
   quantidade        Int
   variacaoEscolhida Json?
+  /** Pedido do cliente para este item, ex.: "bem assada". */
+  observacao        String?
   precoUnitario     Decimal      @db.Decimal(10, 2)
 
   @@index([pedidoId])

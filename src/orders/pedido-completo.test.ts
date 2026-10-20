@@ -61,6 +61,48 @@ describe('pedido com retirada', () => {
     });
   });
 
+  it('guarda a observação de cada item e a devolve na consulta do pedido', async () => {
+    const { app } = await montar();
+    const cardapio = (await app.inject({ method: 'GET', url: '/v1/menu/emp-1' })).json();
+    const boloId = cardapio.itens[0].id;
+
+    const criado = await app.inject({
+      method: 'POST',
+      url: '/v1/orders',
+      payload: {
+        empreendedorId: 'emp-1',
+        itens: [
+          { itemCardapioId: boloId, quantidade: 1, observacao: '  Bem assado  ' },
+          { itemCardapioId: boloId, quantidade: 1 },
+        ],
+      },
+    });
+    expect(criado.statusCode).toBe(201);
+
+    const consulta = await app.inject({ method: 'GET', url: `/v1/orders/${criado.json().pedido.codigoCurto}` });
+    expect(consulta.json().pedido.itens.map((item: { observacao?: string }) => item.observacao)).toEqual([
+      'Bem assado',
+      undefined,
+    ]);
+  });
+
+  it('recusa observação de item com mais de 140 caracteres', async () => {
+    const { app } = await montar();
+    const cardapio = (await app.inject({ method: 'GET', url: '/v1/menu/emp-1' })).json();
+
+    const resposta = await app.inject({
+      method: 'POST',
+      url: '/v1/orders',
+      payload: {
+        empreendedorId: 'emp-1',
+        itens: [{ itemCardapioId: cardapio.itens[0].id, quantidade: 1, observacao: 'x'.repeat(141) }],
+      },
+    });
+
+    expect(resposta.statusCode).toBe(400);
+    expect(resposta.json().codigo).toBe('CARRINHO_INVALIDO');
+  });
+
   it('é recusada quando a loja só entrega', async () => {
     const { pedir } = await montar({ aceitaRetirada: false });
 

@@ -23,6 +23,7 @@ export function criarCardapioDePrecos(menuRepo: MenuRepository): CardapioDePreco
           quantidade: itemCarrinho.quantidade,
           precoUnitario: calcularPrecoUnitario(item, itemCarrinho.variacaoEscolhida),
           variacaoEscolhida: itemCarrinho.variacaoEscolhida,
+          observacao: itemCarrinho.observacao,
         };
       });
     },

@@ -38,11 +38,12 @@ export function criarOrdersRepositoryFake(): OrdersRepository {
         expiraEm,
         criadoEm,
         // O fake não conhece o cardápio: usa o id do item como nome.
-        itens: pedido.itens.map(({ itemCardapioId, quantidade, precoUnitario, variacaoEscolhida }) => ({
+        itens: pedido.itens.map(({ itemCardapioId, quantidade, precoUnitario, variacaoEscolhida, observacao }) => ({
           nome: itemCardapioId,
           quantidade,
           precoUnitario,
           variacaoEscolhida,
+          observacao,
         })),
       };
     },

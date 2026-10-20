@@ -37,6 +37,8 @@ export interface ItemPedidoInput {
   quantidade: number;
   precoUnitario: number;
   variacaoEscolhida?: Record<string, unknown>;
+  /** Pedido do cliente para este item, ex.: "bem assada". */
+  observacao?: string;
 }
 
 export interface CarrinhoInput {
@@ -73,6 +75,7 @@ export interface ResumoPedidoPublico {
     quantidade: number;
     precoUnitario: number;
     variacaoEscolhida?: Record<string, unknown>;
+    observacao?: string;
   }[];
 }
 

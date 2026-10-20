@@ -30,6 +30,7 @@ const carrinhoInputSchema = z
           precoUnitario: z.number().nonnegative().optional(),
           /** { nomeDaVariacao: nomeDaOpcao }, ex.: { "Tamanho": "G" } */
           variacaoEscolhida: z.record(z.string(), z.unknown()).optional(),
+          observacao: texto(140).optional(),
         }),
       )
       .min(1),
@@ -58,10 +59,11 @@ export function registerOrdersRoutes(app: FastifyInstance, deps: CriarPedidoDoCa
     const { itens, ...carrinho } = parseResult.data;
     const pedido = await criarPedidoDoCarrinho(deps, {
       ...carrinho,
-      itens: itens.map(({ itemCardapioId, quantidade, variacaoEscolhida }) => ({
+      itens: itens.map(({ itemCardapioId, quantidade, variacaoEscolhida, observacao }) => ({
         itemCardapioId,
         quantidade,
         variacaoEscolhida,
+        observacao,
       })),
     });
     return reply.status(201).send({ pedido });

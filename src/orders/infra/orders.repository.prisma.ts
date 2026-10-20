@@ -12,6 +12,7 @@ function paraPedido(pedido: PedidoComItens): Pedido {
     quantidade: item.quantidade,
     precoUnitario: Number(item.precoUnitario),
     variacaoEscolhida: (item.variacaoEscolhida as Record<string, unknown> | null) ?? undefined,
+    observacao: item.observacao ?? undefined,
   }));
 
   return {
@@ -71,6 +72,7 @@ export function criarOrdersRepositoryPrisma(prisma: PrismaClient): OrdersReposit
               quantidade: item.quantidade,
               precoUnitario: item.precoUnitario,
               variacaoEscolhida: (item.variacaoEscolhida as Prisma.InputJsonValue | undefined) ?? Prisma.JsonNull,
+              observacao: item.observacao ?? null,
             })),
           },
         },
@@ -105,6 +107,7 @@ export function criarOrdersRepositoryPrisma(prisma: PrismaClient): OrdersReposit
           quantidade: item.quantidade,
           precoUnitario: Number(item.precoUnitario),
           variacaoEscolhida: (item.variacaoEscolhida as Record<string, unknown> | null) ?? undefined,
+          observacao: item.observacao ?? undefined,
         })),
       };
       return resumo;

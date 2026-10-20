@@ -5,6 +5,7 @@ export interface ItemCarrinho {
   quantidade: number;
   /** { nomeDaVariacao: nomeDaOpcao }, ex.: { "Tamanho": "G" } */
   variacaoEscolhida?: Record<string, unknown>;
+  observacao?: string;
 }
 
 /**
