@@ -1,7 +1,7 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import type { OrdersRepository } from '../application/ports/orders.repository.js';
 import { DomainError } from '../../shared/errors/domain-error.js';
-import type { ItemPedidoInput, Pedido, ResumoPedidoPublico, StatusPedido } from '../domain/pedido.js';
+import type { EnderecoEntrega, ItemPedidoInput, Pedido, ResumoPedidoPublico, StatusPedido } from '../domain/pedido.js';
 
 type PedidoComItens = Prisma.PedidoGetPayload<{ include: { itens: true } }>;
 
@@ -19,6 +19,11 @@ function paraPedido(pedido: PedidoComItens): Pedido {
     empreendedorId: pedido.empreendedorId,
     telefoneCliente: pedido.telefoneCliente ?? undefined,
     status: pedido.status as StatusPedido,
+    modalidade: pedido.modalidade,
+    nomeCliente: pedido.nomeCliente ?? undefined,
+    observacao: pedido.observacao ?? undefined,
+    taxaEntrega: Number(pedido.taxaEntrega),
+    entrega: (pedido.enderecoEntrega as EnderecoEntrega | null) ?? undefined,
     valorTotal: Number(pedido.valorTotal),
     itens,
     expiraEm: pedido.expiraEm,
@@ -49,6 +54,11 @@ export function criarOrdersRepositoryPrisma(prisma: PrismaClient): OrdersReposit
           codigoCurto: dadosPedido.codigoCurto,
           empreendedorId: empreendedor.id,
           status: dadosPedido.status,
+          modalidade: dadosPedido.modalidade,
+          nomeCliente: dadosPedido.nomeCliente,
+          observacao: dadosPedido.observacao,
+          taxaEntrega: dadosPedido.taxaEntrega ?? 0,
+          enderecoEntrega: (dadosPedido.entrega as unknown as Prisma.InputJsonValue | undefined) ?? Prisma.JsonNull,
           valorTotal: dadosPedido.valorTotal,
           expiraEm: dadosPedido.expiraEm,
           criadoEm: dadosPedido.criadoEm,
@@ -81,7 +91,9 @@ export function criarOrdersRepositoryPrisma(prisma: PrismaClient): OrdersReposit
       const resumo: ResumoPedidoPublico = {
         codigoCurto: pedido.codigoCurto,
         status: pedido.status as StatusPedido,
+        modalidade: pedido.modalidade,
         valorTotal: Number(pedido.valorTotal),
+        taxaEntrega: Number(pedido.taxaEntrega),
         expiraEm: pedido.expiraEm,
         criadoEm: pedido.criadoEm,
         nomeLoja: pedido.empreendedor.loja?.nome ?? undefined,

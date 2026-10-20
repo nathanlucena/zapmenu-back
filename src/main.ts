@@ -148,6 +148,7 @@ async function main(): Promise<void> {
     ordersRepo,
     pedidoTtlMinutos: env.PEDIDO_TTL_MINUTOS,
     frontendAllowedOrigin: env.FRONTEND_ALLOWED_ORIGIN,
+    endereco,
     paymentsDeps,
     mercadoPagoWebhookSecret: env.MERCADO_PAGO_WEBHOOK_SECRET,
   });

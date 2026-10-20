@@ -40,4 +40,36 @@ describe('avisarPedidoPago', () => {
 
     expect(mensageiro.enviadas).toHaveLength(0);
   });
+
+  it('inclui cliente, entrega e observação quando o pedido traz', async () => {
+    const mensageiro = criarMensageiroFake();
+    const contatos = { telefoneDe: async () => '5581999990000' };
+
+    await avisarPedidoPago(
+      { contatos, mensageiro },
+      {
+        ...pedidoPago,
+        modalidade: 'ENTREGA',
+        taxaEntrega: 5,
+        nomeCliente: 'Ana',
+        observacao: 'Tocar o interfone 201',
+        entrega: {
+          enderecoFormatado: 'Rua da Aurora, 123 - Boa Vista, Recife - PE (apto 201)',
+          numero: '123',
+          latitude: -8.0591,
+          longitude: -34.8798,
+          distanciaKm: 1.05,
+        },
+      },
+    );
+
+    expect(mensageiro.enviadas[0]?.texto).toBe(
+      [
+        'Novo pedido pago! PED-7KQ2 — R$ 112.00',
+        '👤 Ana',
+        '🛵 Entrega em Rua da Aurora, 123 - Boa Vista, Recife - PE (apto 201) (taxa R$ 5.00)',
+        '📝 Tocar o interfone 201',
+      ].join('\n'),
+    );
+  });
 });

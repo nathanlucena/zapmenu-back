@@ -5,6 +5,33 @@ export type StatusPedido =
   | 'EXPIRADO'
   | 'CANCELADO';
 
+export type ModalidadePedido = 'RETIRADA' | 'ENTREGA';
+
+/** Endereço de entrega já localizado no mapa (cópia: não muda se o cliente mudar de endereço depois). */
+export interface EnderecoEntrega {
+  enderecoFormatado: string;
+  cep?: string;
+  logradouro?: string;
+  numero: string;
+  complemento?: string;
+  bairro?: string;
+  cidade?: string;
+  uf?: string;
+  latitude: number;
+  longitude: number;
+  distanciaKm: number;
+}
+
+/** O que o cliente informou além dos itens. Pedidos antigos não têm esses campos. */
+export interface DetalhesPedido {
+  modalidade?: ModalidadePedido;
+  nomeCliente?: string;
+  observacao?: string;
+  /** Já somada no valorTotal. */
+  taxaEntrega?: number;
+  entrega?: EnderecoEntrega;
+}
+
 export interface ItemPedidoInput {
   itemCardapioId: string;
   quantidade: number;
@@ -17,7 +44,7 @@ export interface CarrinhoInput {
   itens: ItemPedidoInput[];
 }
 
-export interface Pedido {
+export interface Pedido extends DetalhesPedido {
   id: string;
   codigoCurto: string;
   empreendedorId: string;
@@ -30,11 +57,14 @@ export interface Pedido {
   confirmadoEm?: Date;
 }
 
-/** O que o app do cliente vê de um pedido: sem telefone do cliente nem ids internos. */
+/** O que o app do cliente vê de um pedido: sem telefone, endereço do cliente nem ids internos. */
 export interface ResumoPedidoPublico {
   codigoCurto: string;
   status: StatusPedido;
+  modalidade: ModalidadePedido;
+  /** Já inclui a taxa de entrega. */
   valorTotal: number;
+  taxaEntrega: number;
   expiraEm: Date;
   criadoEm: Date;
   nomeLoja?: string;

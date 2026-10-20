@@ -1,5 +1,6 @@
 /** Categoria do erro, para a borda (HTTP, WhatsApp) decidir como responder. */
-export type TipoErroDominio = 'REGRA_VIOLADA' | 'NAO_ENCONTRADO' | 'CONFLITO';
+/** INDISPONIVEL: um serviço de fora (ex.: mapa) falhou; tentar de novo pode dar certo. */
+export type TipoErroDominio = 'REGRA_VIOLADA' | 'NAO_ENCONTRADO' | 'CONFLITO' | 'INDISPONIVEL';
 
 export class DomainError extends Error {
   constructor(

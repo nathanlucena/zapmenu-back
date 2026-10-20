@@ -1,11 +1,20 @@
 import { DomainError } from '../../shared/errors/domain-error.js';
+import type { RegrasDaLoja } from '../../orders/application/ports/loja-para-pedidos.js';
 import type { MenuRepository } from '../menu.repository.js';
 import type { ItemCardapio, ItemDraft } from '../menu.types.js';
 
 let proximoId = 1;
 
-export function criarMenuRepositoryFake(): MenuRepository {
+export const REGRAS_PADRAO: RegrasDaLoja = { aceitaRetirada: true, fazEntrega: false, faixasEntrega: [], horarios: [] };
+
+export type MenuRepositoryFake = MenuRepository & {
+  /** Muda as regras de pedido de uma loja que já existe no fake. */
+  definirRegras(empreendedorId: string, regras: Partial<RegrasDaLoja>): void;
+};
+
+export function criarMenuRepositoryFake(): MenuRepositoryFake {
   const cardapiosPorEmpreendedor = new Map<string, string>();
+  const regrasPorEmpreendedor = new Map<string, RegrasDaLoja>();
   const itensPorCardapio = new Map<string, ItemCardapio[]>();
 
   function buscarItem(cardapioId: string, itemId: string): ItemCardapio {
@@ -24,6 +33,17 @@ export function criarMenuRepositoryFake(): MenuRepository {
       }
       const itens = (itensPorCardapio.get(cardapioId) ?? []).filter((item) => item.ativo);
       return { loja: null, secoes: itens.length ? [{ id: null, nome: 'Outros', itens }] : [], itens };
+    },
+
+    async obterRegrasDePedido(empreendedorId: string) {
+      if (!cardapiosPorEmpreendedor.has(empreendedorId)) {
+        return null;
+      }
+      return regrasPorEmpreendedor.get(empreendedorId) ?? REGRAS_PADRAO;
+    },
+
+    definirRegras(empreendedorId, regras) {
+      regrasPorEmpreendedor.set(empreendedorId, { ...REGRAS_PADRAO, ...regras });
     },
 
     async obterOuCriarCardapio(empreendedorId: string) {

@@ -29,7 +29,7 @@ export type ResultadoEntrega =
  * vale para 1,000 km). Loja com a taxa fixa antiga e sem faixas não entrega.
  */
 export function calcularEntrega(
-  loja: Pick<DadosLoja, 'fazEntrega' | 'enderecoVerificado' | 'faixasEntrega'>,
+  loja: Pick<DadosLoja, 'fazEntrega' | 'faixasEntrega'> & { enderecoVerificado?: Coordenada },
   destino: Coordenada,
 ): ResultadoEntrega {
   if (!loja.fazEntrega) {
@@ -52,7 +52,9 @@ export function calcularEntrega(
 }
 
 /** A loja só entrega de verdade com endereço verificado e ao menos uma faixa. */
-export function entregaConfigurada(loja: Pick<DadosLoja, 'enderecoVerificado' | 'faixasEntrega'>): boolean {
+export function entregaConfigurada(
+  loja: Pick<DadosLoja, 'faixasEntrega'> & { enderecoVerificado?: Coordenada },
+): boolean {
   return Boolean(loja.enderecoVerificado) && (loja.faixasEntrega?.length ?? 0) > 0;
 }
 

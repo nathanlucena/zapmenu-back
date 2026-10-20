@@ -6,6 +6,7 @@ const STATUS_POR_TIPO: Record<TipoErroDominio, number> = {
   REGRA_VIOLADA: 400,
   NAO_ENCONTRADO: 404,
   CONFLITO: 409,
+  INDISPONIVEL: 503,
 };
 
 export function errorHandler(error: FastifyError, _request: FastifyRequest, reply: FastifyReply): void {

@@ -1,3 +1,4 @@
+import type { RegrasDaLoja } from '../orders/application/ports/loja-para-pedidos.js';
 import type { CardapioPublico, ItemCardapio, ItemDraft } from './menu.types.js';
 
 export type AlteracoesItem = Partial<Pick<ItemDraft, 'nome' | 'descricao' | 'precoBase' | 'imagemUrl'>>;
@@ -14,6 +15,8 @@ export interface MenuRepository {
    * null = não existe empreendedor com esse identificador (nada é criado).
    */
   obterCardapioPublico(empreendedorId: string): Promise<CardapioPublico | null>;
+  /** Configuração da loja que decide se um pedido é aceito. null = loja não existe. */
+  obterRegrasDePedido(empreendedorId: string): Promise<RegrasDaLoja | null>;
   /** Itens visíveis para o cliente final (ativos e não removidos). */
   listarItensAtivos(cardapioId: string): Promise<ItemCardapio[]>;
   /** Todos os itens não removidos (inclusive pausados), em ordem de criação. */

@@ -119,15 +119,23 @@ enum StatusPedido {
 }
 
 model Pedido {
-  id              String       @id @default(cuid())
-  codigoCurto     String       @unique
+  id              String           @id @default(cuid())
+  codigoCurto     String           @unique
   empreendedorId  String
-  empreendedor    Empreendedor @relation(fields: [empreendedorId], references: [id])
+  empreendedor    Empreendedor     @relation(fields: [empreendedorId], references: [id])
   telefoneCliente String?
-  status          StatusPedido @default(AGUARDANDO_CONFIRMACAO)
-  valorTotal      Decimal      @db.Decimal(10, 2)
+  status          StatusPedido     @default(AGUARDANDO_CONFIRMACAO)
+  modalidade      ModalidadePedido @default(RETIRADA)
+  nomeCliente     String?
+  observacao      String?
+  /// Já somada no valorTotal.
+  taxaEntrega     Decimal          @default(0) @db.Decimal(10, 2)
+  /// Cópia do endereço de entrega localizado: { enderecoFormatado, cep, numero, ..., latitude, longitude, distanciaKm }.
+  enderecoEntrega Json?
+  /// Itens + taxa de entrega.
+  valorTotal      Decimal          @db.Decimal(10, 2)
   expiraEm        DateTime
-  criadoEm        DateTime     @default(now())
+  criadoEm        DateTime         @default(now())
   confirmadoEm    DateTime?
 
   itens     ItemPedido[]
@@ -135,6 +143,11 @@ model Pedido {
 
   @@index([empreendedorId])
   @@index([status, expiraEm])
+}
+
+enum ModalidadePedido {
+  RETIRADA
+  ENTREGA
 }
 
 model ItemPedido {

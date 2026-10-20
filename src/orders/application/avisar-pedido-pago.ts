@@ -7,8 +7,23 @@ export interface AvisarPedidoPagoDeps {
   mensageiro: MensageiroEmpreendedor;
 }
 
-export function montarAvisoPedidoPago(pedido: Pick<Pedido, 'codigoCurto' | 'valorTotal'>): string {
-  return `Novo pedido pago! ${pedido.codigoCurto} — R$ ${pedido.valorTotal.toFixed(2)}`;
+export function montarAvisoPedidoPago(
+  pedido: Pick<Pedido, 'codigoCurto' | 'valorTotal' | 'modalidade' | 'taxaEntrega' | 'entrega' | 'nomeCliente' | 'observacao'>,
+): string {
+  const linhas = [`Novo pedido pago! ${pedido.codigoCurto} — R$ ${pedido.valorTotal.toFixed(2)}`];
+  if (pedido.nomeCliente) {
+    linhas.push(`👤 ${pedido.nomeCliente}`);
+  }
+  if (pedido.modalidade === 'ENTREGA' && pedido.entrega) {
+    const taxa = pedido.taxaEntrega ? ` (taxa R$ ${pedido.taxaEntrega.toFixed(2)})` : '';
+    linhas.push(`🛵 Entrega em ${pedido.entrega.enderecoFormatado}${taxa}`);
+  } else if (pedido.modalidade) {
+    linhas.push('🏪 Retirada na loja');
+  }
+  if (pedido.observacao) {
+    linhas.push(`📝 ${pedido.observacao}`);
+  }
+  return linhas.join('\n');
 }
 
 /** Avisa o dono da loja, pelo número de gestão, que um pedido foi pago. */

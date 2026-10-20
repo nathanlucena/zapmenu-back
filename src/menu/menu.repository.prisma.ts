@@ -1,5 +1,7 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { DomainError } from '../shared/errors/domain-error.js';
+import type { HorarioFuncionamento } from '../orders/domain/horario-loja.js';
+import type { RegrasDaLoja } from '../orders/application/ports/loja-para-pedidos.js';
 import type { MenuRepository } from './menu.repository.js';
 import type { FaixaEntrega } from './conversation/conversation-state.types.js';
 import { entregaConfigurada, raioMaximoKm } from './entrega.js';
@@ -107,6 +109,33 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
         itens: disponiveis,
       };
       return cardapio;
+    },
+
+    async obterRegrasDePedido(telefoneEmpreendedor: string) {
+      const empreendedor = await prisma.empreendedor.findUnique({
+        where: { telefone: telefoneEmpreendedor },
+        include: { loja: true },
+      });
+      if (!empreendedor) {
+        return null;
+      }
+      const { loja } = empreendedor;
+      if (!loja) {
+        // Loja sem nada configurado: os mesmos padrões do schema.
+        return { aceitaRetirada: true, fazEntrega: false, faixasEntrega: [], horarios: [] };
+      }
+      const regras: RegrasDaLoja = {
+        aceitaRetirada: loja.aceitaRetirada,
+        fazEntrega: loja.fazEntrega,
+        origem:
+          loja.latitude === null || loja.longitude === null
+            ? undefined
+            : { latitude: Number(loja.latitude), longitude: Number(loja.longitude) },
+        faixasEntrega: loja.faixasEntrega as unknown as FaixaEntrega[],
+        pedidoMinimo: loja.pedidoMinimo === null ? undefined : Number(loja.pedidoMinimo),
+        horarios: loja.horarios as unknown as HorarioFuncionamento[],
+      };
+      return regras;
     },
 
     async obterOuCriarCardapio(telefoneEmpreendedor: string) {

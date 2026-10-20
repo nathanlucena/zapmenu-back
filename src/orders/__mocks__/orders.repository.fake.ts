@@ -13,7 +13,12 @@ export function criarOrdersRepositoryFake(): OrdersRepository {
     },
 
     async criar(dadosPedido: Omit<Pedido, 'id'>) {
-      const pedido: Pedido = { ...dadosPedido, id: `pedido-${proximoId++}` };
+      const pedido: Pedido = {
+        ...dadosPedido,
+        modalidade: dadosPedido.modalidade ?? 'RETIRADA',
+        taxaEntrega: dadosPedido.taxaEntrega ?? 0,
+        id: `pedido-${proximoId++}`,
+      };
       pedidos.set(pedido.id, pedido);
       return pedido;
     },
@@ -27,6 +32,8 @@ export function criarOrdersRepositoryFake(): OrdersRepository {
       return {
         codigoCurto,
         status,
+        modalidade: pedido.modalidade ?? 'RETIRADA',
+        taxaEntrega: pedido.taxaEntrega ?? 0,
         valorTotal,
         expiraEm,
         criadoEm,

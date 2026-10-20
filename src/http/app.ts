@@ -4,6 +4,9 @@ import type { MenuRepository } from '../menu/menu.repository.js';
 import type { OrdersRepository } from '../orders/application/ports/orders.repository.js';
 import type { PaymentsServiceDeps } from '../payments/application/dependencias.js';
 import { criarCardapioDePrecos } from '../menu/cardapio-de-precos.js';
+import { criarLocalizadorEntrega } from '../menu/endereco/localizador-entrega.js';
+import type { EnderecoDeps } from '../menu/endereco/endereco.types.js';
+import { criarLojaParaPedidos } from '../menu/loja-para-pedidos.js';
 import { errorHandler } from './middlewares/error-handler.js';
 import { registerRequestLogger } from './middlewares/request-logger.js';
 import { registerMenuRoutes } from './v1/menu.routes.js';
@@ -15,6 +18,8 @@ export interface AppDeps {
   ordersRepo: OrdersRepository;
   pedidoTtlMinutos: number;
   frontendAllowedOrigin: string;
+  /** ViaCEP + Google. Sem isso, os pedidos só podem ser de retirada. */
+  endereco?: EnderecoDeps;
   paymentsDeps?: PaymentsServiceDeps;
   /** Obrigatório junto com paymentsDeps: o webhook só aceita notificações assinadas. */
   mercadoPagoWebhookSecret?: string;
@@ -33,6 +38,8 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       registerOrdersRoutes(v1, {
         ordersRepo: deps.ordersRepo,
         cardapioDePrecos: criarCardapioDePrecos(deps.menuRepo),
+        lojaParaPedidos: criarLojaParaPedidos(deps.menuRepo),
+        localizador: deps.endereco && criarLocalizadorEntrega(deps.endereco),
         pedidoTtlMinutos: deps.pedidoTtlMinutos,
       });
       if (deps.paymentsDeps) {
