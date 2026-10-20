@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "smoke": "tsx --env-file-if-exists=.env scripts/smoke.ts",
     "lint:deps": "depcruise src --config .dependency-cruiser.cjs",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "prisma:generate": "prisma generate",

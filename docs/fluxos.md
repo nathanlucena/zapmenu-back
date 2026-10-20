@@ -57,7 +57,7 @@ O processo **precisa ficar rodando** (não é serverless): o WPPConnect mantém 
 
 | Quem | Identificado por | Onde |
 |---|---|---|
-| Dono da loja (`Empreendedor`) | **Telefone** de quem escreve no número de gestão | `resolverEmpreendedorId` em `main.ts` devolve o próprio telefone; os repositórios fazem *upsert* de `Empreendedor` e `Cardapio` por telefone |
+| Dono da loja (`Empreendedor`) | **Telefone** de quem escreve no número de gestão | O port `CadastroEmpreendedores` (`src/menu/gestao/cadastro-empreendedores.ts`) diz se o número tem acesso e devolve o próprio telefone como id; hoje é a lista `GESTAO_TELEFONES_PERMITIDOS` (vazia = qualquer número). Os repositórios fazem *upsert* de `Empreendedor` e `Cardapio` por telefone |
 | Loja no cardápio público | O mesmo telefone, na URL: `GET /v1/menu/:telefone` | `menu.repository.prisma.ts` |
 | Cliente final | Telefone de quem manda o código no número de pedidos | Gravado em `Pedido.telefoneCliente` na confirmação |
 
@@ -174,7 +174,7 @@ sequenceDiagram
 2. **Pedido.** `POST /v1/orders` valida o carrinho com zod, confere se cada item ainda está no cardápio e **recalcula o preço no servidor** (`calcularPrecoUnitario`: preço base + adicional da opção escolhida em cada variação; toda variação é obrigatória). O `precoUnitario` enviado pelo cliente é ignorado. Gera um código `PED-` + 4 caracteres (alfabeto sem `I`, `O`, `0`, `1`; até 5 tentativas para achar um livre).
 3. **Confirmação no WhatsApp.** O router de pedidos procura `PED-XXXX` em qualquer posição da mensagem (sem diferenciar maiúsculas). Se achar e o pedido estiver em `AGUARDANDO_CONFIRMACAO` e dentro do prazo, passa para `AGUARDANDO_PAGAMENTO` e grava o telefone do cliente.
 4. **Cobrança PIX.** `criarGeradorCobranca` cria a cobrança no Mercado Pago só se o pedido ainda não tiver pagamento; envia o copia e cola e, se houver, a imagem do QR.
-5. **Pagamento.** Webhook ou polling levam ao mesmo `aplicarNovoStatus`: atualiza o `Pagamento`; se `APROVADO`, marca o pedido como `PAGO` e avisa o dono.
+5. **Pagamento.** Webhook ou polling levam ao mesmo `aplicarStatusPagamento`: atualiza o `Pagamento`; se `APROVADO`, marca o pedido como `PAGO` e avisa o dono.
 
 ### Respostas do número de pedidos
 
@@ -227,8 +227,8 @@ Os dois são `setInterval` dentro do mesmo processo (`main.ts`). Erros são loga
 
 | Job | Intervalo | O que faz |
 |---|---|---|
-| Expiração de pedidos (`order-expiration.job.ts`) | `PEDIDO_TTL_MINUTOS` (padrão 20 min) | Marca como `EXPIRADO` os pedidos em `AGUARDANDO_CONFIRMACAO` com `expiraEm` no passado |
-| Polling de pagamentos (`payment-status-poller.job.ts`) | `PAGAMENTO_POLLING_INTERVALO_SEGUNDOS` (padrão 60 s) | Consulta no Mercado Pago cada pagamento `PENDENTE` criado há mais que esse mesmo intervalo e aplica o status |
+| Expiração de pedidos (`orders/infra/order-expiration.job.ts`) | `PEDIDO_TTL_MINUTOS` (padrão 20 min) | Marca como `EXPIRADO` os pedidos em `AGUARDANDO_CONFIRMACAO` com `expiraEm` no passado |
+| Polling de pagamentos (`payments/infra/payment-status-poller.job.ts`) | `PAGAMENTO_POLLING_INTERVALO_SEGUNDOS` (padrão 60 s) | Consulta no Mercado Pago cada pagamento `PENDENTE` criado há mais que esse mesmo intervalo e aplica o status |
 
 Observações:
 - Como o job de expiração roda no mesmo intervalo do prazo, um pedido pode ficar até ~2× o prazo como `AGUARDANDO_CONFIRMACAO` no banco. Isso não muda o comportamento (a confirmação confere o prazo na hora), mas afeta relatórios.
@@ -339,8 +339,8 @@ O valor total **não inclui taxa de entrega** e o pedido não guarda modalidade 
 | Corpo | `{ id?, type?, data: { id } }`; fora disso → `400` |
 | Status | **Não usa o status que vem na notificação**: consulta o pagamento `data.id` na API do Mercado Pago |
 | Idempotência | Chave `id` da notificação (ou `type:data.id`) em `EventoProcessado` |
-| Resposta | `200 { ok: true }` mesmo se o processamento falhar (o erro é logado; o polling corrige depois). Se a consulta ao Mercado Pago falhar, `500`. |
-| Assinatura | Não verificada (lacuna L1) |
+| Assinatura | Header `x-signature` conferido antes de tudo: HMAC-SHA256 de `id:{data.id};request-id:{x-request-id};ts:{ts};` com `MERCADO_PAGO_WEBHOOK_SECRET`, e `ts` com no máximo 5 minutos. Inválida → `401`, sem consultar a API |
+| Resposta | `200 { ok: true }`, inclusive para pagamento que não é nosso (`DomainError`, logado). Qualquer outra falha (ex.: a consulta ao Mercado Pago) vira `500` para o Mercado Pago reenviar; a idempotência evita processar duas vezes |
 
 ---
 
@@ -352,7 +352,7 @@ O valor total **não inclui taxa de entrega** e o pedido não guarda modalidade 
 | Mensagens de pedidos | `EventoProcessado` com origem `wppconnect_orders` |
 | Webhook | `EventoProcessado` com origem `mercado_pago_webhook` |
 | Cobrança PIX | Um `Pagamento` por pedido (`pedidoId` único); `gerarCobranca` reaproveita o existente; o Mercado Pago recebe `X-Idempotency-Key = pedido.id` |
-| Webhook e polling ao mesmo tempo | `aplicarNovoStatus` não faz nada se o status já é o mesmo; a transição para `PAGO` só é aceita a partir de `AGUARDANDO_PAGAMENTO` |
+| Webhook e polling ao mesmo tempo | `aplicarStatusPagamento` não faz nada se o status já é o mesmo; a transição para `PAGO` só é aceita a partir de `AGUARDANDO_PAGAMENTO` |
 | Gravação do cardápio | Rascunho inteiro numa transação: ou tudo entra, ou nada |
 | Concorrência na gestão | Fila por telefone no router |
 
@@ -378,7 +378,7 @@ Problemas e ausências encontrados no código, por impacto. Os marcados com **(f
 
 | # | Lacuna | Impacto | Sugestão |
 |---|---|---|---|
-| L1 | Webhook não verifica a assinatura (`MERCADO_PAGO_WEBHOOK_SECRET` é obrigatório no `.env`, mas não é usado) | Médio. Notificação falsa **não** marca pedido como pago (o status vem sempre da API do Mercado Pago), mas qualquer um pode provocar consultas à API | Validar o header `x-signature` com o segredo |
+| ~~L1~~ | ~~Webhook não verifica a assinatura~~ | **Resolvida na Sprint 1**: `x-signature` verificado, `401` sem assinatura válida | — |
 | L2 | `GET /v1/menu/:id` e `POST /v1/orders` criam o empreendedor se o telefone não existir **(front B2)** | Alto. URL inventada grava linhas no banco | Leitura pura e `404` |
 | L3 | Pedido não guarda modalidade (retirada/entrega), endereço, nome nem observação **(front B3)** | Alto. A loja não sabe para onde entregar | Campos novos em `Pedido` |
 | L4 | Taxa de entrega fora do `valorTotal`; pedido mínimo e horário da loja não validados **(front B4, B9)** | Alto. PIX diferente do total esperado; pedidos fora do horário | Calcular com `calcularEntrega` e validar no servidor |
@@ -388,9 +388,10 @@ Problemas e ausências encontrados no código, por impacto. Os marcados com **(f
 | L8 | Aviso de pedido pago se perde se a sessão de gestão estiver desconectada | Médio | Guardar e reenviar ao reconectar |
 | L9 | Não existe `GET` de pedido **(front B1)** | Alto para o front (acompanhamento) | `GET /v1/orders/:codigoCurto` |
 | L10 | Respostas do número de pedidos mostram o status técnico ("está em status AGUARDANDO_PAGAMENTO…") | Baixo | Mensagens por status, e reenviar o PIX quando já está aguardando pagamento |
-| L11 | Qualquer número que escrever na gestão vira empreendedor | Médio | Cadastro ou lista de permitidos |
+| L11 | Qualquer número que escrever na gestão vira empreendedor | **Parcial (Sprint 1)**: com `GESTAO_TELEFONES_PERMITIDOS` preenchida, só esses números entram. Vazia, continua aberto | Cadastro de verdade (convite ou painel) depois do piloto |
 | L12 | Fotos em base64 no banco **(front B8)** | Médio. Cardápio público pesado | Storage de arquivos e URL pública |
 | L13 | URL do cardápio usa o telefone do dono **(front B6)** | Médio. Expõe o número pessoal | `Loja.slug` |
 | L14 | Número de pedidos não é exposto ao front **(front B5)** | Médio | Campo na resposta do menu |
-| L15 | 2 testes de pedidos desatualizados (`app.test.ts` e `fluxo2-compra-cliente.e2e.test.ts`) mandam o item `item-1`, que não existe no cardápio fake | Baixo. Desde o cálculo de preço no servidor, o item precisa existir | Cadastrar o item no fake antes do `POST` |
-| L16 | Sem teste ponta a ponta do fluxo de gestão (`test/integration/` só tem o fluxo de compra) | Baixo | Etapa 5 do plano de gestão |
+| ~~L15~~ | ~~2 testes de pedidos desatualizados~~ | **Resolvida na Sprint 1** | — |
+| ~~L16~~ | ~~Sem teste ponta a ponta do fluxo de gestão~~ | **Resolvida na Sprint 1**: `test/integration/fluxo1-gestao-cardapio.e2e.test.ts` | — |
+| L17 | Preço em texto sem número vira `0` na leitura da IA (`"grátis"`, `"abc"` → `Number('') === 0` em `deepseek-interpretador.ts`) | Baixo. A IA quase sempre manda número, e o resumo mostra o preço antes do "sim" | Tratar string vazia depois da limpeza como inválida |

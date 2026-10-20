@@ -28,17 +28,18 @@ Roda como processo de longa duração (não serverless) porque usa o WPPConnect,
 | [`src/menu/gestao/`](src/menu/gestao) | Conversa de gestão: a IA propõe operações sobre um rascunho (`OCIOSO → CONVERSANDO → CONFIRMANDO`), o código valida, mostra o resumo e grava numa transação depois do "sim" |
 | [`src/menu/endereco/`](src/menu/endereco), [`src/menu/entrega.ts`](src/menu/entrega.ts) | Endereço da loja (CEP + número → ViaCEP → Google → confirmação) e entrega por faixas de distância em linha reta |
 | [`src/menu/`](src/menu) | Cardápio público agrupado por categoria, preço calculado no servidor com variações |
-| [`src/orders/`](src/orders) | Carrinho → pedido com código curto (`PED-XXXX`), transições de status, expiração por prazo |
-| [`src/payments/`](src/payments) | Cobrança PIX no Mercado Pago, webhook e polling de reserva, reaproveitando a mesma rotina de confirmação (idempotente) |
+| [`src/orders/`](src/orders) | Carrinho → pedido com código curto (`PED-XXXX`), transições de status, expiração por prazo, aviso de pedido pago. Em camadas: `domain/`, `application/` (use cases e ports) e `infra/` |
+| [`src/payments/`](src/payments) | Cobrança PIX no Mercado Pago, webhook assinado e polling de reserva, reaproveitando a mesma rotina de confirmação (idempotente). Mesmas camadas de `orders/` |
 | [`src/whatsapp/`](src/whatsapp) | Interface `WhatsAppClient` (com fake para testes), routers das duas sessões, implementação WPPConnect com reconexão e modo autoteste |
 | [`src/http/`](src/http) | API Fastify: `GET /v1/menu/:empreendedorId`, `POST /v1/orders`, `POST /v1/webhooks/mercado-pago` |
-| [`src/orders/order-expiration.job.ts`](src/orders/order-expiration.job.ts), [`src/payments/payment-status-poller.job.ts`](src/payments/payment-status-poller.job.ts) | Jobs de fundo: expira pedidos não confirmados e consulta pagamentos pendentes |
+| [`src/orders/infra/order-expiration.job.ts`](src/orders/infra/order-expiration.job.ts), [`src/payments/infra/payment-status-poller.job.ts`](src/payments/infra/payment-status-poller.job.ts) | Jobs de fundo: expira pedidos não confirmados e consulta pagamentos pendentes |
 | [`src/main.ts`](src/main.ts) | Ponto de entrada: sobe as duas sessões WhatsApp, o servidor HTTP e os jobs |
-| [`test/integration/`](test/integration) | Fluxo de compra ponta a ponta, com WhatsApp e Mercado Pago mockados |
+| [`test/integration/`](test/integration) | Fluxos de gestão e de compra ponta a ponta, com WhatsApp, IA e Mercado Pago mockados |
+| [`scripts/smoke.ts`](scripts/smoke.ts) | Smoke tests das integrações reais (ViaCEP, Google, DeepSeek, Mercado Pago), para rodar localmente |
 
-**Estado dos testes:** 2 testes de pedidos estão desatualizados e falham (`src/http/app.test.ts` e `test/integration/fluxo2-compra-cliente.e2e.test.ts`): eles mandam um item que não existe no cardápio fake, e o pedido agora exige que o item exista. O resto da suíte passa.
+**Estado dos testes:** a suíte inteira passa (`npm test`), o `npm run typecheck` checa também `test/` e `scripts/`, e o `npm run lint:deps` trava a regra de dependência das camadas.
 
-**O que ainda não foi validado de verdade:** a conexão real com o WPPConnect (QR code, sessão de navegador) e as chamadas reais ao DeepSeek, ao ViaCEP e ao Google. Isso precisa ser testado localmente.
+**O que ainda não foi validado de verdade:** a conexão real com o WPPConnect (QR code, sessão de navegador) e as chamadas reais ao DeepSeek, ao ViaCEP, ao Google e ao Mercado Pago. Os adapters HTTP podem ser testados um a um com `npm run smoke -- <nome>`; o WhatsApp, subindo com `WPP_MODO_AUTOTESTE=true`.
 
 Problemas e ausências conhecidos estão em [`docs/fluxos.md` → Lacunas conhecidas](docs/fluxos.md#11-lacunas-conhecidas).
 
@@ -61,7 +62,8 @@ cp .env.example .env
 Edite o `.env` e preencha pelo menos:
 - `DATABASE_URL` — string de conexão do Postgres
 - `WPP_MENU_PHONE_NUMBER` / `WPP_ORDERS_PHONE_NUMBER` — os dois números fixos do produto
-- `MERCADO_PAGO_ACCESS_TOKEN`, `MERCADO_PAGO_WEBHOOK_SECRET` e `MERCADO_PAGO_NOTIFICATION_URL` (o segredo é obrigatório, mas a assinatura do webhook ainda não é verificada)
+- `MERCADO_PAGO_ACCESS_TOKEN`, `MERCADO_PAGO_WEBHOOK_SECRET` e `MERCADO_PAGO_NOTIFICATION_URL` (o segredo é a "assinatura secreta" do painel de webhooks do Mercado Pago; notificações sem assinatura válida recebem `401`)
+- `GESTAO_TELEFONES_PERMITIDOS` — telefones que podem usar o número de gestão. Vazia, qualquer número pode cadastrar cardápio (o boot avisa)
 - `FRONTEND_ALLOWED_ORIGIN` — origem do seu app Next.js (para CORS)
 
 Opcionais, mas sem eles parte da gestão fica desligada:
@@ -99,6 +101,9 @@ npm run typecheck     # só o TypeScript, sem rodar testes
 | `npm run build` | Compila TypeScript para `dist/` |
 | `npm start` | Roda a build compilada (`dist/main.js`) |
 | `npm test` | Roda a suíte de testes uma vez |
+| `npm run typecheck` | Checa os tipos de `src/`, `test/` e `scripts/` |
+| `npm run lint:deps` | Verifica a regra de dependência das camadas (`.dependency-cruiser.cjs`) |
+| `npm run smoke -- <viacep\|google\|deepseek\|mercado-pago\|todos>` | Chama as integrações reais com as chaves do `.env` |
 | `npm run prisma:generate` | Regenera o Prisma Client após mudar o schema |
 | `npm run prisma:migrate` | Cria/aplica migrations em desenvolvimento |
 
@@ -107,13 +112,16 @@ npm run typecheck     # só o TypeScript, sem rodar testes
 ```
 src/
 ├── config/       # validação de env (zod)
-├── shared/       # db, logger, erros, ids, idempotência
+├── shared/       # db, logger, erros, ids, idempotência, telefone
 ├── menu/         # cardápio público, entrega por distância
 │   ├── gestao/       # conversa de gestão com a IA (rascunho, resumo, gravação)
 │   ├── endereco/     # ViaCEP + Google Geocoding
 │   └── conversation/ # estado da conversa (EstadoConversa)
-├── orders/       # pedidos, expiração
-├── payments/     # Mercado Pago
+├── orders/       # pedidos, expiração, aviso de pedido pago
+│   ├── domain/       # Pedido e regras puras (transições, código, total)
+│   ├── application/  # use cases + ports/ (interfaces de I/O)
+│   └── infra/        # Prisma e job de expiração
+├── payments/     # cobrança PIX (mesmas camadas de orders/)
 ├── whatsapp/     # interface WhatsAppClient, routers, WPPConnect
 ├── http/         # API Fastify v1 + webhook
 └── main.ts       # bootstrap
@@ -123,6 +131,8 @@ test/
 ```
 
 Mocks de dependências externas ficam em `src/<módulo>/__mocks__/`; testes unitários ficam colocados ao lado do arquivo testado (`*.test.ts`).
+
+**Camadas (clean architecture):** `orders/` e `payments/` já estão separados em `domain/` (sem dependências de fora), `application/` (use cases que falam com o mundo só por ports) e `infra/` (Prisma, Mercado Pago, jobs). `http/` e `whatsapp/` são as bordas: validam a entrada, chamam um use case e traduzem a resposta. Os outros módulos ganham camadas quando forem mexidos. O `npm run lint:deps` falha se `domain/` ou `application/` importarem infraestrutura, framework ou o `main.ts`.
 
 ## Documentação
 
