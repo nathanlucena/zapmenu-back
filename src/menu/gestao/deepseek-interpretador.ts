@@ -445,6 +445,47 @@ async function comRetryEmSobrecarga<T>(chamar: () => Promise<T>): Promise<T> {
   }
 }
 
+/** Valida o JSON devolvido pela IA e o converte para o contrato da conversa. */
+export function interpretarRespostaDaIA(conteudo: string | null | undefined): RespostaConversa {
+  if (!conteudo) {
+    // A documentação do DeepSeek avisa que o modo JSON às vezes devolve vazio.
+    throw new RespostaInvalidaDaIA('DeepSeek devolveu uma resposta vazia.');
+  }
+
+  let json: unknown;
+  try {
+    json = JSON.parse(conteudo);
+  } catch {
+    throw new RespostaInvalidaDaIA(`DeepSeek devolveu JSON inválido: ${conteudo.slice(0, 200)}`);
+  }
+
+  const parsed = respostaSchema.safeParse(json);
+  if (!parsed.success) {
+    throw new RespostaInvalidaDaIA(`Resposta da IA fora do formato: ${parsed.error.message}`);
+  }
+
+  // Cada operação é validada sozinha: uma malformada não derruba as outras.
+  const operacoes: Operacao[] = [];
+  const operacoesMalformadas: string[] = [];
+  for (const bruta of parsed.data.operacoes) {
+    const operacao = operacaoSchema.safeParse(bruta);
+    if (operacao.success) {
+      operacoes.push(operacao.data);
+    } else {
+      operacoesMalformadas.push(JSON.stringify(bruta).slice(0, 200));
+    }
+  }
+
+  return {
+    resposta: parsed.data.resposta,
+    operacoes,
+    operacoesMalformadas,
+    finalizou: parsed.data.finalizou,
+    mostrarCardapio: parsed.data.mostrar_cardapio,
+    decisao: parsed.data.decisao,
+  };
+}
+
 export function criarInterpretadorDeepSeek(config: DeepSeekConfig): InterpretadorMensagem {
   const cliente = new OpenAI({
     apiKey: config.apiKey,
@@ -483,45 +524,7 @@ export function criarInterpretadorDeepSeek(config: DeepSeekConfig): Interpretado
         '⏱️  chamada ao DeepSeek',
       );
 
-      const conteudo = resposta.choices[0]?.message.content;
-      if (!conteudo) {
-        // A documentação do DeepSeek avisa que o modo JSON às vezes devolve vazio.
-        throw new RespostaInvalidaDaIA('DeepSeek devolveu uma resposta vazia.');
-      }
-
-      let json: unknown;
-      try {
-        json = JSON.parse(conteudo);
-      } catch {
-        throw new RespostaInvalidaDaIA(`DeepSeek devolveu JSON inválido: ${conteudo.slice(0, 200)}`);
-      }
-
-      const parsed = respostaSchema.safeParse(json);
-      if (!parsed.success) {
-        throw new RespostaInvalidaDaIA(`Resposta da IA fora do formato: ${parsed.error.message}`);
-      }
-
-      // Cada operação é validada sozinha: uma malformada não derruba as outras.
-      const operacoes: Operacao[] = [];
-      const operacoesMalformadas: string[] = [];
-      for (const bruta of parsed.data.operacoes) {
-        const operacao = operacaoSchema.safeParse(bruta);
-        if (operacao.success) {
-          operacoes.push(operacao.data);
-        } else {
-          operacoesMalformadas.push(JSON.stringify(bruta).slice(0, 200));
-        }
-      }
-
-      const saida: RespostaConversa = {
-        resposta: parsed.data.resposta,
-        operacoes,
-        operacoesMalformadas,
-        finalizou: parsed.data.finalizou,
-        mostrarCardapio: parsed.data.mostrar_cardapio,
-        decisao: parsed.data.decisao,
-      };
-      return saida;
+      return interpretarRespostaDaIA(resposta.choices[0]?.message.content);
     },
   };
 }
