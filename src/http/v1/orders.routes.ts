@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { consultarPedido } from '../../orders/application/consultar-pedido.js';
 import { criarPedidoDoCarrinho, type CriarPedidoDoCarrinhoDeps } from '../../orders/application/criar-pedido.js';
 
 const carrinhoInputSchema = z.object({
@@ -37,5 +38,10 @@ export function registerOrdersRoutes(app: FastifyInstance, deps: CriarPedidoDoCa
       })),
     });
     return reply.status(201).send({ pedido });
+  });
+
+  app.get('/orders/:codigoCurto', async (request) => {
+    const { codigoCurto } = request.params as { codigoCurto: string };
+    return { pedido: await consultarPedido(deps.ordersRepo, codigoCurto) };
   });
 }

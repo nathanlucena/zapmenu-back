@@ -1,14 +1,17 @@
 import type { CardapioDePrecos } from '../orders/application/ports/cardapio-de-precos.js';
 import { DomainError } from '../shared/errors/domain-error.js';
 import type { MenuRepository } from './menu.repository.js';
-import { calcularPrecoUnitario } from './menu.service.js';
+import { calcularPrecoUnitario, lojaNaoEncontrada } from './menu.service.js';
 
 /** O cardápio como fonte de preços para os pedidos. */
 export function criarCardapioDePrecos(menuRepo: MenuRepository): CardapioDePrecos {
   return {
     async precificar(empreendedorId, itensCarrinho) {
-      const { itens: disponiveis } = await menuRepo.obterCardapioPublico(empreendedorId);
-      const porId = new Map(disponiveis.map((item) => [item.id, item]));
+      const cardapio = await menuRepo.obterCardapioPublico(empreendedorId);
+      if (!cardapio) {
+        throw lojaNaoEncontrada();
+      }
+      const porId = new Map(cardapio.itens.map((item) => [item.id, item]));
 
       return itensCarrinho.map((itemCarrinho) => {
         const item = porId.get(itemCarrinho.itemCardapioId);

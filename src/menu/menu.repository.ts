@@ -9,8 +9,11 @@ export type AlteracoesItem = Partial<Pick<ItemDraft, 'nome' | 'descricao' | 'pre
 export interface MenuRepository {
   obterOuCriarCardapio(empreendedorId: string): Promise<{ id: string }>;
   adicionarItem(cardapioId: string, draft: ItemDraft): Promise<ItemCardapio>;
-  /** Loja + itens disponíveis agrupados por categoria, para o app do cliente. */
-  obterCardapioPublico(empreendedorId: string): Promise<CardapioPublico>;
+  /**
+   * Loja + itens disponíveis agrupados por categoria, para o app do cliente.
+   * null = não existe empreendedor com esse identificador (nada é criado).
+   */
+  obterCardapioPublico(empreendedorId: string): Promise<CardapioPublico | null>;
   /** Itens visíveis para o cliente final (ativos e não removidos). */
   listarItensAtivos(cardapioId: string): Promise<ItemCardapio[]>;
   /** Todos os itens não removidos (inclusive pausados), em ordem de criação. */

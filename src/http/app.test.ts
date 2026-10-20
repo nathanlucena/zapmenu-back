@@ -32,12 +32,36 @@ describe('GET /v1/menu/:empreendedorId', () => {
     expect(resposta.json().itens[0].nome).toBe('Bolo');
   });
 
-  it('retorna lista vazia para empreendedor sem itens', async () => {
-    const app = montarApp();
+  it('retorna lista vazia para empreendedor que ainda não cadastrou itens', async () => {
+    const menuRepo = criarMenuRepositoryFake();
+    await menuRepo.obterOuCriarCardapio('emp-novo');
+    const app = buildApp({
+      menuRepo,
+      ordersRepo: criarOrdersRepositoryFake(),
+      pedidoTtlMinutos: 20,
+      frontendAllowedOrigin: 'http://localhost:3001',
+    });
+
     const resposta = await app.inject({ method: 'GET', url: '/v1/menu/emp-novo' });
 
     expect(resposta.statusCode).toBe(200);
     expect(resposta.json().itens).toEqual([]);
+  });
+
+  it('retorna 404 LOJA_NAO_ENCONTRADA sem criar nada para loja inexistente', async () => {
+    const menuRepo = criarMenuRepositoryFake();
+    const app = buildApp({
+      menuRepo,
+      ordersRepo: criarOrdersRepositoryFake(),
+      pedidoTtlMinutos: 20,
+      frontendAllowedOrigin: 'http://localhost:3001',
+    });
+
+    const resposta = await app.inject({ method: 'GET', url: '/v1/menu/inventado' });
+
+    expect(resposta.statusCode).toBe(404);
+    expect(resposta.json().codigo).toBe('LOJA_NAO_ENCONTRADA');
+    expect(await menuRepo.obterCardapioPublico('inventado')).toBeNull();
   });
 });
 
@@ -106,5 +130,69 @@ describe('POST /v1/orders', () => {
     });
 
     expect(resposta.statusCode).toBe(400);
+  });
+});
+
+describe('POST /v1/orders para loja inexistente', () => {
+  it('retorna 404 LOJA_NAO_ENCONTRADA e não grava pedido', async () => {
+    const ordersRepo = criarOrdersRepositoryFake();
+    const app = buildApp({
+      menuRepo: criarMenuRepositoryFake(),
+      ordersRepo,
+      pedidoTtlMinutos: 20,
+      frontendAllowedOrigin: 'http://localhost:3001',
+    });
+
+    const resposta = await app.inject({
+      method: 'POST',
+      url: '/v1/orders',
+      payload: { empreendedorId: 'inventado', itens: [{ itemCardapioId: 'item-1', quantidade: 1 }] },
+    });
+
+    expect(resposta.statusCode).toBe(404);
+    expect(resposta.json().codigo).toBe('LOJA_NAO_ENCONTRADA');
+    expect(await ordersRepo.listarExpirados(new Date('2100-01-01'))).toEqual([]);
+  });
+});
+
+describe('GET /v1/orders/:codigoCurto', () => {
+  async function criarPedidoDeBolo() {
+    const menuRepo = criarMenuRepositoryFake();
+    const ordersRepo = criarOrdersRepositoryFake();
+    const bolo = await criarItem(menuRepo, 'emp-1', { nome: 'Bolo', precoBase: 12.5, variacoes: [] });
+    const app = buildApp({ menuRepo, ordersRepo, pedidoTtlMinutos: 20, frontendAllowedOrigin: 'http://localhost:3001' });
+    const criado = await app.inject({
+      method: 'POST',
+      url: '/v1/orders',
+      payload: { empreendedorId: 'emp-1', itens: [{ itemCardapioId: bolo.id, quantidade: 2 }] },
+    });
+    const { pedido } = criado.json();
+    // Simula o cliente que já confirmou pelo WhatsApp: o telefone não pode vazar.
+    await ordersRepo.atualizar(pedido.id, { telefoneCliente: '5581988887777' });
+    return { app, codigo: pedido.codigoCurto as string };
+  }
+
+  it('devolve status, itens, total e expiração sem o telefone do cliente', async () => {
+    const { app, codigo } = await criarPedidoDeBolo();
+
+    const resposta = await app.inject({ method: 'GET', url: `/v1/orders/${codigo.toLowerCase()}` });
+
+    expect(resposta.statusCode).toBe(200);
+    const { pedido } = resposta.json();
+    expect(pedido).toMatchObject({ codigoCurto: codigo, status: 'AGUARDANDO_CONFIRMACAO', valorTotal: 25 });
+    expect(pedido.itens).toEqual([expect.objectContaining({ quantidade: 2, precoUnitario: 12.5 })]);
+    expect(pedido.expiraEm).toEqual(expect.any(String));
+    expect(resposta.body).not.toContain('5581988887777');
+    expect(pedido).not.toHaveProperty('id');
+  });
+
+  it('retorna 404 PEDIDO_NAO_ENCONTRADO para código inexistente ou fora do formato', async () => {
+    const { app } = await criarPedidoDeBolo();
+
+    for (const codigo of ['PED-ZZZZ', 'qualquer-coisa', 'xPED-AAAA']) {
+      const resposta = await app.inject({ method: 'GET', url: `/v1/orders/${codigo}` });
+      expect(resposta.statusCode).toBe(404);
+      expect(resposta.json().codigo).toBe('PEDIDO_NAO_ENCONTRADO');
+    }
   });
 });

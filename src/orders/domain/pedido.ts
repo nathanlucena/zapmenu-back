@@ -30,6 +30,22 @@ export interface Pedido {
   confirmadoEm?: Date;
 }
 
+/** O que o app do cliente vê de um pedido: sem telefone do cliente nem ids internos. */
+export interface ResumoPedidoPublico {
+  codigoCurto: string;
+  status: StatusPedido;
+  valorTotal: number;
+  expiraEm: Date;
+  criadoEm: Date;
+  nomeLoja?: string;
+  itens: {
+    nome: string;
+    quantidade: number;
+    precoUnitario: number;
+    variacaoEscolhida?: Record<string, unknown>;
+  }[];
+}
+
 const TRANSICOES_PERMITIDAS: Record<StatusPedido, StatusPedido[]> = {
   AGUARDANDO_CONFIRMACAO: ['AGUARDANDO_PAGAMENTO', 'EXPIRADO', 'CANCELADO'],
   AGUARDANDO_PAGAMENTO: ['PAGO', 'EXPIRADO', 'CANCELADO'],

@@ -19,7 +19,10 @@ export function criarMenuRepositoryFake(): MenuRepository {
   return {
     async obterCardapioPublico(empreendedorId: string) {
       const cardapioId = cardapiosPorEmpreendedor.get(empreendedorId);
-      const itens = (cardapioId ? itensPorCardapio.get(cardapioId) ?? [] : []).filter((item) => item.ativo);
+      if (!cardapioId) {
+        return null;
+      }
+      const itens = (itensPorCardapio.get(cardapioId) ?? []).filter((item) => item.ativo);
       return { loja: null, secoes: itens.length ? [{ id: null, nome: 'Outros', itens }] : [], itens };
     },
 

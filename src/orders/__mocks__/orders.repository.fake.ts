@@ -18,6 +18,28 @@ export function criarOrdersRepositoryFake(): OrdersRepository {
       return pedido;
     },
 
+    async buscarResumoPublico(codigoCurto: string) {
+      const pedido = Array.from(pedidos.values()).find((candidato) => candidato.codigoCurto === codigoCurto);
+      if (!pedido) {
+        return null;
+      }
+      const { status, valorTotal, expiraEm, criadoEm } = pedido;
+      return {
+        codigoCurto,
+        status,
+        valorTotal,
+        expiraEm,
+        criadoEm,
+        // O fake não conhece o cardápio: usa o id do item como nome.
+        itens: pedido.itens.map(({ itemCardapioId, quantidade, precoUnitario, variacaoEscolhida }) => ({
+          nome: itemCardapioId,
+          quantidade,
+          precoUnitario,
+          variacaoEscolhida,
+        })),
+      };
+    },
+
     async buscarPorId(id: string) {
       return pedidos.get(id) ?? null;
     },

@@ -2,6 +2,10 @@ import { DomainError } from '../shared/errors/domain-error.js';
 import type { MenuRepository } from './menu.repository.js';
 import type { ItemCardapio, ItemDraft, VariacaoInput } from './menu.types.js';
 
+export function lojaNaoEncontrada(): DomainError {
+  return new DomainError('Loja não encontrada.', 'LOJA_NAO_ENCONTRADA', 'NAO_ENCONTRADO');
+}
+
 export function validarVariacao(variacao: VariacaoInput): string[] {
   const erros: string[] = [];
 

@@ -27,7 +27,8 @@ function paraItemCardapio(item: ItemCardapioComVariacoes): ItemCardapio {
 
 /**
  * Trata o identificador recebido como o telefone do empreendedor (chave natural
- * de multi-tenancy), fazendo upsert do registro antes de resolver o cardápio.
+ * de multi-tenancy). Só a escrita de itens cria o registro; a leitura pública
+ * não grava nada, para uma URL inventada não virar um empreendedor.
  */
 export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository {
   async function atualizarDoCardapio(
@@ -60,11 +61,17 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
 
   return {
     async obterCardapioPublico(telefoneEmpreendedor: string) {
-      const { empreendedorId, cardapioId } = await obterOuCriarCardapio(telefoneEmpreendedor);
+      const empreendedor = await prisma.empreendedor.findUnique({ where: { telefone: telefoneEmpreendedor } });
+      if (!empreendedor) {
+        return null;
+      }
+      const empreendedorId = empreendedor.id;
+      // Filtra pelo dono em vez do id do cardápio: quem ainda não tem cardápio recebe listas vazias.
+      const doCardapio = { cardapio: { empreendedorId } };
       const [categorias, itens, loja] = await Promise.all([
-        prisma.categoria.findMany({ where: { cardapioId }, orderBy: [{ ordem: 'asc' }, { criadoEm: 'asc' }] }),
+        prisma.categoria.findMany({ where: doCardapio, orderBy: [{ ordem: 'asc' }, { criadoEm: 'asc' }] }),
         prisma.itemCardapio.findMany({
-          where: { cardapioId, ativo: true, removidoEm: null },
+          where: { ...doCardapio, ativo: true, removidoEm: null },
           include: { variacoes: true },
           orderBy: { criadoEm: 'asc' },
         }),
