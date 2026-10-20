@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import type { OrdersRepository } from '../application/ports/orders.repository.js';
+import { empreendedorPorIdentificador } from '../../shared/db/identificador-loja.js';
 import { DomainError } from '../../shared/errors/domain-error.js';
 import type { EnderecoEntrega, ItemPedidoInput, Pedido, ResumoPedidoPublico, StatusPedido } from '../domain/pedido.js';
 
@@ -33,8 +34,8 @@ function paraPedido(pedido: PedidoComItens): Pedido {
 }
 
 /**
- * Assim como no menu, o identificador de empreendedor recebido aqui é o
- * telefone. O registro precisa existir: pedido nunca cria empreendedor.
+ * Assim como no cardápio público, o identificador de empreendedor recebido aqui
+ * é o telefone ou o link curto da loja. Pedido nunca cria empreendedor.
  */
 export function criarOrdersRepositoryPrisma(prisma: PrismaClient): OrdersRepository {
   return {
@@ -44,7 +45,9 @@ export function criarOrdersRepositoryPrisma(prisma: PrismaClient): OrdersReposit
     },
 
     async criar(dadosPedido: Omit<Pedido, 'id'>) {
-      const empreendedor = await prisma.empreendedor.findUnique({ where: { telefone: dadosPedido.empreendedorId } });
+      const empreendedor = await prisma.empreendedor.findFirst({
+        where: empreendedorPorIdentificador(dadosPedido.empreendedorId),
+      });
       if (!empreendedor) {
         throw new DomainError('Loja não encontrada.', 'LOJA_NAO_ENCONTRADA', 'NAO_ENCONTRADO');
       }

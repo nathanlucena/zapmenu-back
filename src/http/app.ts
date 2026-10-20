@@ -18,6 +18,8 @@ export interface AppDeps {
   ordersRepo: OrdersRepository;
   pedidoTtlMinutos: number;
   frontendAllowedOrigin: string;
+  /** Número da sessão de pedidos, devolvido no cardápio para o link wa.me. */
+  whatsappPedidos?: string;
   /** ViaCEP + Google. Sem isso, os pedidos só podem ser de retirada. */
   endereco?: EnderecoDeps;
   paymentsDeps?: PaymentsServiceDeps;
@@ -34,7 +36,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
   app.register(
     async (v1) => {
-      registerMenuRoutes(v1, deps.menuRepo);
+      registerMenuRoutes(v1, deps.menuRepo, deps.whatsappPedidos);
       registerOrdersRoutes(v1, {
         ordersRepo: deps.ordersRepo,
         cardapioDePrecos: criarCardapioDePrecos(deps.menuRepo),

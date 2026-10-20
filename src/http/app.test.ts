@@ -48,6 +48,22 @@ describe('GET /v1/menu/:empreendedorId', () => {
     expect(resposta.json().itens).toEqual([]);
   });
 
+  it('devolve o número de WhatsApp de pedidos para o link wa.me', async () => {
+    const menuRepo = criarMenuRepositoryFake();
+    await menuRepo.obterOuCriarCardapio('emp-1');
+    const app = buildApp({
+      menuRepo,
+      ordersRepo: criarOrdersRepositoryFake(),
+      pedidoTtlMinutos: 20,
+      frontendAllowedOrigin: 'http://localhost:3001',
+      whatsappPedidos: '5581900001111',
+    });
+
+    const resposta = await app.inject({ method: 'GET', url: '/v1/menu/emp-1' });
+
+    expect(resposta.json().whatsappPedidos).toBe('5581900001111');
+  });
+
   it('retorna 404 LOJA_NAO_ENCONTRADA sem criar nada para loja inexistente', async () => {
     const menuRepo = criarMenuRepositoryFake();
     const app = buildApp({

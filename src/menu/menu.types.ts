@@ -43,6 +43,13 @@ export interface LojaPublica {
   taxaEntrega?: number;
   pedidoMinimo?: number;
   horarios: HorarioLoja[];
+  slug?: string;
+  capaUrl?: string;
+  logoUrl?: string;
+  /** Hex "#RRGGBB". */
+  corDestaque?: string;
+  /** Fuso dos horários, ex.: "America/Sao_Paulo". */
+  fuso: string;
 }
 
 /** Uma seção do cardápio; `id` null é o grupo "Outros" (itens sem categoria). */
@@ -55,6 +62,8 @@ export interface SecaoCardapio {
 /** O que o app do cliente final precisa para montar o cardápio. */
 export interface CardapioPublico {
   loja: LojaPublica | null;
+  /** Número do WhatsApp que recebe a confirmação dos pedidos (link wa.me). */
+  whatsappPedidos?: string;
   secoes: SecaoCardapio[];
   /** Todos os itens disponíveis, sem agrupamento (compatibilidade). */
   itens: ItemCardapio[];

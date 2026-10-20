@@ -49,7 +49,7 @@ OPERAÇÕES (cada uma é um objeto com "tipo"):
 - {"tipo": "nova_categoria", "nome": "Bebidas"}
 - {"tipo": "renomear_categoria", "categoria_id": "...", "novo_nome": "..."}
 - {"tipo": "remover_categoria", "categoria_id": "..."} — os itens dela ficam sem categoria.
-- {"tipo": "atualizar_loja", "nome": "...", "descricao": "...", "aceita_retirada": true, "faz_entrega": true, "faixas_entrega": [...], "pedido_minimo": 30, "horarios": [...]} — só os campos que mudam. Endereço NÃO vai aqui.
+- {"tipo": "atualizar_loja", "nome": "...", "descricao": "...", "aceita_retirada": true, "faz_entrega": true, "faixas_entrega": [...], "pedido_minimo": 30, "horarios": [...], "link": "pizzaria-do-ze", "cor_destaque": "#E53935"} — só os campos que mudam. Endereço NÃO vai aqui.
 - {"tipo": "definir_endereco", "cep": "50050000", "numero": "123", "complemento": "loja 2"} — endereço da loja. Também aceita "rua", "bairro", "cidade", "uf" e "sem_numero": true.
 - {"tipo": "confirmar_endereco"} / {"tipo": "recusar_endereco"} — resposta da pessoa quando endereco_pendente existe ("é aí mesmo" / "não é aí").
 - {"tipo": "descartar_tudo"} — a pessoa quer jogar fora todas as alterações anotadas.
@@ -60,6 +60,8 @@ FORMATOS
 - variacoes: lista COMPLETA de variações do item (substitui as anteriores): [{"nome": "Tamanho", "opcoes": [{"nome": "P", "preco_adicional": 0}, {"nome": "G", "preco_adicional": 15}]}]. O preço do item é o da opção mais barata; preco_adicional é a diferença.
 - faixas_entrega: lista COMPLETA (substitui a anterior), uma faixa por distância: [{"ate_km": 1, "taxa": 0}, {"ate_km": 3, "taxa": 5}]. "grátis", "de graça", "sem taxa" → taxa 0. "500 metros" → ate_km 0.5. A maior distância é o limite de entrega.
 - horarios: lista COMPLETA da semana (substitui a anterior), um objeto por dia aberto: [{"dia": "seg", "abre": "18:00", "fecha": "23:00"}]. Dias: dom, seg, ter, qua, qui, sex, sab. Dias fechados não aparecem.
+- link: endereço curto do cardápio, só letras minúsculas, números e hífens ("Pizzaria do Zé" → "pizzaria-do-ze"). Só quando a pessoa pedir para mudar o link.
+- cor_destaque: cor hex "#RRGGBB". Converta nomes de cor ("vermelho" → "#E53935", "verde" → "#43A047", "azul" → "#1E88E5", "laranja" → "#FB8C00", "roxo" → "#8E24AA", "preto" → "#212121").
 - item_id e categoria_id: SOMENTE ids que existem em cardapio. A pessoa pode citar um item pelo nome ou pelo número da lista.
 
 FOTOS
@@ -275,6 +277,8 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
       faixas_entrega: faixasEntrega,
       pedido_minimo: numero,
       horarios,
+      link: texto,
+      cor_destaque: texto,
     })
     .transform((op): Operacao => ({
       tipo: 'ATUALIZAR_LOJA',
@@ -286,6 +290,8 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
         faixasEntrega: op.faixas_entrega,
         pedidoMinimo: op.pedido_minimo,
         horarios: op.horarios,
+        slug: op.link,
+        corDestaque: op.cor_destaque,
       },
     })),
   z

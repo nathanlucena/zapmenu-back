@@ -1,4 +1,5 @@
 import { logger as loggerRaiz, trecho } from '../../shared/logger/logger.js';
+import { DomainError } from '../../shared/errors/domain-error.js';
 import type { ConversationRepository } from '../conversation/conversation.repository.js';
 import { contextoInicial, type Contexto, type Estado } from '../conversation/conversation-state.types.js';
 import { buscarEndereco, linkMapa, normalizarCep } from '../endereco/endereco.service.js';
@@ -402,6 +403,13 @@ async function salvar(rodada: Rodada): Promise<void> {
   try {
     await rodada.deps.gestaoRepo.salvarRascunho(rodada.empreendedorId, rascunho);
   } catch (erro) {
+    if (erro instanceof DomainError && erro.code === 'SLUG_EM_USO') {
+      // Volta para a conversa sem o link, para a pessoa escolher outro.
+      delete rascunho.loja?.slug;
+      rodada.estado = 'CONVERSANDO';
+      responder(rodada, `😕 ${erro.message} Me diga outro link para o cardápio e depois *pronto* para salvar.`);
+      return;
+    }
     logger.error({ err: erro }, '💥 falha ao salvar o rascunho');
     responder(rodada, '😕 Deu um erro ao salvar e nada foi alterado. Tente responder *sim* de novo em instantes.');
     return;
@@ -472,6 +480,9 @@ function descreverCardapio(snapshot: SnapshotCardapio): string {
   }
   if (loja.endereco) {
     linhas.push(`📍 ${loja.endereco}`);
+  }
+  if (loja.slug) {
+    linhas.push(`🔗 Link do cardápio: ${loja.slug}`);
   }
   if (loja.fazEntrega) {
     linhas.push(

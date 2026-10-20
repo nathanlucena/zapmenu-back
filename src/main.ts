@@ -149,6 +149,7 @@ async function main(): Promise<void> {
     pedidoTtlMinutos: env.PEDIDO_TTL_MINUTOS,
     frontendAllowedOrigin: env.FRONTEND_ALLOWED_ORIGIN,
     endereco,
+    whatsappPedidos: env.WPP_ORDERS_PHONE_NUMBER,
     paymentsDeps,
     mercadoPagoWebhookSecret: env.MERCADO_PAGO_WEBHOOK_SECRET,
   });

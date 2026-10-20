@@ -74,6 +74,14 @@ model Loja {
   pedidoMinimo     Decimal?     @db.Decimal(10, 2)
   /// [{ "dia": "seg", "abre": "18:00", "fecha": "23:00" }]
   horarios         Json         @default("[]")
+  /// Endereço curto do cardápio (zapmenu.com/<slug>). Sempre tem uma letra, para não ser confundido com telefone.
+  slug             String?      @unique
+  capaUrl          String?
+  logoUrl          String?
+  /// Hex "#RRGGBB".
+  corDestaque      String?
+  /// Fuso dos horários de funcionamento.
+  fuso             String       @default("America/Sao_Paulo")
   atualizadoEm     DateTime     @updatedAt
 }
 

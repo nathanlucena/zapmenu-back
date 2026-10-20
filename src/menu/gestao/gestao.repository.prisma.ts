@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { DomainError } from '../../shared/errors/domain-error.js';
+import { gerarSlug, problemaNoSlug } from '../vitrine.js';
 import type {
   DadosLoja,
   EnderecoVerificado,
@@ -101,6 +102,8 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
               taxaEntrega: loja.taxaEntrega === null ? undefined : Number(loja.taxaEntrega),
               pedidoMinimo: loja.pedidoMinimo === null ? undefined : Number(loja.pedidoMinimo),
               horarios: loja.horarios as unknown as Horario[],
+              slug: loja.slug ?? undefined,
+              corDestaque: loja.corDestaque ?? undefined,
             }
           : {},
       };
@@ -219,6 +222,8 @@ async function salvarLoja(tx: Tx, empreendedorId: string, loja: DadosLoja): Prom
     faixasEntrega: loja.faixasEntrega as unknown as Prisma.InputJsonValue | undefined,
     pedidoMinimo: loja.pedidoMinimo,
     horarios: loja.horarios as unknown as Prisma.InputJsonValue | undefined,
+    slug: loja.slug,
+    corDestaque: loja.corDestaque,
   });
   // O endereço é gravado inteiro (null limpa o que não veio), para não misturar com o anterior.
   const dadosEndereco = endereco && {
@@ -234,5 +239,30 @@ async function salvarLoja(tx: Tx, empreendedorId: string, loja: DadosLoja): Prom
     precisaoEndereco: endereco.precisao,
   };
   Object.assign(dados, dadosEndereco);
-  await tx.loja.upsert({ where: { empreendedorId }, update: dados, create: { empreendedorId, ...dados } });
+  if (loja.slug !== undefined && (await slugDeOutraLoja(tx, loja.slug, empreendedorId))) {
+    throw new DomainError(`O link ${loja.slug} já é de outra loja.`, 'SLUG_EM_USO', 'CONFLITO');
+  }
+  const salva = await tx.loja.upsert({ where: { empreendedorId }, update: dados, create: { empreendedorId, ...dados } });
+  if (!salva.slug && salva.nome) {
+    await tx.loja.update({ where: { id: salva.id }, data: { slug: await slugLivre(tx, salva.nome, empreendedorId) } });
+  }
+}
+
+async function slugDeOutraLoja(tx: Tx, slug: string, empreendedorId: string): Promise<boolean> {
+  return (await tx.loja.findFirst({ where: { slug, empreendedorId: { not: empreendedorId } } })) !== null;
+}
+
+/** Link gerado pelo nome da loja ("Bolos da Dona" → "bolos-da-dona", ou "bolos-da-dona-2" se já existir). */
+async function slugLivre(tx: Tx, nome: string, empreendedorId: string): Promise<string | null> {
+  const base = gerarSlug(nome);
+  if (problemaNoSlug(base)) {
+    return null;
+  }
+  for (let sufixo = 1; sufixo <= 50; sufixo++) {
+    const candidato = sufixo === 1 ? base : `${base.slice(0, 36)}-${sufixo}`;
+    if (!(await slugDeOutraLoja(tx, candidato, empreendedorId))) {
+      return candidato;
+    }
+  }
+  return null;
 }

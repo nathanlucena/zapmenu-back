@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import { DomainError } from '../shared/errors/domain-error.js';
 import type { HorarioFuncionamento } from '../orders/domain/horario-loja.js';
 import type { RegrasDaLoja } from '../orders/application/ports/loja-para-pedidos.js';
+import { empreendedorPorIdentificador } from '../shared/db/identificador-loja.js';
 import type { MenuRepository } from './menu.repository.js';
 import type { FaixaEntrega } from './conversation/conversation-state.types.js';
 import { entregaConfigurada, raioMaximoKm } from './entrega.js';
@@ -28,9 +29,9 @@ function paraItemCardapio(item: ItemCardapioComVariacoes): ItemCardapio {
 }
 
 /**
- * Trata o identificador recebido como o telefone do empreendedor (chave natural
- * de multi-tenancy). Só a escrita de itens cria o registro; a leitura pública
- * não grava nada, para uma URL inventada não virar um empreendedor.
+ * Na escrita, o identificador é o telefone do empreendedor (chave natural de
+ * multi-tenancy); na leitura pública, também vale o link curto da loja. Só a
+ * escrita de itens cria o registro: uma URL inventada não vira empreendedor.
  */
 export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository {
   async function atualizarDoCardapio(
@@ -62,8 +63,8 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
   }
 
   return {
-    async obterCardapioPublico(telefoneEmpreendedor: string) {
-      const empreendedor = await prisma.empreendedor.findUnique({ where: { telefone: telefoneEmpreendedor } });
+    async obterCardapioPublico(identificador: string) {
+      const empreendedor = await prisma.empreendedor.findFirst({ where: empreendedorPorIdentificador(identificador) });
       if (!empreendedor) {
         return null;
       }
@@ -104,6 +105,11 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
           taxaEntrega: loja.taxaEntrega === null ? undefined : Number(loja.taxaEntrega),
           pedidoMinimo: loja.pedidoMinimo === null ? undefined : Number(loja.pedidoMinimo),
           horarios: loja.horarios as unknown as HorarioLoja[],
+          slug: loja.slug ?? undefined,
+          capaUrl: loja.capaUrl ?? undefined,
+          logoUrl: loja.logoUrl ?? undefined,
+          corDestaque: loja.corDestaque ?? undefined,
+          fuso: loja.fuso,
         },
         secoes,
         itens: disponiveis,
@@ -111,9 +117,9 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
       return cardapio;
     },
 
-    async obterRegrasDePedido(telefoneEmpreendedor: string) {
-      const empreendedor = await prisma.empreendedor.findUnique({
-        where: { telefone: telefoneEmpreendedor },
+    async obterRegrasDePedido(identificador: string) {
+      const empreendedor = await prisma.empreendedor.findFirst({
+        where: empreendedorPorIdentificador(identificador),
         include: { loja: true },
       });
       if (!empreendedor) {
@@ -134,6 +140,7 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
         faixasEntrega: loja.faixasEntrega as unknown as FaixaEntrega[],
         pedidoMinimo: loja.pedidoMinimo === null ? undefined : Number(loja.pedidoMinimo),
         horarios: loja.horarios as unknown as HorarioFuncionamento[],
+        fuso: loja.fuso,
       };
       return regras;
     },

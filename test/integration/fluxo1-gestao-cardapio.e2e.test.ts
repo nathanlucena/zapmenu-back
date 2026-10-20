@@ -5,6 +5,7 @@ import { criarInterpretadorRoteiroFake } from '../../src/menu/gestao/__mocks__/i
 import { criarCadastroPorLista } from '../../src/menu/gestao/cadastro-empreendedores.js';
 import { RESPOSTA_NUMERO_SEM_ACESSO } from '../../src/menu/gestao/gestao.service.js';
 import type { Operacao } from '../../src/menu/gestao/interpretador.js';
+import { DomainError } from '../../src/shared/errors/domain-error.js';
 import { criarIdempotencyRepositoryFake } from '../../src/shared/idempotency/__mocks__/idempotency.repository.fake.js';
 import { criarWhatsAppClientFake } from '../../src/whatsapp/__mocks__/whatsapp-client.fake.js';
 import { registrarMenuInboundRouter } from '../../src/whatsapp/menu-session/menu-inbound.router.js';
@@ -155,5 +156,36 @@ describe('Fluxo 1 — dono cadastra o cardápio pelo WhatsApp (e2e in-process)',
     expect(resposta).toEqual([RESPOSTA_NUMERO_SEM_ACESSO]);
     expect(conversationRepo.conversaDe('5511988887777')).toBeUndefined();
     expect(ia.entradas).toHaveLength(0);
+  });
+
+  it('anota link e cor do cardápio e avisa quando não dá para usar', async () => {
+    const { ia, enviar } = montarGestao();
+
+    ia.responder({ operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { slug: 'Bolos da Dona', corDestaque: '#e53935' } }] });
+    const anotado = (await enviar('meu link é bolos da dona e a cor vermelha')).join('\n');
+    ia.responder({ operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { slug: '12345', corDestaque: 'vermelho' } }] });
+    const recusado = (await enviar('muda o link para 12345')).join('\n');
+    ia.responder({ operacoes: [], finalizou: true });
+    const resumo = (await enviar('pronto')).join('\n');
+
+    expect(anotado).not.toContain('⚠️');
+    expect(recusado).toContain('precisa ter pelo menos uma letra');
+    expect(recusado).toContain('Não entendi a cor "vermelho"');
+    expect(resumo).toContain('🔗 Link do cardápio: *bolos-da-dona*');
+    expect(resumo).toContain('🎨 Cor de destaque: *#E53935*');
+  });
+
+  it('volta para a conversa sem o link quando ele já é de outra loja', async () => {
+    const { gestaoRepo, ia, enviar, conversationRepo } = montarGestao();
+
+    ia.responder({ operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { slug: 'bolos', nome: 'Bolos' } }], finalizou: true });
+    await enviar('nome Bolos e link bolos, é isso');
+    gestaoRepo.erroAoSalvar = new DomainError('O link bolos já é de outra loja.', 'SLUG_EM_USO', 'CONFLITO');
+    const resposta = (await enviar('sim')).join('\n');
+
+    expect(resposta).toContain('O link bolos já é de outra loja. Me diga outro link');
+    const conversa = conversationRepo.conversaDe(DONO);
+    expect(conversa?.estado).toBe('CONVERSANDO');
+    expect(conversa?.contexto.rascunho.loja).toEqual({ nome: 'Bolos' });
   });
 });

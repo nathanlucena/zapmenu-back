@@ -75,6 +75,10 @@ export interface DadosLoja {
   taxaEntrega?: number;
   pedidoMinimo?: number;
   horarios?: Horario[];
+  /** Endereço curto do cardápio. Sem ele, um é gerado pelo nome da loja ao salvar. */
+  slug?: string;
+  /** Hex "#RRGGBB". */
+  corDestaque?: string;
 }
 
 /** Item que ainda não existe no cardápio; `ref` é o apelido usado pela IA (ex.: "n1"). */

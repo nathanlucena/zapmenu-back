@@ -9,6 +9,7 @@ import type {
 } from '../conversation/conversation-state.types.js';
 import { DIAS_SEMANA, rascunhoVazio } from '../conversation/conversation-state.types.js';
 import { mesclarConsulta } from '../endereco/endereco.service.js';
+import { gerarSlug, normalizarCor, problemaNoSlug } from '../vitrine.js';
 import { faixasComTaxaDecrescente, formatarKm, validarFaixas } from '../entrega.js';
 import type { SnapshotCardapio } from './gestao.repository.js';
 import type { DadosItemOperacao, Operacao } from './interpretador.js';
@@ -163,6 +164,21 @@ export function aplicarOperacoes(aplicacao: AplicacaoOperacoes, operacoes: Opera
         break;
       case 'ATUALIZAR_LOJA': {
         const dados = { ...operacao.dados };
+        if (dados.slug !== undefined) {
+          const slug = gerarSlug(dados.slug);
+          const problema = problemaNoSlug(slug);
+          if (problema) {
+            avisos.add(`⚠️ Não consegui usar o link "${dados.slug}": ${problema}.`);
+          }
+          dados.slug = problema ? undefined : slug;
+        }
+        if (dados.corDestaque !== undefined) {
+          const cor = normalizarCor(dados.corDestaque);
+          if (!cor) {
+            avisos.add(`⚠️ Não entendi a cor "${dados.corDestaque}". Pode mandar o nome da cor ou o código, tipo #E53935?`);
+          }
+          dados.corDestaque = cor ?? undefined;
+        }
         if (dados.faixasEntrega !== undefined) {
           const validacao = validarFaixas(dados.faixasEntrega);
           validacao.avisos.forEach((aviso) => avisos.add(aviso));
@@ -411,6 +427,8 @@ function descreverLoja(loja: DadosLoja, atual: DadosLoja): string[] {
   }
   if (loja.pedidoMinimo !== undefined) linhas.push(`🧾 Pedido mínimo: *${formatarPreco(loja.pedidoMinimo)}*`);
   if (loja.horarios !== undefined) linhas.push(`🕒 Horários: ${formatarHorarios(loja.horarios)}`);
+  if (loja.slug !== undefined) linhas.push(`🔗 Link do cardápio: ${atual.slug ? `${atual.slug} → ` : ''}*${loja.slug}*`);
+  if (loja.corDestaque !== undefined) linhas.push(`🎨 Cor de destaque: *${loja.corDestaque}*`);
   return linhas;
 }
 
