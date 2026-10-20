@@ -27,7 +27,7 @@ import { iniciarSessaoWppConnect } from './whatsapp/wppconnect/session-manager.j
 
 async function main(): Promise<void> {
   const env = getEnv();
-  const prisma = getPrismaClient();
+  const prisma = getPrismaClient(env.DATABASE_URL);
 
   const menuRepo = criarMenuRepositoryPrisma(prisma);
   const ordersRepo = criarOrdersRepositoryPrisma(prisma);
