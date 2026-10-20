@@ -44,12 +44,7 @@ export function criarGoogleGeocodingClient(apiKey: string, fetchFn: typeof fetch
       }
 
       const componente = (tipo: string) => primeiro.address_components.find((item) => item.types.includes(tipo));
-      const resultado: ResultadoGeocodificacao = {
-        enderecoFormatado: primeiro.formatted_address.replace(/,\s*Brasil$/i, ''),
-        latitude: primeiro.geometry.location.lat,
-        longitude: primeiro.geometry.location.lng,
-        precisao: primeiro.geometry.location_type,
-        correspondenciaParcial: Boolean(primeiro.partial_match),
+      const partes = {
         cep: componente('postal_code')?.long_name.replace(/\D/g, ''),
         logradouro: componente('route')?.long_name,
         numero: componente('street_number')?.long_name,
@@ -57,7 +52,34 @@ export function criarGoogleGeocodingClient(apiKey: string, fetchFn: typeof fetch
         cidade: (componente('administrative_area_level_2') ?? componente('locality'))?.long_name,
         uf: componente('administrative_area_level_1')?.short_name,
       };
+      const resultado: ResultadoGeocodificacao = {
+        enderecoFormatado: montarEndereco(partes) ?? primeiro.formatted_address.replace(/,\s*Brasil$/i, ''),
+        latitude: primeiro.geometry.location.lat,
+        longitude: primeiro.geometry.location.lng,
+        precisao: primeiro.geometry.location_type,
+        correspondenciaParcial: Boolean(primeiro.partial_match),
+        ...partes,
+      };
       return resultado;
     },
   };
+}
+
+type PartesEndereco = Pick<ResultadoGeocodificacao, 'cep' | 'logradouro' | 'numero' | 'bairro' | 'cidade' | 'uf'>;
+
+/**
+ * O `formatted_address` às vezes começa com o nome de um estabelecimento que
+ * fica no número (ex.: "Banco X - Av. Paulista, 1000..."), e esse texto vira o
+ * endereço da loja. Montar pelos componentes evita isso; sem rua, cidade ou UF
+ * não dá para montar e quem chama usa o `formatted_address`.
+ */
+export function montarEndereco(partes: PartesEndereco): string | undefined {
+  const { logradouro, numero, bairro, cidade, uf, cep } = partes;
+  if (!logradouro || !cidade || !uf) {
+    return undefined;
+  }
+  const rua = numero ? `${logradouro}, ${numero}` : logradouro;
+  const local = bairro ? `${rua} - ${bairro}` : rua;
+  const cepFormatado = cep?.length === 8 ? `, ${cep.slice(0, 5)}-${cep.slice(5)}` : '';
+  return `${local}, ${cidade} - ${uf}${cepFormatado}`;
 }

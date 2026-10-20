@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { criarGoogleGeocodingClient } from './google-geocoding.client.js';
+import { criarGoogleGeocodingClient, montarEndereco } from './google-geocoding.client.js';
 import { criarViaCepClient } from './viacep.client.js';
 
 function respostaFake(body: unknown, ok = true, status = 200) {
@@ -62,7 +62,7 @@ describe('criarGoogleGeocodingClient', () => {
     expect(url.searchParams.get('components')).toBe('country:BR');
     expect(url.searchParams.get('key')).toBe('chave-teste');
     expect(resultado).toEqual({
-      enderecoFormatado: 'R. da Aurora, 123 - Boa Vista, Recife - PE, 50050-000',
+      enderecoFormatado: 'Rua da Aurora, 123 - Boa Vista, Recife - PE, 50050-000',
       latitude: -8.0591,
       longitude: -34.8798,
       precisao: 'ROOFTOP',
@@ -76,6 +76,39 @@ describe('criarGoogleGeocodingClient', () => {
     });
   });
 
+  it('monta o endereço pelos componentes, sem o nome de estabelecimento do formatted_address', async () => {
+    const comEstabelecimento = {
+      status: 'OK',
+      results: [
+        {
+          ...resultadoGoogle.results[0]!,
+          formatted_address: 'Farmácia Aurora - R. da Aurora, 123 - Boa Vista, Recife - PE, 50050-000, Brasil',
+        },
+      ],
+    };
+    const cliente = criarGoogleGeocodingClient('k', vi.fn().mockResolvedValue(respostaFake(comEstabelecimento)) as unknown as typeof fetch);
+
+    const resultado = await cliente.geocodificar('Rua da Aurora, 123, Recife');
+
+    expect(resultado?.enderecoFormatado).toBe('Rua da Aurora, 123 - Boa Vista, Recife - PE, 50050-000');
+  });
+
+  it('usa o formatted_address quando faltam rua, cidade ou UF nos componentes', async () => {
+    const semRua = {
+      status: 'OK',
+      results: [
+        {
+          ...resultadoGoogle.results[0]!,
+          formatted_address: 'Recife - PE, Brasil',
+          address_components: resultadoGoogle.results[0]!.address_components.filter((item) => !item.types.includes('route')),
+        },
+      ],
+    };
+    const cliente = criarGoogleGeocodingClient('k', vi.fn().mockResolvedValue(respostaFake(semRua)) as unknown as typeof fetch);
+
+    expect((await cliente.geocodificar('Recife'))?.enderecoFormatado).toBe('Recife - PE');
+  });
+
   it('ZERO_RESULTS vira null; outros status lançam erro sem expor a chave', async () => {
     const vazio = criarGoogleGeocodingClient('k', vi.fn().mockResolvedValue(respostaFake({ status: 'ZERO_RESULTS' })) as unknown as typeof fetch);
     expect(await vazio.geocodificar('x')).toBeNull();
@@ -85,5 +118,11 @@ describe('criarGoogleGeocodingClient', () => {
       vi.fn().mockResolvedValue(respostaFake({ status: 'REQUEST_DENIED' })) as unknown as typeof fetch,
     );
     await expect(negado.geocodificar('x')).rejects.toThrow(/^Google Geocoding respondeu REQUEST_DENIED\.$/);
+  });
+});
+
+describe('montarEndereco', () => {
+  it('omite número, bairro e CEP quando não vieram', () => {
+    expect(montarEndereco({ logradouro: 'Rua da Aurora', cidade: 'Recife', uf: 'PE' })).toBe('Rua da Aurora, Recife - PE');
   });
 });
