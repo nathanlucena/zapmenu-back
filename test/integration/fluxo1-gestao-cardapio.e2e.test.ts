@@ -74,6 +74,32 @@ describe('Fluxo 1 — dono cadastra o cardápio pelo WhatsApp (e2e in-process)',
     expect(rascunho.novosItens[0]?.variacoes?.[0]?.opcoes.map((opcao) => opcao.nome)).toEqual(['M', 'G']);
   });
 
+  it('avisa que há alterações não salvas quando mostra o cardápio no meio da conversa', async () => {
+    const { gestaoRepo, ia, enviar } = montarGestao();
+
+    ia.responder({ resposta: 'Anotei a pizza.', operacoes: [PIZZA] });
+    await enviar('pizza calabresa 40');
+
+    ia.responder({ resposta: 'Claro! Aqui está 👇', mostrarCardapio: true });
+    const respostas = (await enviar('me mostre o cardápio')).join('\n');
+
+    expect(respostas).toContain('Seu cardápio');
+    // Item + categoria nova.
+    expect(respostas).toContain('2 alterações anotadas que ainda não foram salvas');
+    expect(respostas).toContain('*pronto*');
+    expect(gestaoRepo.salvos).toHaveLength(0);
+  });
+
+  it('não mostra o aviso de pendência quando o rascunho está vazio', async () => {
+    const { ia, enviar } = montarGestao();
+
+    ia.responder({ resposta: 'Claro! Aqui está 👇', mostrarCardapio: true });
+    const respostas = (await enviar('me mostre o cardápio')).join('\n');
+
+    expect(respostas).toContain('Seu cardápio');
+    expect(respostas).not.toContain('ainda não foi salva');
+  });
+
   it('não grava nada quando o dono responde não no resumo', async () => {
     const { gestaoRepo, ia, enviar, conversationRepo } = montarGestao();
 

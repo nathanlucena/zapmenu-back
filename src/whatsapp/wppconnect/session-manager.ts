@@ -1,3 +1,6 @@
+import { execFile } from 'node:child_process';
+import path from 'node:path';
+import { promisify } from 'node:util';
 import { create, defaultLogger, SocketState, type Whatsapp } from '@wppconnect-team/wppconnect';
 import { logger as loggerRaiz } from '../../shared/logger/logger.js';
 import type { WhatsAppClient } from '../whatsapp-client.interface.js';
@@ -109,12 +112,14 @@ export async function iniciarSessaoWppConnect(
     setTimeout(() => {
       iniciar().catch((erro: unknown) => {
         logger.error({ err: erro }, 'falha ao reconectar sessão WPPConnect');
+        agendarReconexao();
       });
     }, backoffAtualMs);
     backoffAtualMs = Math.min(backoffAtualMs * 2, BACKOFF_MAXIMO_MS);
   }
 
   async function iniciar(): Promise<void> {
+    await encerrarNavegadorOrfao(path.resolve(config.tokenStorePath, config.sessionName), logger);
     const whatsapp = await create({
       session: config.sessionName,
       folderNameToken: config.tokenStorePath,
@@ -194,6 +199,30 @@ export async function iniciarSessaoWppConnect(
     logger.error({ err: erro }, 'falha ao iniciar sessão WPPConnect, tentando novamente');
     agendarReconexao();
   }
+}
+
+const executarComando = promisify(execFile);
+
+/**
+ * Quando o `create()` falha (ex.: "Phone not connected" após o autoclose), ele
+ * lança sem devolver o Whatsapp, então não há como fechar o Chrome que abriu.
+ * O processo pode continuar vivo segurando a pasta da sessão, e a próxima
+ * tentativa quebra com "The browser is already running". Antes de abrir um
+ * navegador novo, encerra qualquer Chrome que ainda use a mesma pasta.
+ */
+async function encerrarNavegadorOrfao(pastaSessao: string, logger: typeof loggerRaiz): Promise<void> {
+  if (process.platform === 'win32') {
+    return;
+  }
+  const padrao = `--user-data-dir=${pastaSessao.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`;
+  try {
+    await executarComando('pkill', ['-f', padrao]);
+  } catch {
+    // pkill sai com código 1 quando não encontra nenhum processo: é o caso normal.
+    return;
+  }
+  logger.warn({ pastaSessao }, 'Chrome antigo ainda usava a pasta da sessão — encerrado antes de reconectar');
+  await new Promise((resolve) => setTimeout(resolve, 1_500));
 }
 
 /**

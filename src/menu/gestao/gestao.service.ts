@@ -249,6 +249,10 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
   }
   if (saida.mostrarCardapio) {
     responder(rodada, descreverCardapio(rodada.snapshot));
+    const pendentes = contarAlteracoes(rodada.contexto.rascunho);
+    if (pendentes > 0) {
+      responder(rodada, avisoAlteracoesPendentes(pendentes));
+    }
   }
   for (const aviso of avisos) {
     responder(rodada, aviso);
@@ -478,4 +482,10 @@ function descreverCardapio(snapshot: SnapshotCardapio): string {
   }
   linhas.push('', 'Para mudar algo, é só me dizer — ex.: _a coca agora é 15_, _acabou a pizza de frango_.');
   return linhas.join('\n');
+}
+
+/** O cardápio mostrado é o salvo; sem isso parece que a alteração anotada se perdeu. */
+export function avisoAlteracoesPendentes(total: number): string {
+  const alteracoes = total === 1 ? '1 alteração anotada que ainda não foi salva' : `${total} alterações anotadas que ainda não foram salvas`;
+  return `✏️ Esse é o cardápio salvo. Você tem ${alteracoes}: quando terminar, diga *pronto* para revisar e salvar.`;
 }
