@@ -1,0 +1,45 @@
+import { DomainError } from '../../shared/errors/domain-error.js';
+import type { OrdersRepository } from '../orders.repository.js';
+import type { Pedido } from '../orders.types.js';
+
+let proximoId = 1;
+
+export function criarOrdersRepositoryFake(): OrdersRepository {
+  const pedidos = new Map<string, Pedido>();
+
+  return {
+    async codigoJaExiste(codigoCurto: string) {
+      return Array.from(pedidos.values()).some((pedido) => pedido.codigoCurto === codigoCurto);
+    },
+
+    async criar(dadosPedido: Omit<Pedido, 'id'>) {
+      const pedido: Pedido = { ...dadosPedido, id: `pedido-${proximoId++}` };
+      pedidos.set(pedido.id, pedido);
+      return pedido;
+    },
+
+    async buscarPorId(id: string) {
+      return pedidos.get(id) ?? null;
+    },
+
+    async buscarPorCodigo(codigoCurto: string) {
+      return Array.from(pedidos.values()).find((pedido) => pedido.codigoCurto === codigoCurto) ?? null;
+    },
+
+    async atualizar(id: string, alteracoes) {
+      const pedido = pedidos.get(id);
+      if (!pedido) {
+        throw new DomainError(`Pedido ${id} não encontrado.`, 'PEDIDO_NAO_ENCONTRADO');
+      }
+      const atualizado = { ...pedido, ...alteracoes };
+      pedidos.set(id, atualizado);
+      return atualizado;
+    },
+
+    async listarExpirados(agora: Date) {
+      return Array.from(pedidos.values()).filter(
+        (pedido) => pedido.status === 'AGUARDANDO_CONFIRMACAO' && agora > pedido.expiraEm,
+      );
+    },
+  };
+}

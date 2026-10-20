@@ -1,0 +1,527 @@
+import OpenAI from 'openai';
+import { logger } from '../../shared/logger/logger.js';
+import { z } from 'zod';
+import { DIAS_SEMANA, type DadosLoja, type Variacao } from '../conversation/conversation-state.types.js';
+import type {
+  DadosItemOperacao,
+  EntradaConversa,
+  InterpretadorMensagem,
+  Operacao,
+  RespostaConversa,
+} from './interpretador.js';
+
+export interface DeepSeekConfig {
+  apiKey: string;
+  modelo: string;
+  baseURL: string;
+}
+
+export class RespostaInvalidaDaIA extends Error {}
+
+// O prompt precisa conter a palavra "json" para o modo JSON do DeepSeek.
+const PROMPT_SISTEMA = `Você é o assistente de WhatsApp que ajuda donos de pequenos negócios de comida a atualizar o próprio cardápio e os dados da loja, conversando de forma natural.
+
+COMO FUNCIONA
+- Você NÃO salva nada. Você monta um rascunho de alterações por meio de "operacoes". Quando a pessoa disser que terminou, o sistema mostra um resumo e só grava se ela responder "sim".
+- Nunca diga que salvou, publicou ou atualizou o cardápio. Diga que anotou.
+- Responda em português do Brasil, curto (1 a 3 frases), simpático, no estilo WhatsApp (*negrito* com asteriscos). Não repita a lista inteira do rascunho a cada mensagem.
+- Nunca invente preço, nome ou dado que a pessoa não disse. Se faltar algo importante (ex.: preço de um item novo), pergunte.
+
+ENTRADA (json): etapa ("conversando" ou "confirmando"), historico (mensagens anteriores), mensagem (a atual), foto_recebida (a mensagem atual trouxe uma foto), foto_pendente (há uma foto recebida antes ainda sem item), rascunho (alterações já anotadas), endereco_em_andamento (partes do endereço já informadas), endereco_pendente (endereço encontrado no mapa esperando a pessoa confirmar), cardapio (categorias e itens atuais, numerados), loja (dados atuais).
+
+SAÍDA: responda SOMENTE com um objeto json:
+{"resposta": "texto para a pessoa", "operacoes": [...], "finalizou": false, "mostrar_cardapio": false, "decisao": null}
+
+VER O CARDÁPIO
+- Você não consegue enviar a lista do cardápio por conta própria. Quando a pessoa pedir para ver o cardápio (ou os itens, preços, o que tem cadastrado), use "mostrar_cardapio": true e o sistema envia a lista completa logo depois da sua resposta.
+- Nesse caso a resposta deve ser curta e apontar para baixo (ex.: "Claro! Aqui está 👇"). Nunca diga que mostrou o cardápio sem usar "mostrar_cardapio": true.
+
+OPERAÇÕES (cada uma é um objeto com "tipo"):
+- {"tipo": "novo_item", "ref": "n1", "nome": "...", "descricao": "...", "preco": 39.9, "categoria": "Pizzas", "variacoes": [...]} — item que ainda não existe. "ref" é um apelido único no formato n + número, que não exista em rascunho.novos_itens.
+- {"tipo": "corrigir_novo_item", "ref": "n1", ...campos que mudam} — corrige um item de rascunho.novos_itens.
+- {"tipo": "descartar_novo_item", "ref": "n1"}
+- {"tipo": "editar_item", "item_id": "...", ...campos que mudam} — item que já existe em cardapio.itens. "categoria": null tira o item da categoria.
+- {"tipo": "pausar_item", "item_id": "..."} — tirar do ar temporariamente (acabou, sem estoque).
+- {"tipo": "reativar_item", "item_id": "..."} — voltar com um item pausado.
+- {"tipo": "remover_item", "item_id": "..."} — apagar de vez.
+- {"tipo": "desfazer_item", "item_id": "..."} — desfaz o que estava anotado para um item existente.
+- {"tipo": "anexar_foto", "ref": "n1"} ou {"tipo": "anexar_foto", "item_id": "..."} — usa a foto recebida (ou a pendente).
+- {"tipo": "nova_categoria", "nome": "Bebidas"}
+- {"tipo": "renomear_categoria", "categoria_id": "...", "novo_nome": "..."}
+- {"tipo": "remover_categoria", "categoria_id": "..."} — os itens dela ficam sem categoria.
+- {"tipo": "atualizar_loja", "nome": "...", "descricao": "...", "aceita_retirada": true, "faz_entrega": true, "faixas_entrega": [...], "pedido_minimo": 30, "horarios": [...]} — só os campos que mudam. Endereço NÃO vai aqui.
+- {"tipo": "definir_endereco", "cep": "50050000", "numero": "123", "complemento": "loja 2"} — endereço da loja. Também aceita "rua", "bairro", "cidade", "uf" e "sem_numero": true.
+- {"tipo": "confirmar_endereco"} / {"tipo": "recusar_endereco"} — resposta da pessoa quando endereco_pendente existe ("é aí mesmo" / "não é aí").
+- {"tipo": "descartar_tudo"} — a pessoa quer jogar fora todas as alterações anotadas.
+
+FORMATOS
+- preco, pedido_minimo, taxa (das faixas) e preco_adicional: número em reais com ponto decimal ("39,90" → 39.9; "42 reais" → 42).
+- nome: nome do produto com iniciais maiúsculas, sem verbos ("coloca uma pizza calabresa" → "Pizza Calabresa"). descricao: detalhes (ingredientes, tamanho), sem o preço.
+- variacoes: lista COMPLETA de variações do item (substitui as anteriores): [{"nome": "Tamanho", "opcoes": [{"nome": "P", "preco_adicional": 0}, {"nome": "G", "preco_adicional": 15}]}]. O preço do item é o da opção mais barata; preco_adicional é a diferença.
+- faixas_entrega: lista COMPLETA (substitui a anterior), uma faixa por distância: [{"ate_km": 1, "taxa": 0}, {"ate_km": 3, "taxa": 5}]. "grátis", "de graça", "sem taxa" → taxa 0. "500 metros" → ate_km 0.5. A maior distância é o limite de entrega.
+- horarios: lista COMPLETA da semana (substitui a anterior), um objeto por dia aberto: [{"dia": "seg", "abre": "18:00", "fecha": "23:00"}]. Dias: dom, seg, ter, qua, qui, sex, sab. Dias fechados não aparecem.
+- item_id e categoria_id: SOMENTE ids que existem em cardapio. A pessoa pode citar um item pelo nome ou pelo número da lista.
+
+FOTOS
+- Se foto_recebida for true e der para saber de qual item é (pela legenda ou pela conversa), use anexar_foto. Se não der, pergunte de qual item é — a foto fica pendente e você anexa depois.
+- Se a pessoa manda uma foto junto com um item novo, crie o novo_item e o anexar_foto com a mesma ref na mesma resposta.
+
+ENDEREÇO E ENTREGA
+- A entrega é cobrada por distância: precisa do endereço da loja e das faixas. Quando a pessoa quiser começar a entregar, peça o CEP e o número da loja (e o complemento, se tiver) e como ela cobra em cada faixa.
+- definir_endereco leva SOMENTE o que a pessoa escreveu. Nunca complete rua, bairro ou cidade por conta própria: o sistema completa pelo CEP e procura no mapa.
+- Se a pessoa digitar o endereço de outro jeito (por extenso, sem CEP, com CEP errado), use definir_endereco com as partes que der para separar.
+- Correção ("o número é 132", "o CEP certo é 50050-010") → definir_endereco só com o campo que mudou.
+- Ao usar definir_endereco, a resposta deve ser curta ou vazia (ex.: "Vou procurar 🔎"): o sistema mostra o endereço encontrado e pergunta se está certo. Nunca diga que encontrou, achou no mapa ou salvou o endereço.
+- Se endereco_pendente existir e a pessoa confirmar ou negar com outras palavras, use confirmar_endereco ou recusar_endereco.
+- Nunca fale de coordenadas, latitude ou longitude.
+- "acima de 3 km cobro 10" sem dizer até onde entrega: NÃO invente limite; pergunte até quantos km ela entrega.
+- "não entrego mais" → atualizar_loja com "faz_entrega": false.
+
+FIM DA CONVERSA
+- Quando a pessoa sinalizar que terminou ("é isso", "pronto", "só isso", "pode salvar", "terminei", "não, obrigado" depois de você perguntar se tem mais algo), use "finalizou": true. A resposta pode ser curta (ex.: "Perfeito! Veja o resumo:"), pois o sistema mostra o resumo logo depois.
+- Se ela disser que terminou mas ainda falta dado essencial, pergunte o que falta e mantenha "finalizou": false.
+
+ETAPA "confirmando" (o resumo já foi mostrado)
+- Se a pessoa aprova ("sim", "pode", "manda", "isso"), use "decisao": "confirmar".
+- Se recusa ("não", "espera", "tá errado"), use "decisao": "recusar" e pergunte o que ajustar.
+- Se ela já pede uma correção, não use decisao: gere as operações e pergunte se tem mais algo.
+
+EXEMPLO
+mensagem: "entrou pizza calabresa 39,90 e a coca agora é 15" (com a Coca 2L no cardápio com id "abc")
+{"resposta": "Anotei a *Pizza Calabresa* e o novo preço da *Coca 2L*! Tem foto da pizza?", "operacoes": [{"tipo": "novo_item", "ref": "n1", "nome": "Pizza Calabresa", "preco": 39.9}, {"tipo": "editar_item", "item_id": "abc", "preco": 15}], "finalizou": false, "decisao": null}`;
+
+// ---------------------------------------------------------------------------
+// Validação da saída
+// ---------------------------------------------------------------------------
+
+const texto = z
+  .string()
+  .nullish()
+  .transform((valor) => valor?.trim() || undefined);
+
+const numero = z
+  .union([z.number(), z.string()])
+  .nullish()
+  .transform((valor, ctx) => {
+    if (valor === null || valor === undefined || valor === '') {
+      return undefined;
+    }
+    const convertido = typeof valor === 'number' ? valor : Number(valor.replace(/[^\d,.-]/g, '').replace(',', '.'));
+    if (!Number.isFinite(convertido) || convertido < 0) {
+      ctx.addIssue({ code: 'custom', message: `valor inválido: ${valor}` });
+      return z.NEVER;
+    }
+    return convertido;
+  });
+
+/** Aceita negativos: a validação das faixas (no código) explica o problema para a pessoa. */
+const numeroLivre = z.union([z.number(), z.string()]).transform((valor, ctx) => {
+  const convertido = typeof valor === 'number' ? valor : Number(valor.replace(/[^\d,.-]/g, '').replace(',', '.'));
+  if (!Number.isFinite(convertido)) {
+    ctx.addIssue({ code: 'custom', message: `valor inválido: ${valor}` });
+    return z.NEVER;
+  }
+  return convertido;
+});
+
+const faixasEntrega = z
+  .array(z.object({ ate_km: numeroLivre, taxa: numeroLivre }))
+  .nullish()
+  .transform((valor) => valor?.map((faixa) => ({ ateKm: faixa.ate_km, taxa: faixa.taxa })));
+
+/** CEP e número podem vir como número no json. */
+const textoOuNumero = z
+  .union([z.string(), z.number()])
+  .nullish()
+  .transform((valor) => (valor === null || valor === undefined ? undefined : String(valor).trim() || undefined));
+
+const booleano = z
+  .boolean()
+  .nullish()
+  .transform((valor) => valor ?? undefined);
+
+const variacoes = z
+  .array(
+    z.object({
+      nome: z.string().trim().min(1),
+      opcoes: z
+        .array(z.object({ nome: z.string().trim().min(1), preco_adicional: numero }))
+        .min(1)
+        .transform((opcoes) =>
+          opcoes.map((opcao) => ({
+            nome: opcao.nome,
+            precoAdicional: opcao.preco_adicional ?? 0,
+          })),
+        ),
+    }),
+  )
+  .nullish()
+  .transform((valor) => valor ?? undefined);
+
+const HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
+const horarios = z
+  .array(
+    z.object({
+      dia: z.enum(DIAS_SEMANA),
+      abre: z.string().regex(HORA),
+      fecha: z.string().regex(HORA),
+    }),
+  )
+  .nullish()
+  .transform((valor) => valor ?? undefined);
+
+const camposItem = {
+  nome: texto,
+  descricao: texto,
+  preco: numero,
+  categoria: z.string().trim().nullish(),
+  variacoes,
+};
+
+function dadosItem(campos: {
+  nome?: string;
+  descricao?: string;
+  preco?: number;
+  categoria?: string | null;
+  variacoes?: Variacao[];
+}): DadosItemOperacao {
+  return {
+    nome: campos.nome,
+    descricao: campos.descricao,
+    precoBase: campos.preco,
+    categoria: campos.categoria === '' ? null : campos.categoria,
+    variacoes: campos.variacoes,
+  };
+}
+
+const idObrigatorio = z.string().trim().min(1);
+
+const operacaoSchema = z.discriminatedUnion('tipo', [
+  z.object({ tipo: z.literal('novo_item'), ref: texto, ...camposItem }).transform((op): Operacao => ({
+    tipo: 'NOVO_ITEM',
+    ref: op.ref,
+    dados: dadosItem(op),
+  })),
+  z
+    .object({
+      tipo: z.literal('corrigir_novo_item'),
+      ref: idObrigatorio,
+      ...camposItem,
+    })
+    .transform((op): Operacao => ({
+      tipo: 'CORRIGIR_NOVO_ITEM',
+      ref: op.ref,
+      dados: dadosItem(op),
+    })),
+  z.object({ tipo: z.literal('descartar_novo_item'), ref: idObrigatorio }).transform((op): Operacao => ({
+    tipo: 'DESCARTAR_NOVO_ITEM',
+    ref: op.ref,
+  })),
+  z
+    .object({
+      tipo: z.literal('editar_item'),
+      item_id: idObrigatorio,
+      ...camposItem,
+    })
+    .transform((op): Operacao => ({
+      tipo: 'EDITAR_ITEM',
+      itemId: op.item_id,
+      dados: dadosItem(op),
+    })),
+  ...(['pausar_item', 'reativar_item', 'remover_item', 'desfazer_item'] as const).map((tipo) =>
+    z.object({ tipo: z.literal(tipo), item_id: idObrigatorio }).transform((op): Operacao => ({
+      tipo: op.tipo.toUpperCase() as 'PAUSAR_ITEM' | 'REATIVAR_ITEM' | 'REMOVER_ITEM' | 'DESFAZER_ITEM',
+      itemId: op.item_id,
+    })),
+  ),
+  z.object({ tipo: z.literal('anexar_foto'), ref: texto, item_id: texto }).transform((op): Operacao => ({
+    tipo: 'ANEXAR_FOTO',
+    ref: op.ref,
+    itemId: op.item_id,
+  })),
+  z
+    .object({
+      tipo: z.literal('nova_categoria'),
+      nome: z.string().trim().min(1),
+    })
+    .transform((op): Operacao => ({ tipo: 'NOVA_CATEGORIA', nome: op.nome })),
+  z
+    .object({
+      tipo: z.literal('renomear_categoria'),
+      categoria_id: idObrigatorio,
+      novo_nome: z.string().trim().min(1),
+    })
+    .transform((op): Operacao => ({
+      tipo: 'RENOMEAR_CATEGORIA',
+      categoriaId: op.categoria_id,
+      novoNome: op.novo_nome,
+    })),
+  z
+    .object({
+      tipo: z.literal('remover_categoria'),
+      categoria_id: idObrigatorio,
+    })
+    .transform((op): Operacao => ({
+      tipo: 'REMOVER_CATEGORIA',
+      categoriaId: op.categoria_id,
+    })),
+  z
+    .object({
+      tipo: z.literal('atualizar_loja'),
+      nome: texto,
+      descricao: texto,
+      aceita_retirada: booleano,
+      faz_entrega: booleano,
+      faixas_entrega: faixasEntrega,
+      pedido_minimo: numero,
+      horarios,
+    })
+    .transform((op): Operacao => ({
+      tipo: 'ATUALIZAR_LOJA',
+      dados: {
+        nome: op.nome,
+        descricao: op.descricao,
+        aceitaRetirada: op.aceita_retirada,
+        fazEntrega: op.faz_entrega,
+        faixasEntrega: op.faixas_entrega,
+        pedidoMinimo: op.pedido_minimo,
+        horarios: op.horarios,
+      },
+    })),
+  z
+    .object({
+      tipo: z.literal('definir_endereco'),
+      cep: textoOuNumero,
+      numero: textoOuNumero,
+      sem_numero: booleano,
+      complemento: texto,
+      rua: texto,
+      bairro: texto,
+      cidade: texto,
+      uf: texto,
+    })
+    .transform((op): Operacao => ({
+      tipo: 'DEFINIR_ENDERECO',
+      dados: {
+        cep: op.cep,
+        numero: op.numero,
+        semNumero: op.sem_numero || undefined,
+        complemento: op.complemento,
+        logradouro: op.rua,
+        bairro: op.bairro,
+        cidade: op.cidade,
+        uf: op.uf?.toUpperCase(),
+      },
+    })),
+  z.object({ tipo: z.literal('confirmar_endereco') }).transform((): Operacao => ({ tipo: 'CONFIRMAR_ENDERECO' })),
+  z.object({ tipo: z.literal('recusar_endereco') }).transform((): Operacao => ({ tipo: 'RECUSAR_ENDERECO' })),
+  z.object({ tipo: z.literal('descartar_tudo') }).transform((): Operacao => ({ tipo: 'DESCARTAR_TUDO' })),
+]);
+
+const respostaSchema = z.object({
+  resposta: z
+    .string()
+    .nullish()
+    .transform((valor) => valor?.trim() ?? ''),
+  operacoes: z
+    .array(z.unknown())
+    .nullish()
+    .transform((valor) => valor ?? []),
+  finalizou: z
+    .boolean()
+    .nullish()
+    .transform((valor) => valor ?? false),
+  mostrar_cardapio: z
+    .boolean()
+    .nullish()
+    .transform((valor) => valor ?? false),
+  decisao: z
+    .string()
+    .nullish()
+    .transform((valor) => {
+      const normalizado = valor?.toLowerCase();
+      return normalizado === 'confirmar' ? 'CONFIRMAR' : normalizado === 'recusar' ? 'RECUSAR' : undefined;
+    }),
+});
+
+// ---------------------------------------------------------------------------
+// Entrada
+// ---------------------------------------------------------------------------
+
+/** Loja como a IA vê: endereço em texto e faixas, sem coordenadas nem a taxa fixa antiga. */
+function lojaParaIA(loja: DadosLoja | undefined) {
+  if (!loja) {
+    return null;
+  }
+  const { enderecoVerificado, taxaEntrega: _taxaEntrega, ...resto } = loja;
+  return { ...resto, endereco: enderecoVerificado?.enderecoFormatado ?? loja.endereco };
+}
+
+/** Visão do estado para a IA: só ids, nomes e valores — nunca as fotos em base64. */
+function montarEntrada(entrada: EntradaConversa) {
+  const { snapshot, rascunho } = entrada;
+  const nomeItem = (itemId: string) => snapshot.itens.find((item) => item.id === itemId)?.nome;
+
+  return {
+    etapa: entrada.estado === 'CONFIRMANDO' ? 'confirmando' : 'conversando',
+    historico: entrada.historico,
+    mensagem: entrada.mensagem,
+    foto_recebida: entrada.fotoRecebida,
+    foto_pendente: entrada.fotoPendente,
+    rascunho: {
+      novos_itens: rascunho.novosItens.map(({ imagemUrl, ...item }) => ({
+        ...item,
+        tem_foto: Boolean(imagemUrl),
+      })),
+      edicoes: rascunho.edicoes.map(({ imagemUrl, ...edicao }) => ({
+        ...edicao,
+        nome_atual: nomeItem(edicao.itemId),
+        nova_foto: Boolean(imagemUrl),
+      })),
+      status: rascunho.status.map((status) => ({
+        ...status,
+        nome: nomeItem(status.itemId),
+      })),
+      novas_categorias: rascunho.novasCategorias,
+      categorias_renomeadas: rascunho.categoriasRenomeadas,
+      categorias_removidas: rascunho.categoriasRemovidas,
+      loja: lojaParaIA(rascunho.loja),
+    },
+    endereco_em_andamento: entrada.endereco.consultaEndereco ?? null,
+    endereco_pendente: entrada.endereco.enderecoPendente?.endereco.enderecoFormatado ?? null,
+    cardapio: {
+      categorias: snapshot.categorias,
+      itens: snapshot.itens.map((item, indice) => ({
+        numero: indice + 1,
+        id: item.id,
+        nome: item.nome,
+        descricao: item.descricao,
+        preco: item.precoBase,
+        categoria: item.categoriaNome ?? null,
+        pausado: !item.ativo,
+        tem_foto: item.temFoto,
+        variacoes: item.variacoes,
+      })),
+    },
+    loja: lojaParaIA(snapshot.loja),
+  };
+}
+
+/** Esperas antes de cada nova tentativa quando o DeepSeek recusa por sobrecarga. */
+const ESPERAS_RETRY_MS = [1_500, 4_000];
+
+/**
+ * Sobrecarga (429/5xx) volta em ~1s, então vale tentar de novo. Timeout não:
+ * a pessoa já esperou 45s e repetir dobraria a espera.
+ */
+function ehSobrecarga(erro: unknown): boolean {
+  return (
+    erro instanceof OpenAI.APIError &&
+    !(erro instanceof OpenAI.APIConnectionTimeoutError) &&
+    erro.status !== undefined &&
+    (erro.status === 429 || erro.status >= 500)
+  );
+}
+
+async function comRetryEmSobrecarga<T>(chamar: () => Promise<T>): Promise<T> {
+  for (let tentativa = 0; ; tentativa++) {
+    try {
+      return await chamar();
+    } catch (erro) {
+      const espera = ESPERAS_RETRY_MS[tentativa];
+      if (espera === undefined || !ehSobrecarga(erro)) {
+        throw erro;
+      }
+      logger.warn(
+        {
+          modulo: 'deepseek',
+          status: (erro as InstanceType<typeof OpenAI.APIError>).status,
+          esperaMs: espera,
+        },
+        '🔁 DeepSeek sobrecarregado, tentando de novo',
+      );
+      await new Promise((resolve) => setTimeout(resolve, espera));
+    }
+  }
+}
+
+export function criarInterpretadorDeepSeek(config: DeepSeekConfig): InterpretadorMensagem {
+  const cliente = new OpenAI({
+    apiKey: config.apiKey,
+    baseURL: config.baseURL,
+    // A pessoa está esperando no WhatsApp: melhor falhar e pedir para repetir
+    // do que esperar minutos. O retry do SDK também repetia timeouts, por isso
+    // fica desligado e só sobrecarga é repetida (comRetryEmSobrecarga).
+    timeout: 45_000,
+    maxRetries: 0,
+  });
+
+  return {
+    async conversar(entrada) {
+      const inicio = Date.now();
+      const resposta = await comRetryEmSobrecarga(() =>
+        cliente.chat.completions.create({
+          model: config.modelo,
+          temperature: 0.3,
+          max_tokens: 2000,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: PROMPT_SISTEMA },
+            { role: 'user', content: JSON.stringify(montarEntrada(entrada)) },
+          ],
+        }),
+      );
+
+      logger.info(
+        {
+          modulo: 'deepseek',
+          ms: Date.now() - inicio,
+          tokensEntrada: resposta.usage?.prompt_tokens,
+          tokensSaida: resposta.usage?.completion_tokens,
+          tokensRaciocinio: resposta.usage?.completion_tokens_details?.reasoning_tokens,
+        },
+        '⏱️  chamada ao DeepSeek',
+      );
+
+      const conteudo = resposta.choices[0]?.message.content;
+      if (!conteudo) {
+        // A documentação do DeepSeek avisa que o modo JSON às vezes devolve vazio.
+        throw new RespostaInvalidaDaIA('DeepSeek devolveu uma resposta vazia.');
+      }
+
+      let json: unknown;
+      try {
+        json = JSON.parse(conteudo);
+      } catch {
+        throw new RespostaInvalidaDaIA(`DeepSeek devolveu JSON inválido: ${conteudo.slice(0, 200)}`);
+      }
+
+      const parsed = respostaSchema.safeParse(json);
+      if (!parsed.success) {
+        throw new RespostaInvalidaDaIA(`Resposta da IA fora do formato: ${parsed.error.message}`);
+      }
+
+      // Cada operação é validada sozinha: uma malformada não derruba as outras.
+      const operacoes: Operacao[] = [];
+      const operacoesMalformadas: string[] = [];
+      for (const bruta of parsed.data.operacoes) {
+        const operacao = operacaoSchema.safeParse(bruta);
+        if (operacao.success) {
+          operacoes.push(operacao.data);
+        } else {
+          operacoesMalformadas.push(JSON.stringify(bruta).slice(0, 200));
+        }
+      }
+
+      const saida: RespostaConversa = {
+        resposta: parsed.data.resposta,
+        operacoes,
+        operacoesMalformadas,
+        finalizou: parsed.data.finalizou,
+        mostrarCardapio: parsed.data.mostrar_cardapio,
+        decisao: parsed.data.decisao,
+      };
+      return saida;
+    },
+  };
+}

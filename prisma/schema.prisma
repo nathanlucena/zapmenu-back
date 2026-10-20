@@ -1,0 +1,197 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Empreendedor {
+  id       String   @id @default(cuid())
+  telefone String   @unique
+  nome     String
+  criadoEm DateTime @default(now())
+
+  cardapio        Cardapio?
+  loja            Loja?
+  estadosConversa EstadoConversa[]
+  pedidos         Pedido[]
+}
+
+model Cardapio {
+  id             String       @id @default(cuid())
+  empreendedorId String       @unique
+  empreendedor   Empreendedor @relation(fields: [empreendedorId], references: [id])
+  publicadoEm    DateTime?
+
+  itens      ItemCardapio[]
+  categorias Categoria[]
+}
+
+model Categoria {
+  id         String   @id @default(cuid())
+  cardapioId String
+  cardapio   Cardapio @relation(fields: [cardapioId], references: [id])
+  nome       String
+  ordem      Int      @default(0)
+  criadoEm   DateTime @default(now())
+
+  itens ItemCardapio[]
+
+  @@unique([cardapioId, nome])
+  @@index([cardapioId])
+}
+
+/// Dados exibidos no cardápio público. Separada do Empreendedor para permitir
+/// mais de uma loja por empreendedor no futuro.
+model Loja {
+  id               String       @id @default(cuid())
+  empreendedorId   String       @unique
+  empreendedor     Empreendedor @relation(fields: [empreendedorId], references: [id])
+  nome             String?
+  descricao        String?
+  /// Texto exibido no cardápio; com endereço verificado, é o endereço formatado.
+  endereco         String?
+  cep              String?
+  logradouro       String?
+  /// Texto: aceita "s/n", "123A".
+  numero           String?
+  complemento      String?
+  bairro           String?
+  cidade           String?
+  uf               String?      @db.Char(2)
+  /// Vêm só da geocodificação (Google), nunca da IA.
+  latitude         Decimal?     @db.Decimal(9, 6)
+  longitude        Decimal?     @db.Decimal(9, 6)
+  /// location_type do Google (ROOFTOP, RANGE_INTERPOLATED, GEOMETRIC_CENTER, APPROXIMATE).
+  precisaoEndereco String?
+  aceitaRetirada   Boolean      @default(true)
+  fazEntrega       Boolean      @default(false)
+  /// [{ "ateKm": 1, "taxa": 0 }, { "ateKm": 3, "taxa": 5 }], ordenada por ateKm.
+  faixasEntrega    Json         @default("[]")
+  /// Depreciada: taxa fixa antiga. Loja com ela e sem faixas fica com a entrega indisponível.
+  taxaEntrega      Decimal?     @db.Decimal(10, 2)
+  pedidoMinimo     Decimal?     @db.Decimal(10, 2)
+  /// [{ "dia": "seg", "abre": "18:00", "fecha": "23:00" }]
+  horarios         Json         @default("[]")
+  atualizadoEm     DateTime     @updatedAt
+}
+
+model ItemCardapio {
+  id          String     @id @default(cuid())
+  cardapioId  String
+  cardapio    Cardapio   @relation(fields: [cardapioId], references: [id])
+  // Sem categoria = grupo "Outros"; remover a categoria solta os itens.
+  categoriaId String?
+  categoria   Categoria? @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+  nome        String
+  descricao   String?
+  precoBase   Decimal    @db.Decimal(10, 2)
+  imagemUrl   String?
+  ativo       Boolean    @default(true)
+  // Remoção lógica: pedidos antigos continuam apontando para o item.
+  removidoEm  DateTime?
+  criadoEm    DateTime   @default(now())
+
+  variacoes   Variacao[]
+  itensPedido ItemPedido[]
+
+  @@index([cardapioId])
+  @@index([categoriaId])
+}
+
+model Variacao {
+  id     String       @id @default(cuid())
+  itemId String
+  item   ItemCardapio @relation(fields: [itemId], references: [id])
+  nome   String
+  opcoes Json
+
+  @@index([itemId])
+}
+
+enum StatusPedido {
+  AGUARDANDO_CONFIRMACAO
+  AGUARDANDO_PAGAMENTO
+  PAGO
+  EXPIRADO
+  CANCELADO
+}
+
+model Pedido {
+  id              String       @id @default(cuid())
+  codigoCurto     String       @unique
+  empreendedorId  String
+  empreendedor    Empreendedor @relation(fields: [empreendedorId], references: [id])
+  telefoneCliente String?
+  status          StatusPedido @default(AGUARDANDO_CONFIRMACAO)
+  valorTotal      Decimal      @db.Decimal(10, 2)
+  expiraEm        DateTime
+  criadoEm        DateTime     @default(now())
+  confirmadoEm    DateTime?
+
+  itens     ItemPedido[]
+  pagamento Pagamento?
+
+  @@index([empreendedorId])
+  @@index([status, expiraEm])
+}
+
+model ItemPedido {
+  id                String       @id @default(cuid())
+  pedidoId          String
+  pedido            Pedido       @relation(fields: [pedidoId], references: [id])
+  itemCardapioId    String
+  itemCardapio      ItemCardapio @relation(fields: [itemCardapioId], references: [id])
+  quantidade        Int
+  variacaoEscolhida Json?
+  precoUnitario     Decimal      @db.Decimal(10, 2)
+
+  @@index([pedidoId])
+}
+
+enum StatusPagamento {
+  PENDENTE
+  APROVADO
+  REJEITADO
+  EXPIRADO
+}
+
+model Pagamento {
+  id                 String          @id @default(cuid())
+  pedidoId           String          @unique
+  pedido             Pedido          @relation(fields: [pedidoId], references: [id])
+  provedor           String          @default("mercado_pago")
+  idTransacaoExterno String          @unique
+  status             StatusPagamento @default(PENDENTE)
+  qrCodeBase64       String?         @db.Text
+  copiaCola          String?         @db.Text
+  criadoEm           DateTime        @default(now())
+  confirmadoEm       DateTime?
+}
+
+enum EstadoConversaEnum {
+  OCIOSO
+  CONVERSANDO
+  CONFIRMANDO
+}
+
+model EstadoConversa {
+  id             String             @id @default(cuid())
+  telefone       String             @unique
+  empreendedorId String?
+  empreendedor   Empreendedor?      @relation(fields: [empreendedorId], references: [id])
+  estado         EstadoConversaEnum @default(OCIOSO)
+  contexto       Json
+  atualizadoEm   DateTime           @updatedAt
+}
+
+model EventoProcessado {
+  id           String   @id @default(cuid())
+  origem       String
+  chaveExterna String
+  processadoEm DateTime @default(now())
+
+  @@unique([origem, chaveExterna])
+}

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+# Sessões do WhatsApp (tokens/, tokens.antigo/…) nunca vão para o git.
+tokens*/
+coverage/
+*.log

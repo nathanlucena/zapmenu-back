@@ -1,0 +1,61 @@
+export interface VariacaoOpcao {
+  nome: string;
+  precoAdicional: number;
+}
+
+export interface VariacaoInput {
+  nome: string;
+  opcoes: VariacaoOpcao[];
+}
+
+export interface ItemDraft {
+  nome: string;
+  descricao?: string;
+  precoBase: number;
+  imagemUrl?: string;
+  variacoes: VariacaoInput[];
+}
+
+export interface ItemCardapio extends ItemDraft {
+  id: string;
+  cardapioId: string;
+  categoriaId?: string;
+  ativo: boolean;
+}
+
+export interface HorarioLoja {
+  dia: string;
+  abre: string;
+  fecha: string;
+}
+
+export interface LojaPublica {
+  nome?: string;
+  descricao?: string;
+  endereco?: string;
+  aceitaRetirada: boolean;
+  /** false também para loja antiga que ainda não configurou endereço e faixas. */
+  fazEntrega: boolean;
+  /** Ordenadas por ateKm; o maior é o limite de entrega. */
+  faixasEntrega: { ateKm: number; taxa: number }[];
+  raioMaximoKm?: number;
+  /** Depreciada: taxa fixa antiga. */
+  taxaEntrega?: number;
+  pedidoMinimo?: number;
+  horarios: HorarioLoja[];
+}
+
+/** Uma seção do cardápio; `id` null é o grupo "Outros" (itens sem categoria). */
+export interface SecaoCardapio {
+  id: string | null;
+  nome: string;
+  itens: ItemCardapio[];
+}
+
+/** O que o app do cliente final precisa para montar o cardápio. */
+export interface CardapioPublico {
+  loja: LojaPublica | null;
+  secoes: SecaoCardapio[];
+  /** Todos os itens disponíveis, sem agrupamento (compatibilidade). */
+  itens: ItemCardapio[];
+}
