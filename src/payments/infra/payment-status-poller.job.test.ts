@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { criarMercadoPagoClientFake } from './__mocks__/mercado-pago.client.fake.js';
-import { criarPaymentsRepositoryFake } from './__mocks__/payments.repository.fake.js';
-import { criarOrdersRepositoryFake } from '../orders/__mocks__/orders.repository.fake.js';
-import { criarPedido, confirmarRecebimentoCliente } from '../orders/orders.service.js';
-import { criarGeradorCobranca } from './payments.service.js';
+import { criarMercadoPagoClientFake } from '../__mocks__/mercado-pago.client.fake.js';
+import { criarPaymentsRepositoryFake } from '../__mocks__/payments.repository.fake.js';
+import { criarOrdersRepositoryFake } from '../../orders/__mocks__/orders.repository.fake.js';
+import { criarPedido } from '../../orders/application/criar-pedido.js';
+import { confirmarRecebimentoCliente } from '../../orders/application/confirmar-recebimento-cliente.js';
+import { criarGeradorCobranca } from '../application/gerar-cobranca.js';
 import { iniciarJobPollingPagamentos } from './payment-status-poller.job.js';
-import type { Pedido } from '../orders/orders.types.js';
+import type { Pedido } from '../../orders/domain/pedido.js';
 
 describe('iniciarJobPollingPagamentos', () => {
   beforeEach(() => {
@@ -17,7 +18,7 @@ describe('iniciarJobPollingPagamentos', () => {
   });
 
   it('detecta pagamento aprovado via polling e notifica o empreendedor', async () => {
-    const mpClient = criarMercadoPagoClientFake();
+    const gatewayPix = criarMercadoPagoClientFake();
     const paymentsRepo = criarPaymentsRepositoryFake();
     const ordersRepo = criarOrdersRepositoryFake();
     const notificacoes: Pedido[] = [];
@@ -28,12 +29,12 @@ describe('iniciarJobPollingPagamentos', () => {
       20,
     );
     const pedido = await confirmarRecebimentoCliente(ordersRepo, criado.codigoCurto, '5511999998888');
-    await criarGeradorCobranca({ mpClient, paymentsRepo }).gerarCobranca(pedido);
+    await criarGeradorCobranca({ gatewayPix, paymentsRepo }).gerarCobranca(pedido);
     const pagamento = await paymentsRepo.buscarPorPedidoId(pedido.id);
-    mpClient.definirStatusConsulta(pagamento!.idTransacaoExterno, 'approved');
+    gatewayPix.definirStatusConsulta(pagamento!.idTransacaoExterno, 'approved');
 
     const timer = iniciarJobPollingPagamentos(
-      { mpClient, paymentsRepo, ordersRepo, notificarEmpreendedor: async (p) => void notificacoes.push(p) },
+      { gatewayPix, paymentsRepo, ordersRepo, notificarEmpreendedor: async (p) => void notificacoes.push(p) },
       1000,
       0,
     );

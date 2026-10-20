@@ -1,6 +1,6 @@
-import type { OrdersRepository } from './orders.repository.js';
-import { expirarPedidosPendentes } from './orders.service.js';
-import { logger } from '../shared/logger/logger.js';
+import type { OrdersRepository } from '../application/ports/orders.repository.js';
+import { expirarPedidosPendentes } from '../application/expirar-pedidos-pendentes.js';
+import { logger } from '../../shared/logger/logger.js';
 
 export async function executarCicloExpiracao(ordersRepo: OrdersRepository): Promise<void> {
   const expirados = await expirarPedidosPendentes(ordersRepo);

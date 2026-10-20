@@ -1,6 +1,6 @@
 import { DomainError } from '../../shared/errors/domain-error.js';
-import type { PaymentsRepository } from '../payments.repository.js';
-import type { Pagamento } from '../payments.types.js';
+import type { PaymentsRepository } from '../application/ports/payments.repository.js';
+import type { Pagamento } from '../domain/pagamento.js';
 
 let proximoId = 1;
 

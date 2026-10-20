@@ -1,4 +1,4 @@
-import type { Pedido, StatusPedido } from './orders.types.js';
+import type { Pedido, StatusPedido } from '../../domain/pedido.js';
 
 export interface OrdersRepository {
   codigoJaExiste(codigoCurto: string): Promise<boolean>;

@@ -1,8 +1,9 @@
-import { logger } from '../shared/logger/logger.js';
-import { pollarPagamentosPendentes, type PaymentsServiceDeps } from './payments.service.js';
+import { logger } from '../../shared/logger/logger.js';
+import { pollarPagamentosPendentes } from '../application/pollar-pagamentos-pendentes.js';
+import { type PaymentsServiceDeps } from '../application/dependencias.js';
 
 export async function executarCicloPolling(
-  deps: Pick<PaymentsServiceDeps, 'mpClient' | 'paymentsRepo' | 'ordersRepo' | 'notificarEmpreendedor'>,
+  deps: Pick<PaymentsServiceDeps, 'gatewayPix' | 'paymentsRepo' | 'ordersRepo' | 'notificarEmpreendedor'>,
   idadeMinimaSegundos: number,
 ): Promise<void> {
   const limiteIdade = new Date(Date.now() - idadeMinimaSegundos * 1000);
@@ -10,7 +11,7 @@ export async function executarCicloPolling(
 }
 
 export function iniciarJobPollingPagamentos(
-  deps: Pick<PaymentsServiceDeps, 'mpClient' | 'paymentsRepo' | 'ordersRepo' | 'notificarEmpreendedor'>,
+  deps: Pick<PaymentsServiceDeps, 'gatewayPix' | 'paymentsRepo' | 'ordersRepo' | 'notificarEmpreendedor'>,
   intervaloMs: number,
   idadeMinimaSegundos: number,
 ): NodeJS.Timeout {

@@ -6,13 +6,16 @@ import { criarViaCepClient } from './menu/endereco/viacep.client.js';
 import { criarInterpretadorDeepSeek } from './menu/gestao/deepseek-interpretador.js';
 import { criarGestaoRepositoryPrisma } from './menu/gestao/gestao.repository.prisma.js';
 import { criarMenuRepositoryPrisma } from './menu/menu.repository.prisma.js';
-import { iniciarJobExpiracaoPedidos } from './orders/order-expiration.job.js';
-import { criarOrdersRepositoryPrisma } from './orders/orders.repository.prisma.js';
-import type { Pedido } from './orders/orders.types.js';
-import { criarMercadoPagoClient } from './payments/mercado-pago.client.js';
-import { iniciarJobPollingPagamentos } from './payments/payment-status-poller.job.js';
-import { criarPaymentsRepositoryPrisma } from './payments/payments.repository.prisma.js';
-import { criarGeradorCobranca, type PaymentsServiceDeps } from './payments/payments.service.js';
+import { avisarPedidoPago } from './orders/application/avisar-pedido-pago.js';
+import { criarContatoEmpreendedoresPrisma } from './orders/infra/contato-empreendedores.prisma.js';
+import { iniciarJobExpiracaoPedidos } from './orders/infra/order-expiration.job.js';
+import { criarOrdersRepositoryPrisma } from './orders/infra/orders.repository.prisma.js';
+import type { Pedido } from './orders/domain/pedido.js';
+import { criarMercadoPagoClient } from './payments/infra/mercado-pago.client.js';
+import { iniciarJobPollingPagamentos } from './payments/infra/payment-status-poller.job.js';
+import { criarPaymentsRepositoryPrisma } from './payments/infra/payments.repository.prisma.js';
+import { criarGeradorCobranca } from './payments/application/gerar-cobranca.js';
+import type { PaymentsServiceDeps } from './payments/application/dependencias.js';
 import { getPrismaClient } from './shared/db/prisma-client.js';
 import { criarIdempotencyRepositoryPrisma } from './shared/idempotency/idempotency.repository.prisma.js';
 import { logger } from './shared/logger/logger.js';
@@ -31,7 +34,7 @@ async function main(): Promise<void> {
   const conversationRepo = criarConversationRepositoryPrisma(prisma);
   const gestaoRepo = criarGestaoRepositoryPrisma(prisma);
   const idempotency = criarIdempotencyRepositoryPrisma(prisma);
-  const mpClient = criarMercadoPagoClient(env.MERCADO_PAGO_ACCESS_TOKEN);
+  const gatewayPix = criarMercadoPagoClient(env.MERCADO_PAGO_ACCESS_TOKEN);
 
   const interpretador = env.DEEPSEEK_API_KEY
     ? criarInterpretadorDeepSeek({
@@ -57,24 +60,22 @@ async function main(): Promise<void> {
   // o "novo pedido pago" é notificado — atualizada a cada (re)conexão da sessão.
   let menuWhatsAppClient: WhatsAppClient | undefined;
 
-  async function notificarEmpreendedor(pedido: Pedido): Promise<void> {
-    if (!menuWhatsAppClient) {
-      logger.warn({ pedidoId: pedido.id }, 'sessão de gestão indisponível, não foi possível notificar empreendedor');
-      return;
-    }
-    const empreendedor = await prisma.empreendedor.findUnique({ where: { id: pedido.empreendedorId } });
-    if (!empreendedor) {
-      logger.warn({ pedidoId: pedido.id }, 'empreendedor não encontrado para notificação de pedido pago');
-      return;
-    }
-    await menuWhatsAppClient.sendText(
-      empreendedor.telefone,
-      `Novo pedido pago! ${pedido.codigoCurto} — R$ ${pedido.valorTotal.toFixed(2)}`,
-    );
-  }
+  const avisoPedidoPago = {
+    contatos: criarContatoEmpreendedoresPrisma(prisma),
+    mensageiro: {
+      async enviarTexto(telefone: string, texto: string) {
+        if (!menuWhatsAppClient) {
+          logger.warn('sessão de gestão indisponível, não foi possível notificar empreendedor');
+          return;
+        }
+        await menuWhatsAppClient.sendText(telefone, texto);
+      },
+    },
+  };
+  const notificarEmpreendedor = (pedido: Pedido) => avisarPedidoPago(avisoPedidoPago, pedido);
 
   const paymentsDeps: PaymentsServiceDeps = {
-    mpClient,
+    gatewayPix,
     paymentsRepo,
     ordersRepo,
     idempotency,

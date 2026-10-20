@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { criarOrdersRepositoryFake } from './__mocks__/orders.repository.fake.js';
-import { criarPedido } from './orders.service.js';
+import { criarOrdersRepositoryFake } from '../__mocks__/orders.repository.fake.js';
+import { criarPedido } from '../application/criar-pedido.js';
 import { iniciarJobExpiracaoPedidos } from './order-expiration.job.js';
 
 describe('iniciarJobExpiracaoPedidos', () => {

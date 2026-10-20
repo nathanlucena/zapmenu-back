@@ -1,4 +1,4 @@
-import type { Pagamento, StatusPagamento } from './payments.types.js';
+import type { Pagamento, StatusPagamento } from '../../domain/pagamento.js';
 
 export interface PaymentsRepository {
   criar(pagamento: Omit<Pagamento, 'id'>): Promise<Pagamento>;

@@ -3,18 +3,17 @@ import { criarMercadoPagoClientFake, type MercadoPagoClientFake } from './__mock
 import { criarPaymentsRepositoryFake } from './__mocks__/payments.repository.fake.js';
 import { criarOrdersRepositoryFake } from '../orders/__mocks__/orders.repository.fake.js';
 import { criarIdempotencyRepositoryFake } from '../shared/idempotency/__mocks__/idempotency.repository.fake.js';
-import { criarPedido, confirmarRecebimentoCliente } from '../orders/orders.service.js';
-import type { OrdersRepository } from '../orders/orders.repository.js';
+import { criarPedido } from '../orders/application/criar-pedido.js';
+import { confirmarRecebimentoCliente } from '../orders/application/confirmar-recebimento-cliente.js';
+import type { OrdersRepository } from '../orders/application/ports/orders.repository.js';
 import type { IdempotencyRepository } from '../shared/idempotency/idempotency.repository.js';
-import type { PaymentsRepository } from './payments.repository.js';
-import type { Pedido } from '../orders/orders.types.js';
-import {
-  criarGeradorCobranca,
-  mapearStatusMercadoPago,
-  pollarPagamentosPendentes,
-  processarWebhookPagamento,
-  type PaymentsServiceDeps,
-} from './payments.service.js';
+import type { PaymentsRepository } from './application/ports/payments.repository.js';
+import type { Pedido } from '../orders/domain/pedido.js';
+import { criarGeradorCobranca } from './application/gerar-cobranca.js';
+import { mapearStatusMercadoPago } from './domain/pagamento.js';
+import { pollarPagamentosPendentes } from './application/pollar-pagamentos-pendentes.js';
+import { processarNotificacaoPagamento } from './application/processar-notificacao-pagamento.js';
+import { type PaymentsServiceDeps } from './application/dependencias.js';
 
 describe('mapearStatusMercadoPago', () => {
   it('mapeia status conhecidos', () => {
@@ -40,19 +39,19 @@ async function criarPedidoConfirmado(ordersRepo: OrdersRepository): Promise<Pedi
 }
 
 describe('criarGeradorCobranca', () => {
-  let mpClient: MercadoPagoClientFake;
+  let gatewayPix: MercadoPagoClientFake;
   let paymentsRepo: PaymentsRepository;
   let ordersRepo: OrdersRepository;
 
   beforeEach(() => {
-    mpClient = criarMercadoPagoClientFake();
+    gatewayPix = criarMercadoPagoClientFake();
     paymentsRepo = criarPaymentsRepositoryFake();
     ordersRepo = criarOrdersRepositoryFake();
   });
 
   it('gera nova cobrança e persiste o pagamento', async () => {
     const pedido = await criarPedidoConfirmado(ordersRepo);
-    const gerador = criarGeradorCobranca({ mpClient, paymentsRepo });
+    const gerador = criarGeradorCobranca({ gatewayPix, paymentsRepo });
 
     const cobranca = await gerador.gerarCobranca(pedido);
 
@@ -65,7 +64,7 @@ describe('criarGeradorCobranca', () => {
 
   it('reutiliza cobrança existente sem chamar o Mercado Pago de novo', async () => {
     const pedido = await criarPedidoConfirmado(ordersRepo);
-    const gerador = criarGeradorCobranca({ mpClient, paymentsRepo });
+    const gerador = criarGeradorCobranca({ gatewayPix, paymentsRepo });
 
     const primeira = await gerador.gerarCobranca(pedido);
     const segunda = await gerador.gerarCobranca(pedido);
@@ -76,21 +75,22 @@ describe('criarGeradorCobranca', () => {
   });
 });
 
-describe('processarWebhookPagamento', () => {
+describe('processarNotificacaoPagamento', () => {
   let deps: PaymentsServiceDeps;
   let ordersRepo: OrdersRepository;
   let paymentsRepo: PaymentsRepository;
   let idempotency: IdempotencyRepository;
   let notificacoes: Pedido[];
+  let gateway: MercadoPagoClientFake;
 
   beforeEach(() => {
-    const mpClient = criarMercadoPagoClientFake();
+    gateway = criarMercadoPagoClientFake();
     paymentsRepo = criarPaymentsRepositoryFake();
     ordersRepo = criarOrdersRepositoryFake();
     idempotency = criarIdempotencyRepositoryFake();
     notificacoes = [];
     deps = {
-      mpClient,
+      gatewayPix: gateway,
       paymentsRepo,
       ordersRepo,
       idempotency,
@@ -106,10 +106,11 @@ describe('processarWebhookPagamento', () => {
     await gerador.gerarCobranca(pedido);
     const pagamento = await paymentsRepo.buscarPorPedidoId(pedido.id);
 
-    await processarWebhookPagamento(deps, {
+    gateway.definirStatusConsulta(pagamento!.idTransacaoExterno, 'approved');
+
+    await processarNotificacaoPagamento(deps, {
       eventoId: 'evt-1',
       idTransacaoExterno: pagamento!.idTransacaoExterno,
-      statusMp: 'approved',
     });
 
     const pedidoAtualizado = await ordersRepo.buscarPorId(pedido.id);
@@ -124,36 +125,49 @@ describe('processarWebhookPagamento', () => {
     await gerador.gerarCobranca(pedido);
     const pagamento = await paymentsRepo.buscarPorPedidoId(pedido.id);
 
-    const evento = { eventoId: 'evt-1', idTransacaoExterno: pagamento!.idTransacaoExterno, statusMp: 'approved' };
-    await processarWebhookPagamento(deps, evento);
-    await processarWebhookPagamento(deps, evento);
+    gateway.definirStatusConsulta(pagamento!.idTransacaoExterno, 'approved');
+
+    const evento = { eventoId: 'evt-1', idTransacaoExterno: pagamento!.idTransacaoExterno };
+    await processarNotificacaoPagamento(deps, evento);
+    await processarNotificacaoPagamento(deps, evento);
 
     expect(notificacoes).toHaveLength(1);
   });
 
+  it('usa o status consultado no gateway, não o que a notificação diz', async () => {
+    const pedido = await criarPedidoConfirmado(ordersRepo);
+    await criarGeradorCobranca(deps).gerarCobranca(pedido);
+    const pagamento = await paymentsRepo.buscarPorPedidoId(pedido.id);
+
+    await processarNotificacaoPagamento(deps, { eventoId: 'evt-falso', idTransacaoExterno: pagamento!.idTransacaoExterno });
+
+    expect((await ordersRepo.buscarPorId(pedido.id))?.status).toBe('AGUARDANDO_PAGAMENTO');
+    expect(notificacoes).toHaveLength(0);
+  });
+
   it('lança DomainError quando a transação não existe', async () => {
     await expect(
-      processarWebhookPagamento(deps, { eventoId: 'evt-x', idTransacaoExterno: 'nao-existe', statusMp: 'approved' }),
+      processarNotificacaoPagamento(deps, { eventoId: 'evt-x', idTransacaoExterno: 'nao-existe' }),
     ).rejects.toThrow('não encontrado');
   });
 });
 
 describe('pollarPagamentosPendentes', () => {
   it('confirma pagamentos que mudaram de status desde a última checagem', async () => {
-    const mpClient = criarMercadoPagoClientFake();
+    const gatewayPix = criarMercadoPagoClientFake();
     const paymentsRepo = criarPaymentsRepositoryFake();
     const ordersRepo = criarOrdersRepositoryFake();
     const notificacoes: Pedido[] = [];
 
     const pedido = await criarPedidoConfirmado(ordersRepo);
-    const gerador = criarGeradorCobranca({ mpClient, paymentsRepo });
+    const gerador = criarGeradorCobranca({ gatewayPix, paymentsRepo });
     await gerador.gerarCobranca(pedido);
     const pagamento = await paymentsRepo.buscarPorPedidoId(pedido.id);
 
-    mpClient.definirStatusConsulta(pagamento!.idTransacaoExterno, 'approved');
+    gatewayPix.definirStatusConsulta(pagamento!.idTransacaoExterno, 'approved');
 
     await pollarPagamentosPendentes(
-      { mpClient, paymentsRepo, ordersRepo, notificarEmpreendedor: async (p) => void notificacoes.push(p) },
+      { gatewayPix, paymentsRepo, ordersRepo, notificarEmpreendedor: async (p) => void notificacoes.push(p) },
       new Date(Date.now() + 60_000),
     );
 

@@ -1,6 +1,6 @@
 import { DomainError } from '../../shared/errors/domain-error.js';
-import type { OrdersRepository } from '../orders.repository.js';
-import type { Pedido } from '../orders.types.js';
+import type { OrdersRepository } from '../application/ports/orders.repository.js';
+import type { Pedido } from '../domain/pedido.js';
 
 let proximoId = 1;
 

@@ -1,8 +1,9 @@
 import cors from '@fastify/cors';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { MenuRepository } from '../menu/menu.repository.js';
-import type { OrdersRepository } from '../orders/orders.repository.js';
-import type { PaymentsServiceDeps } from '../payments/payments.service.js';
+import type { OrdersRepository } from '../orders/application/ports/orders.repository.js';
+import type { PaymentsServiceDeps } from '../payments/application/dependencias.js';
+import { criarCardapioDePrecos } from '../menu/cardapio-de-precos.js';
 import { errorHandler } from './middlewares/error-handler.js';
 import { registerRequestLogger } from './middlewares/request-logger.js';
 import { registerMenuRoutes } from './v1/menu.routes.js';
@@ -27,7 +28,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   app.register(
     async (v1) => {
       registerMenuRoutes(v1, deps.menuRepo);
-      registerOrdersRoutes(v1, deps.ordersRepo, deps.menuRepo, deps.pedidoTtlMinutos);
+      registerOrdersRoutes(v1, {
+        ordersRepo: deps.ordersRepo,
+        cardapioDePrecos: criarCardapioDePrecos(deps.menuRepo),
+        pedidoTtlMinutos: deps.pedidoTtlMinutos,
+      });
       if (deps.paymentsDeps) {
         registerMercadoPagoWebhook(v1, deps.paymentsDeps);
       }

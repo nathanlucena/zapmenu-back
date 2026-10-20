@@ -5,23 +5,24 @@ import { criarItem } from '../../src/menu/menu.service.js';
 import { criarOrdersRepositoryFake } from '../../src/orders/__mocks__/orders.repository.fake.js';
 import { criarMercadoPagoClientFake } from '../../src/payments/__mocks__/mercado-pago.client.fake.js';
 import { criarPaymentsRepositoryFake } from '../../src/payments/__mocks__/payments.repository.fake.js';
-import { criarGeradorCobranca, type PaymentsServiceDeps } from '../../src/payments/payments.service.js';
+import { criarGeradorCobranca } from '../../src/payments/application/gerar-cobranca.js';
+import { type PaymentsServiceDeps } from '../../src/payments/application/dependencias.js';
 import { criarIdempotencyRepositoryFake } from '../../src/shared/idempotency/__mocks__/idempotency.repository.fake.js';
-import { extrairCodigoPedido } from '../../src/orders/orders.service.js';
+import { extrairCodigoPedido } from '../../src/orders/domain/pedido.js';
 import { criarWhatsAppClientFake } from '../../src/whatsapp/__mocks__/whatsapp-client.fake.js';
 import { registrarOrdersInboundRouter } from '../../src/whatsapp/orders-session/orders-inbound.router.js';
-import type { Pedido } from '../../src/orders/orders.types.js';
+import type { Pedido } from '../../src/orders/domain/pedido.js';
 
 describe('Fluxo 2 — cliente compra e paga via WhatsApp (e2e in-process)', () => {
   it('carrinho -> confirmação no WhatsApp -> cobrança PIX -> webhook aprova -> pedido pago e empreendedor notificado', async () => {
     const ordersRepo = criarOrdersRepositoryFake();
-    const mpClient = criarMercadoPagoClientFake();
+    const gatewayPix = criarMercadoPagoClientFake();
     const paymentsRepo = criarPaymentsRepositoryFake();
     const idempotencyWebhook = criarIdempotencyRepositoryFake();
     const notificacoesAoEmpreendedor: Pedido[] = [];
 
     const paymentsDeps: PaymentsServiceDeps = {
-      mpClient,
+      gatewayPix,
       paymentsRepo,
       ordersRepo,
       idempotency: idempotencyWebhook,
@@ -82,7 +83,7 @@ describe('Fluxo 2 — cliente compra e paga via WhatsApp (e2e in-process)', () =
     expect(pagamento?.status).toBe('PENDENTE');
 
     // 4. Mercado Pago avisa via webhook que o PIX foi aprovado.
-    mpClient.definirStatusConsulta(pagamento!.idTransacaoExterno, 'approved');
+    gatewayPix.definirStatusConsulta(pagamento!.idTransacaoExterno, 'approved');
     const respostaWebhook = await app.inject({
       method: 'POST',
       url: '/v1/webhooks/mercado-pago',

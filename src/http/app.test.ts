@@ -83,7 +83,7 @@ describe('POST /v1/orders', () => {
     expect(resposta.json().pedido.valorTotal).toBe(10);
   });
 
-  it('recusa item que não está no cardápio', async () => {
+  it('recusa item que não está no cardápio com ITEM_INDISPONIVEL', async () => {
     const { app } = await montarAppComBolo();
 
     const resposta = await app.inject({
@@ -93,7 +93,7 @@ describe('POST /v1/orders', () => {
     });
 
     expect(resposta.statusCode).toBe(400);
-    expect(resposta.json().erro).toContain('não está mais disponível');
+    expect(resposta.json().codigo).toBe('ITEM_INDISPONIVEL');
   });
 
   it('retorna 400 para payload com schema inválido', async () => {

@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { criarWhatsAppClientFake, type WhatsAppClientFake } from '../__mocks__/whatsapp-client.fake.js';
 import { criarOrdersRepositoryFake } from '../../orders/__mocks__/orders.repository.fake.js';
 import { criarIdempotencyRepositoryFake } from '../../shared/idempotency/__mocks__/idempotency.repository.fake.js';
-import { criarPedido } from '../../orders/orders.service.js';
-import type { OrdersRepository } from '../../orders/orders.repository.js';
-import { registrarOrdersInboundRouter, type GeradorCobranca } from './orders-inbound.router.js';
+import { criarPedido } from '../../orders/application/criar-pedido.js';
+import type { OrdersRepository } from '../../orders/application/ports/orders.repository.js';
+import { registrarOrdersInboundRouter } from './orders-inbound.router.js';
+import { type GeradorCobranca } from '../../payments/application/gerar-cobranca.js';
 import type { MensagemRecebida } from '../whatsapp-client.interface.js';
 
 function mensagem(overrides: Partial<MensagemRecebida> = {}): MensagemRecebida {

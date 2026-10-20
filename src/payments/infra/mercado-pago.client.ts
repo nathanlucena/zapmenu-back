@@ -1,24 +1,4 @@
-export interface CriarCobrancaPixInput {
-  valor: number;
-  descricao: string;
-  referenciaExterna: string;
-}
-
-export interface CobrancaPixCriada {
-  idTransacaoExterno: string;
-  statusMp: string;
-  copiaCola?: string;
-  qrCodeBase64?: string;
-}
-
-export interface ConsultaPagamento {
-  statusMp: string;
-}
-
-export interface MercadoPagoClient {
-  criarCobrancaPix(input: CriarCobrancaPixInput): Promise<CobrancaPixCriada>;
-  consultarPagamento(idTransacaoExterno: string): Promise<ConsultaPagamento>;
-}
+import type { GatewayPix } from '../application/ports/gateway-pix.js';
 
 interface RespostaPagamentoMp {
   id: number | string;
@@ -33,7 +13,7 @@ interface RespostaPagamentoMp {
 
 const BASE_URL = 'https://api.mercadopago.com/v1/payments';
 
-export function criarMercadoPagoClient(accessToken: string, fetchFn: typeof fetch = fetch): MercadoPagoClient {
+export function criarMercadoPagoClient(accessToken: string, fetchFn: typeof fetch = fetch): GatewayPix {
   return {
     async criarCobrancaPix({ valor, descricao, referenciaExterna }) {
       const resposta = await fetchFn(BASE_URL, {

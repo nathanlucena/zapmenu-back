@@ -1,21 +1,14 @@
 import { DomainError } from '../../shared/errors/domain-error.js';
 import type { IdempotencyRepository } from '../../shared/idempotency/idempotency.repository.js';
 import { logger } from '../../shared/logger/logger.js';
-import { confirmarRecebimentoCliente, extrairCodigoPedido } from '../../orders/orders.service.js';
-import type { OrdersRepository } from '../../orders/orders.repository.js';
-import type { Pedido } from '../../orders/orders.types.js';
+import { confirmarRecebimentoCliente } from '../../orders/application/confirmar-recebimento-cliente.js';
+import { extrairCodigoPedido } from '../../orders/domain/pedido.js';
+import type { OrdersRepository } from '../../orders/application/ports/orders.repository.js';
+import type { Pedido } from '../../orders/domain/pedido.js';
+import type { GeradorCobranca } from '../../payments/application/gerar-cobranca.js';
 import type { MensagemRecebida, WhatsAppClient } from '../whatsapp-client.interface.js';
 
 const ORIGEM_IDEMPOTENCIA = 'wppconnect_orders';
-
-export interface CobrancaGerada {
-  copiaCola: string;
-  qrCodeBase64?: string;
-}
-
-export interface GeradorCobranca {
-  gerarCobranca(pedido: Pedido): Promise<CobrancaGerada>;
-}
 
 export interface OrdersInboundRouterDeps {
   whatsapp: WhatsAppClient;

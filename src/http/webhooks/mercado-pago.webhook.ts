@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { processarWebhookPagamento, type PaymentsServiceDeps } from '../../payments/payments.service.js';
+import { processarNotificacaoPagamento } from '../../payments/application/processar-notificacao-pagamento.js';
+import type { PaymentsServiceDeps } from '../../payments/application/dependencias.js';
+import { DomainError } from '../../shared/errors/domain-error.js';
 import { logger } from '../../shared/logger/logger.js';
 
 const webhookBodySchema = z.object({
@@ -20,12 +22,15 @@ export function registerMercadoPagoWebhook(app: FastifyInstance, deps: PaymentsS
     const idTransacaoExterno = String(data.id);
     const eventoId = notificacaoId ? String(notificacaoId) : `${tipo ?? 'payment'}:${idTransacaoExterno}`;
 
-    const consulta = await deps.mpClient.consultarPagamento(idTransacaoExterno);
-
     try {
-      await processarWebhookPagamento(deps, { eventoId, idTransacaoExterno, statusMp: consulta.statusMp });
+      await processarNotificacaoPagamento(deps, { eventoId, idTransacaoExterno });
     } catch (erro) {
-      logger.warn({ err: erro, idTransacaoExterno }, 'Falha ao processar webhook do Mercado Pago');
+      // Notificação de um pagamento que não é nosso: responder 200 evita reenvios
+      // inúteis. Qualquer outra falha vira 500 para o Mercado Pago tentar de novo.
+      if (!(erro instanceof DomainError)) {
+        throw erro;
+      }
+      logger.warn({ err: erro, idTransacaoExterno }, 'Notificação do Mercado Pago ignorada');
     }
 
     return reply.status(200).send({ ok: true });

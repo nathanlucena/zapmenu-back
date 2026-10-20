@@ -1,6 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
-import type { PaymentsRepository } from './payments.repository.js';
-import type { Pagamento, StatusPagamento } from './payments.types.js';
+import type { PaymentsRepository } from '../application/ports/payments.repository.js';
+import type { Pagamento, StatusPagamento } from '../domain/pagamento.js';
 
 type PagamentoDb = Awaited<ReturnType<PrismaClient['pagamento']['create']>>;
 

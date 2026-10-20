@@ -1,6 +1,6 @@
-import type { CobrancaPixCriada, MercadoPagoClient } from '../mercado-pago.client.js';
+import type { CobrancaPixCriada, GatewayPix } from '../application/ports/gateway-pix.js';
 
-export interface MercadoPagoClientFake extends MercadoPagoClient {
+export interface MercadoPagoClientFake extends GatewayPix {
   definirStatusConsulta(idTransacaoExterno: string, statusMp: string): void;
 }
 

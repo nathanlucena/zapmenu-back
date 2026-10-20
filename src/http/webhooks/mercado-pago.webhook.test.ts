@@ -3,14 +3,16 @@ import { criarMercadoPagoClientFake } from '../../payments/__mocks__/mercado-pag
 import { criarPaymentsRepositoryFake } from '../../payments/__mocks__/payments.repository.fake.js';
 import { criarOrdersRepositoryFake } from '../../orders/__mocks__/orders.repository.fake.js';
 import { criarIdempotencyRepositoryFake } from '../../shared/idempotency/__mocks__/idempotency.repository.fake.js';
-import { criarPedido, confirmarRecebimentoCliente } from '../../orders/orders.service.js';
-import { criarGeradorCobranca, type PaymentsServiceDeps } from '../../payments/payments.service.js';
+import { criarPedido } from '../../orders/application/criar-pedido.js';
+import { confirmarRecebimentoCliente } from '../../orders/application/confirmar-recebimento-cliente.js';
+import { criarGeradorCobranca } from '../../payments/application/gerar-cobranca.js';
+import { type PaymentsServiceDeps } from '../../payments/application/dependencias.js';
 import { buildApp } from '../app.js';
 import { criarMenuRepositoryFake } from '../../menu/__mocks__/menu.repository.fake.js';
 
 describe('POST /v1/webhooks/mercado-pago', () => {
   it('confirma pagamento aprovado e notifica o empreendedor', async () => {
-    const mpClient = criarMercadoPagoClientFake();
+    const gatewayPix = criarMercadoPagoClientFake();
     const paymentsRepo = criarPaymentsRepositoryFake();
     const ordersRepo = criarOrdersRepositoryFake();
     const notificacoes: string[] = [];
@@ -21,13 +23,13 @@ describe('POST /v1/webhooks/mercado-pago', () => {
       20,
     );
     const pedido = await confirmarRecebimentoCliente(ordersRepo, criado.codigoCurto, '5511999998888');
-    const gerador = criarGeradorCobranca({ mpClient, paymentsRepo });
+    const gerador = criarGeradorCobranca({ gatewayPix, paymentsRepo });
     await gerador.gerarCobranca(pedido);
     const pagamento = await paymentsRepo.buscarPorPedidoId(pedido.id);
-    mpClient.definirStatusConsulta(pagamento!.idTransacaoExterno, 'approved');
+    gatewayPix.definirStatusConsulta(pagamento!.idTransacaoExterno, 'approved');
 
     const paymentsDeps: PaymentsServiceDeps = {
-      mpClient,
+      gatewayPix,
       paymentsRepo,
       ordersRepo,
       idempotency: criarIdempotencyRepositoryFake(),
@@ -61,7 +63,7 @@ describe('POST /v1/webhooks/mercado-pago', () => {
       pedidoTtlMinutos: 20,
       frontendAllowedOrigin: 'http://localhost:3001',
       paymentsDeps: {
-        mpClient: criarMercadoPagoClientFake(),
+        gatewayPix: criarMercadoPagoClientFake(),
         paymentsRepo: criarPaymentsRepositoryFake(),
         ordersRepo: criarOrdersRepositoryFake(),
         idempotency: criarIdempotencyRepositoryFake(),

@@ -1,17 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { criarOrdersRepositoryFake } from './__mocks__/orders.repository.fake.js';
-import {
-  calcularValorTotal,
-  confirmarPagamento,
-  confirmarRecebimentoCliente,
-  criarPedido,
-  estaExpirado,
-  expirarPedidosPendentes,
-  extrairCodigoPedido,
-  podeTransicionar,
-  validarCarrinho,
-} from './orders.service.js';
-import type { CarrinhoInput } from './orders.types.js';
+import { calcularValorTotal, estaExpirado, extrairCodigoPedido, podeTransicionar, validarCarrinho } from './domain/pedido.js';
+import { confirmarPagamento } from './application/confirmar-pagamento.js';
+import { confirmarRecebimentoCliente } from './application/confirmar-recebimento-cliente.js';
+import { criarPedido } from './application/criar-pedido.js';
+import { expirarPedidosPendentes } from './application/expirar-pedidos-pendentes.js';
+import type { CarrinhoInput } from './domain/pedido.js';
 
 function carrinhoValido(overrides: Partial<CarrinhoInput> = {}): CarrinhoInput {
   return {

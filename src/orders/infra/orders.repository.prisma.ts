@@ -1,6 +1,6 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
-import type { OrdersRepository } from './orders.repository.js';
-import type { ItemPedidoInput, Pedido, StatusPedido } from './orders.types.js';
+import type { OrdersRepository } from '../application/ports/orders.repository.js';
+import type { ItemPedidoInput, Pedido, StatusPedido } from '../domain/pedido.js';
 
 type PedidoComItens = Prisma.PedidoGetPayload<{ include: { itens: true } }>;
 
