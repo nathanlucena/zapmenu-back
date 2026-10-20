@@ -42,16 +42,25 @@ describe('GET /v1/menu/:empreendedorId', () => {
 });
 
 describe('POST /v1/orders', () => {
+  async function montarAppComBolo(precoBase = 10) {
+    const menuRepo = criarMenuRepositoryFake();
+    const bolo = await criarItem(menuRepo, 'emp-1', { nome: 'Bolo', precoBase, variacoes: [] });
+    const app = buildApp({
+      menuRepo,
+      ordersRepo: criarOrdersRepositoryFake(),
+      pedidoTtlMinutos: 20,
+      frontendAllowedOrigin: 'http://localhost:3001',
+    });
+    return { app, bolo };
+  }
+
   it('cria pedido a partir de um carrinho válido', async () => {
-    const app = montarApp();
+    const { app, bolo } = await montarAppComBolo();
 
     const resposta = await app.inject({
       method: 'POST',
       url: '/v1/orders',
-      payload: {
-        empreendedorId: 'emp-1',
-        itens: [{ itemCardapioId: 'item-1', quantidade: 2, precoUnitario: 10 }],
-      },
+      payload: { empreendedorId: 'emp-1', itens: [{ itemCardapioId: bolo.id, quantidade: 2 }] },
     });
 
     expect(resposta.statusCode).toBe(201);
@@ -59,6 +68,32 @@ describe('POST /v1/orders', () => {
     expect(corpo.pedido.codigoCurto).toMatch(/^PED-[A-Z0-9]{4}$/);
     expect(corpo.pedido.valorTotal).toBe(20);
     expect(corpo.pedido.status).toBe('AGUARDANDO_CONFIRMACAO');
+  });
+
+  it('usa o preço do cardápio e ignora o precoUnitario enviado pelo cliente', async () => {
+    const { app, bolo } = await montarAppComBolo(10);
+
+    const resposta = await app.inject({
+      method: 'POST',
+      url: '/v1/orders',
+      payload: { empreendedorId: 'emp-1', itens: [{ itemCardapioId: bolo.id, quantidade: 1, precoUnitario: 0.01 }] },
+    });
+
+    expect(resposta.statusCode).toBe(201);
+    expect(resposta.json().pedido.valorTotal).toBe(10);
+  });
+
+  it('recusa item que não está no cardápio', async () => {
+    const { app } = await montarAppComBolo();
+
+    const resposta = await app.inject({
+      method: 'POST',
+      url: '/v1/orders',
+      payload: { empreendedorId: 'emp-1', itens: [{ itemCardapioId: 'item-inexistente', quantidade: 1 }] },
+    });
+
+    expect(resposta.statusCode).toBe(400);
+    expect(resposta.json().erro).toContain('não está mais disponível');
   });
 
   it('retorna 400 para payload com schema inválido', async () => {

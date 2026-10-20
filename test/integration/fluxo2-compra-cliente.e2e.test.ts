@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildApp } from '../../src/http/app.js';
 import { criarMenuRepositoryFake } from '../../src/menu/__mocks__/menu.repository.fake.js';
+import { criarItem } from '../../src/menu/menu.service.js';
 import { criarOrdersRepositoryFake } from '../../src/orders/__mocks__/orders.repository.fake.js';
 import { criarMercadoPagoClientFake } from '../../src/payments/__mocks__/mercado-pago.client.fake.js';
 import { criarPaymentsRepositoryFake } from '../../src/payments/__mocks__/payments.repository.fake.js';
@@ -29,8 +30,11 @@ describe('Fluxo 2 — cliente compra e paga via WhatsApp (e2e in-process)', () =
       },
     };
 
+    const menuRepo = criarMenuRepositoryFake();
+    const bolo = await criarItem(menuRepo, 'emp-1', { nome: 'Bolo de pote', precoBase: 25, variacoes: [] });
+
     const app = buildApp({
-      menuRepo: criarMenuRepositoryFake(),
+      menuRepo,
       ordersRepo,
       pedidoTtlMinutos: 20,
       frontendAllowedOrigin: 'http://localhost:3001',
@@ -43,12 +47,13 @@ describe('Fluxo 2 — cliente compra e paga via WhatsApp (e2e in-process)', () =
       url: '/v1/orders',
       payload: {
         empreendedorId: 'emp-1',
-        itens: [{ itemCardapioId: 'bolo-1', quantidade: 2, precoUnitario: 25 }],
+        itens: [{ itemCardapioId: bolo.id, quantidade: 2 }],
       },
     });
     expect(respostaCarrinho.statusCode).toBe(201);
     const { pedido } = respostaCarrinho.json() as { pedido: Pedido & { expiraEm: string } };
     expect(pedido.status).toBe('AGUARDANDO_CONFIRMACAO');
+    expect(pedido.valorTotal).toBe(50);
 
     // 2. O app gera o link wa.me com só o código curto; o cliente manda essa mensagem.
     const linkGerado = `Confirmar pedido ${pedido.codigoCurto}`;
