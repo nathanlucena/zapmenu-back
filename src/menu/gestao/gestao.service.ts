@@ -4,6 +4,7 @@ import { contextoInicial, type Contexto, type Estado } from '../conversation/con
 import { buscarEndereco, linkMapa, normalizarCep } from '../endereco/endereco.service.js';
 import type { EnderecoDeps } from '../endereco/endereco.types.js';
 import { entregaConfigurada } from '../entrega.js';
+import type { CadastroEmpreendedores } from './cadastro-empreendedores.js';
 import { reconhecerComando } from './comandos.js';
 import type { GestaoRepository, SnapshotCardapio } from './gestao.repository.js';
 import type { InterpretadorMensagem, RespostaConversa } from './interpretador.js';
@@ -32,6 +33,9 @@ const MAX_HISTORICO = 20;
 /** Tamanho máximo de cada mensagem guardada no histórico. */
 const MAX_CARACTERES_HISTORICO = 500;
 
+export const RESPOSTA_NUMERO_SEM_ACESSO =
+  'Este número ainda não está cadastrado no ZapMenu. Fale com a gente para liberar o acesso.';
+
 export interface GestaoDeps {
   conversationRepo: ConversationRepository;
   gestaoRepo: GestaoRepository;
@@ -39,7 +43,7 @@ export interface GestaoDeps {
   interpretador?: InterpretadorMensagem;
   /** Sem ele (sem chave do Google) o cadastro de endereço avisa que está indisponível. */
   endereco?: EnderecoDeps;
-  resolverEmpreendedorId: (telefone: string) => Promise<string>;
+  cadastro: CadastroEmpreendedores;
 }
 
 export interface MensagemGestao {
@@ -67,8 +71,12 @@ interface Rodada {
  * e só grava no banco depois do "sim".
  */
 export async function processarMensagemGestao(mensagem: MensagemGestao, deps: GestaoDeps): Promise<string[]> {
+  const empreendedorId = await deps.cadastro.empreendedorIdDoTelefone(mensagem.telefone);
+  if (!empreendedorId) {
+    logger.info({ telefone: mensagem.telefone }, '🚫 número sem acesso à gestão');
+    return [RESPOSTA_NUMERO_SEM_ACESSO];
+  }
   const conversa = await deps.conversationRepo.obterOuCriar(mensagem.telefone);
-  const empreendedorId = await deps.resolverEmpreendedorId(mensagem.telefone);
 
   const rodada: Rodada = {
     deps,

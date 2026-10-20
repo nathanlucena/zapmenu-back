@@ -38,6 +38,12 @@ const envSchema = z.object({
     .default('')
     .transform((valor) => valor.split(',').map((numero) => numero.replace(/\D/g, '')).filter(Boolean)),
 
+  // Telefones que podem usar o número de gestão. Vazio = qualquer um (com aviso no boot).
+  GESTAO_TELEFONES_PERMITIDOS: z
+    .string()
+    .default('')
+    .transform((valor) => valor.split(',').map((numero) => numero.replace(/\D/g, '')).filter(Boolean)),
+
   // IA que interpreta as mensagens de gestão. Sem chave, só as palavras-chave funcionam.
   DEEPSEEK_API_KEY: z.string().optional(),
   DEEPSEEK_MODEL: z.string().default('deepseek-flash'),

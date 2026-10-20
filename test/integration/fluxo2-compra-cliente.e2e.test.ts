@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { headersAssinados, SEGREDO_WEBHOOK_TESTE } from '../../src/http/webhooks/__mocks__/assinar-webhook-mercado-pago.js';
 import { buildApp } from '../../src/http/app.js';
 import { criarMenuRepositoryFake } from '../../src/menu/__mocks__/menu.repository.fake.js';
 import { criarItem } from '../../src/menu/menu.service.js';
@@ -40,6 +41,7 @@ describe('Fluxo 2 — cliente compra e paga via WhatsApp (e2e in-process)', () =
       pedidoTtlMinutos: 20,
       frontendAllowedOrigin: 'http://localhost:3001',
       paymentsDeps,
+      mercadoPagoWebhookSecret: SEGREDO_WEBHOOK_TESTE,
     });
 
     // 1. Cliente monta o carrinho no app e o frontend cria o pedido via API.
@@ -87,6 +89,7 @@ describe('Fluxo 2 — cliente compra e paga via WhatsApp (e2e in-process)', () =
     const respostaWebhook = await app.inject({
       method: 'POST',
       url: '/v1/webhooks/mercado-pago',
+      headers: headersAssinados(pagamento!.idTransacaoExterno),
       payload: { id: 555, type: 'payment', data: { id: pagamento!.idTransacaoExterno } },
     });
     expect(respostaWebhook.statusCode).toBe(200);
@@ -101,6 +104,7 @@ describe('Fluxo 2 — cliente compra e paga via WhatsApp (e2e in-process)', () =
     await app.inject({
       method: 'POST',
       url: '/v1/webhooks/mercado-pago',
+      headers: headersAssinados(pagamento!.idTransacaoExterno),
       payload: { id: 555, type: 'payment', data: { id: pagamento!.idTransacaoExterno } },
     });
     expect(notificacoesAoEmpreendedor).toHaveLength(1);

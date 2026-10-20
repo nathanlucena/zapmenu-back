@@ -1,7 +1,8 @@
 import { create, defaultLogger, SocketState, type Whatsapp } from '@wppconnect-team/wppconnect';
 import { logger as loggerRaiz } from '../../shared/logger/logger.js';
 import type { WhatsAppClient } from '../whatsapp-client.interface.js';
-import { criarWppConnectClient, telefoneDoChatId, type WppConnectClientOptions } from './wppconnect-client.js';
+import { telefoneDoChatId } from '../../shared/telefone/telefone.js';
+import { criarWppConnectClient, type WppConnectClientOptions } from './wppconnect-client.js';
 
 export interface SessaoWppConnectConfig {
   sessionName: string;

@@ -5,6 +5,7 @@ import { criarEnderecoFake, type EnderecoFake } from '../endereco/__mocks__/ende
 import type { GestaoRepository, SnapshotCardapio } from './gestao.repository.js';
 import { processarMensagemGestao, type GestaoDeps } from './gestao.service.js';
 import type { InterpretadorMensagem, Operacao, RespostaConversa } from './interpretador.js';
+import { criarCadastroPorLista } from './cadastro-empreendedores.js';
 
 const TELEFONE = '5581999990000';
 
@@ -63,7 +64,7 @@ function criarCenario(loja: DadosLoja = {}, opcoes: { semEndereco?: boolean } = 
     gestaoRepo,
     interpretador,
     endereco: opcoes.semEndereco ? undefined : endereco,
-    resolverEmpreendedorId: async (telefone) => telefone,
+    cadastro: criarCadastroPorLista([]),
   };
 
   return {

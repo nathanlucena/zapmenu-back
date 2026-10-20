@@ -16,6 +16,8 @@ export interface AppDeps {
   pedidoTtlMinutos: number;
   frontendAllowedOrigin: string;
   paymentsDeps?: PaymentsServiceDeps;
+  /** Obrigatório junto com paymentsDeps: o webhook só aceita notificações assinadas. */
+  mercadoPagoWebhookSecret?: string;
 }
 
 export function buildApp(deps: AppDeps): FastifyInstance {
@@ -34,7 +36,10 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         pedidoTtlMinutos: deps.pedidoTtlMinutos,
       });
       if (deps.paymentsDeps) {
-        registerMercadoPagoWebhook(v1, deps.paymentsDeps);
+        if (!deps.mercadoPagoWebhookSecret) {
+          throw new Error('mercadoPagoWebhookSecret é obrigatório para registrar o webhook do Mercado Pago.');
+        }
+        registerMercadoPagoWebhook(v1, deps.paymentsDeps, { segredo: deps.mercadoPagoWebhookSecret });
       }
     },
     { prefix: '/v1' },

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { headersAssinados, SEGREDO_WEBHOOK_TESTE } from './__mocks__/assinar-webhook-mercado-pago.js';
 import { criarMercadoPagoClientFake } from '../../payments/__mocks__/mercado-pago.client.fake.js';
 import { criarPaymentsRepositoryFake } from '../../payments/__mocks__/payments.repository.fake.js';
 import { criarOrdersRepositoryFake } from '../../orders/__mocks__/orders.repository.fake.js';
@@ -44,11 +45,13 @@ describe('POST /v1/webhooks/mercado-pago', () => {
       pedidoTtlMinutos: 20,
       frontendAllowedOrigin: 'http://localhost:3001',
       paymentsDeps,
+      mercadoPagoWebhookSecret: SEGREDO_WEBHOOK_TESTE,
     });
 
     const resposta = await app.inject({
       method: 'POST',
       url: '/v1/webhooks/mercado-pago',
+      headers: headersAssinados(pagamento!.idTransacaoExterno),
       payload: { id: 999, type: 'payment', data: { id: pagamento!.idTransacaoExterno } },
     });
 
@@ -69,10 +72,51 @@ describe('POST /v1/webhooks/mercado-pago', () => {
         idempotency: criarIdempotencyRepositoryFake(),
         notificarEmpreendedor: async () => {},
       },
+      mercadoPagoWebhookSecret: SEGREDO_WEBHOOK_TESTE,
     });
 
     const resposta = await app.inject({ method: 'POST', url: '/v1/webhooks/mercado-pago', payload: {} });
 
     expect(resposta.statusCode).toBe(400);
+  });
+
+  it('recusa com 401 e não consulta o Mercado Pago quando a assinatura não bate', async () => {
+    const gatewayPix = criarMercadoPagoClientFake();
+    let consultas = 0;
+    const consultarOriginal = gatewayPix.consultarPagamento.bind(gatewayPix);
+    gatewayPix.consultarPagamento = async (id) => {
+      consultas++;
+      return consultarOriginal(id);
+    };
+    const app = buildApp({
+      menuRepo: criarMenuRepositoryFake(),
+      ordersRepo: criarOrdersRepositoryFake(),
+      pedidoTtlMinutos: 20,
+      frontendAllowedOrigin: 'http://localhost:3001',
+      paymentsDeps: {
+        gatewayPix,
+        paymentsRepo: criarPaymentsRepositoryFake(),
+        ordersRepo: criarOrdersRepositoryFake(),
+        idempotency: criarIdempotencyRepositoryFake(),
+        notificarEmpreendedor: async () => {},
+      },
+      mercadoPagoWebhookSecret: SEGREDO_WEBHOOK_TESTE,
+    });
+
+    const semAssinatura = await app.inject({
+      method: 'POST',
+      url: '/v1/webhooks/mercado-pago',
+      payload: { id: 1, type: 'payment', data: { id: 'mp-1' } },
+    });
+    const assinadaComOutroSegredo = await app.inject({
+      method: 'POST',
+      url: '/v1/webhooks/mercado-pago',
+      headers: headersAssinados('mp-1', 'outro-segredo'),
+      payload: { id: 1, type: 'payment', data: { id: 'mp-1' } },
+    });
+
+    expect(semAssinatura.statusCode).toBe(401);
+    expect(assinadaComOutroSegredo.statusCode).toBe(401);
+    expect(consultas).toBe(0);
   });
 });

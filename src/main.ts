@@ -3,6 +3,7 @@ import { buildApp } from './http/app.js';
 import { criarConversationRepositoryPrisma } from './menu/conversation/conversation.repository.prisma.js';
 import { criarGoogleGeocodingClient } from './menu/endereco/google-geocoding.client.js';
 import { criarViaCepClient } from './menu/endereco/viacep.client.js';
+import { criarCadastroPorLista } from './menu/gestao/cadastro-empreendedores.js';
 import { criarInterpretadorDeepSeek } from './menu/gestao/deepseek-interpretador.js';
 import { criarGestaoRepositoryPrisma } from './menu/gestao/gestao.repository.prisma.js';
 import { criarMenuRepositoryPrisma } from './menu/menu.repository.prisma.js';
@@ -56,6 +57,11 @@ async function main(): Promise<void> {
     logger.warn('GOOGLE_MAPS_API_KEY não definida: o cadastro de endereço (entrega por distância) fica indisponível');
   }
 
+  const cadastroEmpreendedores = criarCadastroPorLista(env.GESTAO_TELEFONES_PERMITIDOS);
+  if (env.GESTAO_TELEFONES_PERMITIDOS.length === 0) {
+    logger.warn('GESTAO_TELEFONES_PERMITIDOS vazia: qualquer número pode usar a gestão do cardápio');
+  }
+
   // A sessão de gestão é quem fala com os empreendedores, então é por ela que
   // o "novo pedido pago" é notificado — atualizada a cada (re)conexão da sessão.
   let menuWhatsAppClient: WhatsAppClient | undefined;
@@ -102,7 +108,7 @@ async function main(): Promise<void> {
           idempotency,
           interpretador,
           endereco,
-          resolverEmpreendedorId: async (telefone) => telefone,
+          cadastro: cadastroEmpreendedores,
         });
       },
     );
@@ -143,6 +149,7 @@ async function main(): Promise<void> {
     pedidoTtlMinutos: env.PEDIDO_TTL_MINUTOS,
     frontendAllowedOrigin: env.FRONTEND_ALLOWED_ORIGIN,
     paymentsDeps,
+    mercadoPagoWebhookSecret: env.MERCADO_PAGO_WEBHOOK_SECRET,
   });
 
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
