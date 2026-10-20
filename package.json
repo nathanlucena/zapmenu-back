@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "smoke": "tsx --env-file-if-exists=.env scripts/smoke.ts",
+    "loja-demo": "tsx --env-file-if-exists=.env scripts/loja-demo.ts",
     "lint:deps": "depcruise src --config .dependency-cruiser.cjs",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "prisma:generate": "prisma generate",
