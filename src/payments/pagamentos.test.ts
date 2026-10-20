@@ -17,9 +17,11 @@ import { type PaymentsServiceDeps } from './application/dependencias.js';
 
 describe('mapearStatusMercadoPago', () => {
   it('mapeia status conhecidos', () => {
-    expect(mapearStatusMercadoPago('approved')).toBe('APROVADO');
-    expect(mapearStatusMercadoPago('rejected')).toBe('REJEITADO');
-    expect(mapearStatusMercadoPago('pending')).toBe('PENDENTE');
+    expect(mapearStatusMercadoPago('processed')).toBe('APROVADO');
+    expect(mapearStatusMercadoPago('action_required')).toBe('PENDENTE');
+    expect(mapearStatusMercadoPago('failed')).toBe('REJEITADO');
+    expect(mapearStatusMercadoPago('canceled')).toBe('REJEITADO');
+    expect(mapearStatusMercadoPago('expired')).toBe('EXPIRADO');
   });
 
   it('usa PENDENTE como fallback para status desconhecido', () => {
@@ -106,7 +108,7 @@ describe('processarNotificacaoPagamento', () => {
     await gerador.gerarCobranca(pedido);
     const pagamento = await paymentsRepo.buscarPorPedidoId(pedido.id);
 
-    gateway.definirStatusConsulta(pagamento!.idTransacaoExterno, 'approved');
+    gateway.definirStatusConsulta(pagamento!.idTransacaoExterno, 'processed');
 
     await processarNotificacaoPagamento(deps, {
       eventoId: 'evt-1',
@@ -125,7 +127,7 @@ describe('processarNotificacaoPagamento', () => {
     await gerador.gerarCobranca(pedido);
     const pagamento = await paymentsRepo.buscarPorPedidoId(pedido.id);
 
-    gateway.definirStatusConsulta(pagamento!.idTransacaoExterno, 'approved');
+    gateway.definirStatusConsulta(pagamento!.idTransacaoExterno, 'processed');
 
     const evento = { eventoId: 'evt-1', idTransacaoExterno: pagamento!.idTransacaoExterno };
     await processarNotificacaoPagamento(deps, evento);
@@ -164,7 +166,7 @@ describe('pollarPagamentosPendentes', () => {
     await gerador.gerarCobranca(pedido);
     const pagamento = await paymentsRepo.buscarPorPedidoId(pedido.id);
 
-    gatewayPix.definirStatusConsulta(pagamento!.idTransacaoExterno, 'approved');
+    gatewayPix.definirStatusConsulta(pagamento!.idTransacaoExterno, 'processed');
 
     await pollarPagamentosPendentes(
       { gatewayPix, paymentsRepo, ordersRepo, notificarEmpreendedor: async (p) => void notificacoes.push(p) },

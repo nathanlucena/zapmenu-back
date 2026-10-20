@@ -11,11 +11,11 @@ export function criarMercadoPagoClientFake(): MercadoPagoClientFake {
 
   return {
     async criarCobrancaPix({ referenciaExterna }) {
-      const idTransacaoExterno = `mp-${proximoId++}`;
-      statusPorTransacao.set(idTransacaoExterno, 'pending');
+      const idTransacaoExterno = `ORD-TESTE-${proximoId++}`;
+      statusPorTransacao.set(idTransacaoExterno, 'action_required');
       const cobranca: CobrancaPixCriada = {
         idTransacaoExterno,
-        statusMp: 'pending',
+        statusMp: 'action_required',
         copiaCola: `00020126-pix-${referenciaExterna}`,
         qrCodeBase64: 'data:image/png;base64,FAKE',
       };
@@ -23,7 +23,7 @@ export function criarMercadoPagoClientFake(): MercadoPagoClientFake {
     },
 
     async consultarPagamento(idTransacaoExterno) {
-      return { statusMp: statusPorTransacao.get(idTransacaoExterno) ?? 'pending' };
+      return { statusMp: statusPorTransacao.get(idTransacaoExterno) ?? 'action_required' };
     },
 
     definirStatusConsulta(idTransacaoExterno, statusMp) {

@@ -85,12 +85,12 @@ describe('Fluxo 2 — cliente compra e paga via WhatsApp (e2e in-process)', () =
     expect(pagamento?.status).toBe('PENDENTE');
 
     // 4. Mercado Pago avisa via webhook que o PIX foi aprovado.
-    gatewayPix.definirStatusConsulta(pagamento!.idTransacaoExterno, 'approved');
+    gatewayPix.definirStatusConsulta(pagamento!.idTransacaoExterno, 'processed');
     const respostaWebhook = await app.inject({
       method: 'POST',
       url: '/v1/webhooks/mercado-pago',
       headers: headersAssinados(pagamento!.idTransacaoExterno),
-      payload: { id: 555, type: 'payment', data: { id: pagamento!.idTransacaoExterno } },
+      payload: { id: 555, type: 'order', data: { id: pagamento!.idTransacaoExterno } },
     });
     expect(respostaWebhook.statusCode).toBe(200);
 
@@ -105,7 +105,7 @@ describe('Fluxo 2 — cliente compra e paga via WhatsApp (e2e in-process)', () =
       method: 'POST',
       url: '/v1/webhooks/mercado-pago',
       headers: headersAssinados(pagamento!.idTransacaoExterno),
-      payload: { id: 555, type: 'payment', data: { id: pagamento!.idTransacaoExterno } },
+      payload: { id: 555, type: 'order', data: { id: pagamento!.idTransacaoExterno } },
     });
     expect(notificacoesAoEmpreendedor).toHaveLength(1);
   });

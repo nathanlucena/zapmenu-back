@@ -27,7 +27,7 @@ describe('POST /v1/webhooks/mercado-pago', () => {
     const gerador = criarGeradorCobranca({ gatewayPix, paymentsRepo });
     await gerador.gerarCobranca(pedido);
     const pagamento = await paymentsRepo.buscarPorPedidoId(pedido.id);
-    gatewayPix.definirStatusConsulta(pagamento!.idTransacaoExterno, 'approved');
+    gatewayPix.definirStatusConsulta(pagamento!.idTransacaoExterno, 'processed');
 
     const paymentsDeps: PaymentsServiceDeps = {
       gatewayPix,
@@ -52,7 +52,7 @@ describe('POST /v1/webhooks/mercado-pago', () => {
       method: 'POST',
       url: '/v1/webhooks/mercado-pago',
       headers: headersAssinados(pagamento!.idTransacaoExterno),
-      payload: { id: 999, type: 'payment', data: { id: pagamento!.idTransacaoExterno } },
+      payload: { id: 999, type: 'order', data: { id: pagamento!.idTransacaoExterno } },
     });
 
     expect(resposta.statusCode).toBe(200);
@@ -106,13 +106,13 @@ describe('POST /v1/webhooks/mercado-pago', () => {
     const semAssinatura = await app.inject({
       method: 'POST',
       url: '/v1/webhooks/mercado-pago',
-      payload: { id: 1, type: 'payment', data: { id: 'mp-1' } },
+      payload: { id: 1, type: 'order', data: { id: 'mp-1' } },
     });
     const assinadaComOutroSegredo = await app.inject({
       method: 'POST',
       url: '/v1/webhooks/mercado-pago',
       headers: headersAssinados('mp-1', 'outro-segredo'),
-      payload: { id: 1, type: 'payment', data: { id: 'mp-1' } },
+      payload: { id: 1, type: 'order', data: { id: 'mp-1' } },
     });
 
     expect(semAssinatura.statusCode).toBe(401);

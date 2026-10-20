@@ -12,14 +12,17 @@ export interface Pagamento {
   confirmadoEm?: Date;
 }
 
+/** Status da order na API de Orders do Mercado Pago ("expired" vem do status_detail). */
 const MAPA_STATUS_MP: Record<string, StatusPagamento> = {
-  approved: 'APROVADO',
-  rejected: 'REJEITADO',
-  cancelled: 'REJEITADO',
+  processed: 'APROVADO',
+  created: 'PENDENTE',
+  processing: 'PENDENTE',
+  action_required: 'PENDENTE',
+  expired: 'EXPIRADO',
+  canceled: 'REJEITADO',
+  failed: 'REJEITADO',
   refunded: 'REJEITADO',
   charged_back: 'REJEITADO',
-  pending: 'PENDENTE',
-  in_process: 'PENDENTE',
 };
 
 export function mapearStatusMercadoPago(statusMp: string): StatusPagamento {

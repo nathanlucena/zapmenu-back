@@ -53,7 +53,7 @@ export function registerMercadoPagoWebhook(
 
     const { id: notificacaoId, type: tipo, data } = parseResult.data;
     const idTransacaoExterno = String(data.id);
-    const eventoId = notificacaoId ? String(notificacaoId) : `${tipo ?? 'payment'}:${idTransacaoExterno}`;
+    const eventoId = notificacaoId ? String(notificacaoId) : `${tipo ?? 'order'}:${idTransacaoExterno}`;
 
     try {
       await processarNotificacaoPagamento(deps, { eventoId, idTransacaoExterno });

@@ -31,7 +31,7 @@ describe('iniciarJobPollingPagamentos', () => {
     const pedido = await confirmarRecebimentoCliente(ordersRepo, criado.codigoCurto, '5511999998888');
     await criarGeradorCobranca({ gatewayPix, paymentsRepo }).gerarCobranca(pedido);
     const pagamento = await paymentsRepo.buscarPorPedidoId(pedido.id);
-    gatewayPix.definirStatusConsulta(pagamento!.idTransacaoExterno, 'approved');
+    gatewayPix.definirStatusConsulta(pagamento!.idTransacaoExterno, 'processed');
 
     const timer = iniciarJobPollingPagamentos(
       { gatewayPix, paymentsRepo, ordersRepo, notificarEmpreendedor: async (p) => void notificacoes.push(p) },
