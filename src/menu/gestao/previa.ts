@@ -26,9 +26,14 @@ export interface LojaDaPrevia {
 
 export interface Previa {
   loja: LojaDaPrevia;
-  /** Novos primeiro, depois os editados. */
+  /** Novos primeiro, depois os editados; no máximo MAX_ITENS_NA_PREVIA. */
   itens: ItemDaPrevia[];
+  /** Itens alterados que não couberam na imagem ("+N alterações"). */
+  itensOcultos: number;
 }
+
+/** Quantos itens cabem na imagem; o resto vira "+N alterações" (e a prévia guardada fica leve). */
+export const MAX_ITENS_NA_PREVIA = 4;
 
 const CAMPOS_DO_CABECALHO: (keyof DadosLoja)[] = ['nome', 'descricao', 'corDestaque', 'logoUrl', 'capaUrl'];
 
@@ -87,7 +92,8 @@ export function montarPrevia(rascunho: Rascunho, snapshot: SnapshotCardapio): Pr
       capaUrl: mudancasDaLoja.capaUrl ?? snapshot.lojaSalva.capaUrl,
       alterada: lojaAlterada,
     },
-    itens: [...novos, ...editados],
+    itens: [...novos, ...editados].slice(0, MAX_ITENS_NA_PREVIA),
+    itensOcultos: Math.max(0, novos.length + editados.length - MAX_ITENS_NA_PREVIA),
   };
 }
 

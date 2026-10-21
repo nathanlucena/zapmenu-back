@@ -59,7 +59,19 @@ describe('montarPrevia', () => {
           marca: 'NOVO',
         },
       ],
+      itensOcultos: 0,
     });
+  });
+
+  it('com muitos itens guarda 4 (novos primeiro) e conta o resto', () => {
+    const rascunho = rascunhoVazio();
+    for (const nome of ['A', 'B', 'C', 'D', 'E']) rascunho.novosItens.push({ ref: nome, nome, precoBase: 10 });
+    rascunho.edicoes.push({ itemId: 'i1', precoBase: 45 });
+
+    const previa = montarPrevia(rascunho, snapshot)!;
+
+    expect(previa.itens.map((item) => item.nome)).toEqual(['A', 'B', 'C', 'D']);
+    expect(previa.itensOcultos).toBe(2);
   });
 
   it('item editado aparece com a foto e os dados atuais por baixo da edição', () => {
@@ -103,11 +115,11 @@ describe('GET /v1/previas/:id', () => {
       frontendAllowedOrigin: 'http://localhost:3001',
       previas,
     });
-    const id = await previas.guardar({ loja: { alterada: false }, itens: [] }, 60_000);
-    const vencida = await previas.guardar({ loja: { alterada: false }, itens: [] }, -1);
+    const id = await previas.guardar({ loja: { alterada: false }, itens: [], itensOcultos: 0 }, 60_000);
+    const vencida = await previas.guardar({ loja: { alterada: false }, itens: [], itensOcultos: 0 }, -1);
 
     expect((await app.inject({ method: 'GET', url: `/v1/previas/${id}` })).json()).toEqual({
-      previa: { loja: { alterada: false }, itens: [] },
+      previa: { loja: { alterada: false }, itens: [], itensOcultos: 0 },
     });
     for (const outro of [vencida, 'nao-existe']) {
       const resposta = await app.inject({ method: 'GET', url: `/v1/previas/${outro}` });
