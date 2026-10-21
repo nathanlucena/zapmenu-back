@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import cors from '@fastify/cors';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { MenuRepository } from '../menu/menu.repository.js';
@@ -7,7 +8,7 @@ import { criarCardapioDePrecos } from '../menu/cardapio-de-precos.js';
 import { criarLocalizadorEntrega } from '../menu/endereco/localizador-entrega.js';
 import type { EnderecoDeps } from '../menu/endereco/endereco.types.js';
 import { criarLojaParaPedidos } from '../menu/loja-para-pedidos.js';
-import { errorHandler } from './middlewares/error-handler.js';
+import { errorHandler, rotaNaoEncontrada } from './middlewares/error-handler.js';
 import { registerRequestLogger } from './middlewares/request-logger.js';
 import { registerMenuRoutes } from './v1/menu.routes.js';
 import { registerOrdersRoutes } from './v1/orders.routes.js';
@@ -28,11 +29,13 @@ export interface AppDeps {
 }
 
 export function buildApp(deps: AppDeps): FastifyInstance {
-  const app = Fastify();
+  // Id curto em cada requisição: vai no log e no corpo dos 500 ("rastreio"), para achar o erro.
+  const app = Fastify({ genReqId: () => randomUUID().slice(0, 8) });
 
   app.register(cors, { origin: deps.frontendAllowedOrigin });
   registerRequestLogger(app);
   app.setErrorHandler(errorHandler);
+  app.setNotFoundHandler(rotaNaoEncontrada);
 
   app.register(
     async (v1) => {

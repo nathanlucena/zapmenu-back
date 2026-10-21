@@ -294,6 +294,21 @@ Para testar com um único celular:
 
 Base: `/v1`. CORS liberado só para `FRONTEND_ALLOWED_ORIGIN`. Toda requisição é logada (método e URL).
 
+### Formato dos erros
+
+Todo erro sai como `{ "erro": "mensagem para pessoas", "codigo": "CODIGO" }` (`http/middlewares/error-handler.ts`):
+
+| Origem | Status | Código |
+|---|---|---|
+| Regra de negócio (`DomainError`) | 400 / 404 / 409 / 503 conforme o tipo | o do erro (`LOJA_FECHADA`, `PEDIDO_NAO_ENCONTRADO`…) |
+| JSON malformado ou vazio | 400 | `CORPO_INVALIDO` |
+| Corpo acima de 1 MB | 413 | `CORPO_GRANDE_DEMAIS` |
+| Content-type não suportado | 415 | `FORMATO_NAO_SUPORTADO` |
+| Rota inexistente | 404 | `ROTA_NAO_ENCONTRADA` |
+| Prisma: único repetido / registro sumiu | 409 / 404 | `REGISTRO_DUPLICADO` / `REGISTRO_NAO_ENCONTRADO` |
+| Banco fora do ar | 503 | `BANCO_INDISPONIVEL` |
+| Qualquer outro | 500 | `ERRO_INTERNO`, com `"rastreio"`: o id da requisição, o mesmo do log |
+
 ### `GET /v1/menu/:empreendedorId`
 
 `empreendedorId` é o **telefone** do dono.
