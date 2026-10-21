@@ -46,10 +46,10 @@ O produto tem **dois números de WhatsApp** e um **app web de cardápio**. Um ú
 | Endereço | `src/menu/endereco/` | CEP (ViaCEP) e coordenada (Google Geocoding) |
 | Pedidos | `src/orders/` | Criação, código `PED-XXXX`, transições de status, expiração |
 | Pagamentos | `src/payments/` | Cobrança PIX, webhook, polling |
-| WhatsApp | `src/whatsapp/` | Interface `WhatsAppClient`, implementação WPPConnect, routers das duas sessões |
+| WhatsApp | `src/whatsapp/` | Interface `WhatsAppClient`, implementação Baileys, routers das duas sessões |
 | HTTP | `src/http/` | Fastify, CORS, tratamento de erros, rotas `/v1` |
 
-O processo **precisa ficar rodando** (não é serverless): o WPPConnect mantém um Chromium aberto com o WhatsApp Web de cada número.
+O processo **precisa ficar rodando** (não é serverless): o Baileys mantém uma conexão aberta com o WhatsApp para cada número.
 
 ---
 
@@ -64,7 +64,7 @@ O processo **precisa ficar rodando** (não é serverless): o WPPConnect mantém 
 Consequências que valem saber:
 - **Qualquer pessoa que escrever no número de gestão vira um empreendedor** com cardápio próprio. Não existe cadastro, convite nem lista de permitidos (fora do modo autoteste, seção 7).
 - **Consultar o cardápio de um telefone que não existe também cria o empreendedor** (o `GET /v1/menu` faz *upsert*). Ver lacuna L2.
-- O WhatsApp às vezes identifica contas novas por `@lid` em vez do telefone; o cliente WPPConnect converte para o telefone real antes de qualquer regra (`resolverTelefone`).
+- O WhatsApp às vezes identifica contas novas por `@lid` em vez do telefone; o cliente Baileys converte para o telefone real antes de qualquer regra (`telefoneDoChat`).
 
 ---
 
@@ -75,7 +75,7 @@ Resumo. O detalhamento completo (prompt, formato da IA, operações, proteções
 ```mermaid
 sequenceDiagram
     actor Dono
-    participant WPP as Sessão gestão (WPPConnect)
+    participant WPP as Sessão gestão (Baileys)
     participant R as menu-inbound.router
     participant G as gestao.service
     participant IA as DeepSeek
@@ -138,7 +138,7 @@ sequenceDiagram
     actor C as Cliente
     participant App as App do cardápio (Next.js)
     participant API as API /v1
-    participant WPP as Sessão pedidos (WPPConnect)
+    participant WPP as Sessão pedidos (Baileys)
     participant MP as Mercado Pago
     participant DB as PostgreSQL
     actor Dono
@@ -238,17 +238,16 @@ Observações:
 
 ## 7. Sessões do WhatsApp
 
-Cada número é uma sessão WPPConnect (`session-manager.ts`) com seu próprio Chromium e pasta de token.
+Cada número é uma sessão Baileys (`session-manager.ts`): uma conexão direta com o WhatsApp, como um aparelho conectado, sem navegador.
 
 | Aspecto | Comportamento |
 |---|---|
 | Quais sobem | `WPP_SESSOES` (`menu`, `orders` ou `menu,orders`) |
-| Primeiro login | QR code no terminal; o token fica em `WPP_*_TOKEN_STORE_PATH` e é reaproveitado |
-| Reconexão | Estados `CONFLICT`, `UNPAIRED`, `UNPAIRED_IDLE`, `TIMEOUT` → reconecta com backoff exponencial de 2 s até 60 s |
-| Encerramento | `SIGINT`/`SIGTERM` fecham os navegadores (até 5 s) para não deixar Chrome órfão travando a pasta da sessão |
-| Mensagens ignoradas | Status do WhatsApp, eco das respostas do bot, mídia que não é imagem (áudio, vídeo, documento, figurinha); no autoteste, também grupos e números fora da lista |
+| Primeiro login | QR code no terminal; as chaves da sessão ficam em `WPP_*_TOKEN_STORE_PATH/<nome da sessão>-baileys` e são reaproveitadas |
+| Reconexão | Qualquer queda reconecta com backoff exponencial de 2 s até 60 s. O pedido de reinício logo após ler o QR reconecta na hora. Se o celular desconectar o aparelho, a sessão salva é apagada e um QR code novo aparece |
+| Mensagens ignoradas | Grupos, status e canais, mensagens enviadas pela própria conta, histórico sincronizado, reações e mensagens sem texto, mídia que não é imagem (áudio, vídeo, documento, figurinha); no autoteste, também números fora da lista |
 | Mídia | Imagens baixadas como data URI base64; o texto da mensagem passa a ser a legenda |
-| Mensagem sem id | Recebe um id de reserva montado com remetente, destino, horário e trecho do texto |
+| Envio | O número é consultado no WhatsApp antes do primeiro envio, porque celulares antigos existem lá sem o 9º dígito; a resposta fica em cache |
 | Ordem por telefone | A sessão de gestão processa uma mensagem por vez por telefone (fila), para uma rodada não apagar o estado gravado pela outra |
 | Aviso de pedido pago | Enviado pela sessão de **gestão** (é ela que fala com os donos); se ela não estiver conectada, o aviso é perdido e só fica no log |
 
@@ -348,8 +347,8 @@ O valor total **não inclui taxa de entrega** e o pedido não guarda modalidade 
 
 | Ponto | Como evita duplicar |
 |---|---|
-| Mensagens de gestão | `EventoProcessado` com origem `wppconnect_menu` e o id da mensagem; o WhatsApp reentrega mensagens não confirmadas ao reconectar |
-| Mensagens de pedidos | `EventoProcessado` com origem `wppconnect_orders` |
+| Mensagens de gestão | `EventoProcessado` com origem `whatsapp_menu` e o id da mensagem; o WhatsApp reentrega mensagens não confirmadas ao reconectar |
+| Mensagens de pedidos | `EventoProcessado` com origem `whatsapp_orders` |
 | Webhook | `EventoProcessado` com origem `mercado_pago_webhook` |
 | Cobrança PIX | Um `Pagamento` por pedido (`pedidoId` único); `gerarCobranca` reaproveita o existente; o Mercado Pago recebe `X-Idempotency-Key = pedido.id` |
 | Webhook e polling ao mesmo tempo | `aplicarStatusPagamento` não faz nada se o status já é o mesmo; a transição para `PAGO` só é aceita a partir de `AGUARDANDO_PAGAMENTO` |
@@ -364,7 +363,7 @@ A marca de "processado" é gravada **depois** do tratamento. Se o processo cair 
 
 | Serviço | Para quê | Configuração | Se faltar ou cair |
 |---|---|---|---|
-| WhatsApp Web (WPPConnect) | Os dois números | `WPP_*` | Reconexão com backoff; mensagens reentregues ao voltar |
+| WhatsApp Web (Baileys) | Os dois números | `WPP_*` | Reconexão com backoff; mensagens reentregues ao voltar |
 | DeepSeek (SDK `openai`) | Interpretar a conversa de gestão | `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `DEEPSEEK_BASE_URL` | Sem chave: só palavras-chave. Sobrecarga (429/5xx): 2 novas tentativas. Timeout de 45 s. |
 | Mercado Pago | Cobrança PIX e status | `MERCADO_PAGO_ACCESS_TOKEN`, `MERCADO_PAGO_NOTIFICATION_URL` | Falha ao criar cobrança: erro logado, cliente fica sem PIX (sem nova tentativa automática) |
 | ViaCEP | CEP → rua, bairro, cidade | nenhuma | Segue só com o Google |

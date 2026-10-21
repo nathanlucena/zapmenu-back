@@ -3,7 +3,7 @@ import type { IdempotencyRepository } from '../../shared/idempotency/idempotency
 import { logger } from '../../shared/logger/logger.js';
 import type { WhatsAppClient } from '../whatsapp-client.interface.js';
 
-const ORIGEM_IDEMPOTENCIA = 'wppconnect_menu';
+const ORIGEM_IDEMPOTENCIA = 'whatsapp_menu';
 
 export interface MenuInboundRouterDeps extends GestaoDeps {
   whatsapp: WhatsAppClient;

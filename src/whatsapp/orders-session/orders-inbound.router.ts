@@ -8,7 +8,7 @@ import type { Pedido } from '../../orders/domain/pedido.js';
 import type { GeradorCobranca } from '../../payments/application/gerar-cobranca.js';
 import type { MensagemRecebida, WhatsAppClient } from '../whatsapp-client.interface.js';
 
-const ORIGEM_IDEMPOTENCIA = 'wppconnect_orders';
+const ORIGEM_IDEMPOTENCIA = 'whatsapp_orders';
 
 export interface OrdersInboundRouterDeps {
   whatsapp: WhatsAppClient;

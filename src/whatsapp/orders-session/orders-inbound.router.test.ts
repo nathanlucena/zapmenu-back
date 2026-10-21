@@ -81,7 +81,7 @@ describe('orders-inbound.router', () => {
 
   it('não reprocessa mensagem já marcada como idempotente', async () => {
     const idempotency = criarIdempotencyRepositoryFake();
-    await idempotency.marcarProcessado('wppconnect_orders', 'msg-1');
+    await idempotency.marcarProcessado('whatsapp_orders', 'msg-1');
 
     registrarOrdersInboundRouter({
       whatsapp: whatsapp.client,

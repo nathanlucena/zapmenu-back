@@ -7,14 +7,14 @@ Backend do app de cardápio + pedidos via WhatsApp. Monolito modular em Node.js/
 
 **Como tudo funciona, passo a passo:** [`docs/fluxos.md`](docs/fluxos.md).
 
-Roda como processo de longa duração (não serverless) porque usa o WPPConnect, que precisa manter uma sessão de navegador (Puppeteer/Chromium) viva para falar com o WhatsApp Web.
+Roda como processo de longa duração (não serverless) porque usa o Baileys, que mantém uma conexão aberta com o WhatsApp para cada número (sem navegador).
 
 ## Stack
 
 - **TypeScript** + Node.js
 - **PostgreSQL + Prisma** (ORM e migrations)
 - **Fastify** (API HTTP `/v1/...`, consumida pelo frontend Next.js)
-- **WPPConnect** (automação do WhatsApp Web — não é a API oficial)
+- **Baileys** (conexão direta com o WhatsApp, como um aparelho conectado — não é a API oficial)
 - **Mercado Pago** (geração de cobrança PIX + webhook de confirmação)
 - **DeepSeek** via SDK `openai` (interpreta a conversa de gestão)
 - **ViaCEP + Google Geocoding** (endereço da loja e coordenada para a entrega por distância)
@@ -30,7 +30,7 @@ Roda como processo de longa duração (não serverless) porque usa o WPPConnect,
 | [`src/menu/`](src/menu) | Cardápio público agrupado por categoria, preço calculado no servidor com variações |
 | [`src/orders/`](src/orders) | Carrinho → pedido com código curto (`PED-XXXX`), transições de status, expiração por prazo, aviso de pedido pago. Em camadas: `domain/`, `application/` (use cases e ports) e `infra/` |
 | [`src/payments/`](src/payments) | Cobrança PIX no Mercado Pago, webhook assinado e polling de reserva, reaproveitando a mesma rotina de confirmação (idempotente). Mesmas camadas de `orders/` |
-| [`src/whatsapp/`](src/whatsapp) | Interface `WhatsAppClient` (com fake para testes), routers das duas sessões, implementação WPPConnect com reconexão e modo autoteste |
+| [`src/whatsapp/`](src/whatsapp) | Interface `WhatsAppClient` (com fake para testes), routers das duas sessões, implementação Baileys com reconexão e modo autoteste |
 | [`src/http/`](src/http) | API Fastify: `GET /v1/menu/:empreendedorId`, `POST /v1/orders`, `POST /v1/webhooks/mercado-pago` |
 | [`src/orders/infra/order-expiration.job.ts`](src/orders/infra/order-expiration.job.ts), [`src/payments/infra/payment-status-poller.job.ts`](src/payments/infra/payment-status-poller.job.ts) | Jobs de fundo: expira pedidos não confirmados e consulta pagamentos pendentes |
 | [`src/main.ts`](src/main.ts) | Ponto de entrada: sobe as duas sessões WhatsApp, o servidor HTTP e os jobs |
@@ -39,7 +39,7 @@ Roda como processo de longa duração (não serverless) porque usa o WPPConnect,
 
 **Estado dos testes:** a suíte inteira passa (`npm test`), o `npm run typecheck` checa também `test/` e `scripts/`, e o `npm run lint:deps` trava a regra de dependência das camadas.
 
-**O que ainda não foi validado de verdade:** a conexão real com o WPPConnect (QR code, sessão de navegador) e as chamadas reais ao DeepSeek, ao ViaCEP, ao Google e ao Mercado Pago. Os adapters HTTP podem ser testados um a um com `npm run smoke -- <nome>`; o WhatsApp, subindo com `WPP_MODO_AUTOTESTE=true`.
+**O que ainda não foi validado de verdade:** a conexão real com o WhatsApp pelo Baileys (QR code e sessão salva) e as chamadas reais ao DeepSeek, ao ViaCEP, ao Google e ao Mercado Pago. Os adapters HTTP podem ser testados um a um com `npm run smoke -- <nome>`; o WhatsApp, subindo com `WPP_MODO_AUTOTESTE=true`.
 
 Problemas e ausências conhecidos estão em [`docs/fluxos.md` → Lacunas conhecidas](docs/fluxos.md#11-lacunas-conhecidas).
 
@@ -122,7 +122,7 @@ src/
 │   ├── application/  # use cases + ports/ (interfaces de I/O)
 │   └── infra/        # Prisma e job de expiração
 ├── payments/     # cobrança PIX (mesmas camadas de orders/)
-├── whatsapp/     # interface WhatsAppClient, routers, WPPConnect
+├── whatsapp/     # interface WhatsAppClient, routers, Baileys
 ├── http/         # API Fastify v1 + webhook
 └── main.ts       # bootstrap
 test/

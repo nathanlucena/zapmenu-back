@@ -23,7 +23,7 @@ import { logger } from './shared/logger/logger.js';
 import type { WhatsAppClient } from './whatsapp/whatsapp-client.interface.js';
 import { registrarMenuInboundRouter } from './whatsapp/menu-session/menu-inbound.router.js';
 import { registrarOrdersInboundRouter } from './whatsapp/orders-session/orders-inbound.router.js';
-import { iniciarSessaoWppConnect } from './whatsapp/wppconnect/session-manager.js';
+import { iniciarSessaoWhatsApp } from './whatsapp/baileys/session-manager.js';
 
 async function main(): Promise<void> {
   const env = getEnv();
@@ -89,14 +89,12 @@ async function main(): Promise<void> {
   };
 
   if (env.WPP_SESSOES.includes('menu')) {
-    await iniciarSessaoWppConnect(
+    await iniciarSessaoWhatsApp(
       {
         sessionName: env.WPP_MENU_SESSION_NAME,
         tokenStorePath: env.WPP_MENU_TOKEN_STORE_PATH,
-        headless: env.WPP_HEADLESS,
-        chromiumExecutablePath: env.WPP_CHROMIUM_EXECUTABLE_PATH,
         modoAutoteste: env.WPP_MODO_AUTOTESTE,
-        logLevelWppConnect: env.WPP_LOG_LEVEL,
+        logLevelBaileys: env.WPP_LOG_LEVEL,
         numerosPermitidos: env.WPP_NUMEROS_PERMITIDOS,
       },
       (client) => {
@@ -115,14 +113,12 @@ async function main(): Promise<void> {
   }
 
   if (env.WPP_SESSOES.includes('orders')) {
-    await iniciarSessaoWppConnect(
+    await iniciarSessaoWhatsApp(
       {
         sessionName: env.WPP_ORDERS_SESSION_NAME,
         tokenStorePath: env.WPP_ORDERS_TOKEN_STORE_PATH,
-        headless: env.WPP_HEADLESS,
-        chromiumExecutablePath: env.WPP_CHROMIUM_EXECUTABLE_PATH,
         modoAutoteste: env.WPP_MODO_AUTOTESTE,
-        logLevelWppConnect: env.WPP_LOG_LEVEL,
+        logLevelBaileys: env.WPP_LOG_LEVEL,
         numerosPermitidos: env.WPP_NUMEROS_PERMITIDOS,
       },
       (client) => {

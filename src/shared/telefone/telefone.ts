@@ -1,5 +1,6 @@
+/** Tira do ID do WhatsApp o domínio e o aparelho (ex.: `5511…:3@s.whatsapp.net`). */
 export function telefoneDoChatId(chatId: string): string {
-  return chatId.replace(/@c\.us$|@g\.us$/, '');
+  return chatId.replace(/(:\d+)?@(c\.us|g\.us|s\.whatsapp\.net)$/, '');
 }
 
 /**

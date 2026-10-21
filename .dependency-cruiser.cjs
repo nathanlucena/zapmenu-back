@@ -26,7 +26,7 @@ module.exports = {
       from: { path: '^src/[^/]+/(domain|application)/', pathNot: TESTES },
       to: {
         dependencyTypes: ['npm', 'npm-dev'],
-        path: 'node_modules/(fastify|@fastify|@prisma|prisma|zod|openai|@wppconnect-team)',
+        path: 'node_modules/(fastify|@fastify|@prisma|prisma|zod|openai|baileys)',
       },
     },
     {

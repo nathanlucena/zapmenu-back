@@ -15,12 +15,12 @@ const envSchema = z.object({
   WPP_ORDERS_PHONE_NUMBER: z.string().min(1),
   WPP_ORDERS_TOKEN_STORE_PATH: z.string().min(1),
 
-  // z.coerce.boolean() trataria a string "false" como true.
-  WPP_HEADLESS: z.stringbool().default(true),
-  WPP_CHROMIUM_EXECUTABLE_PATH: z.string().optional(),
-  // Nível do log interno do WPPConnect (winston). Vem em "silly" de fábrica,
-  // o que inunda o terminal com um "Emitting ... event" por mensagem.
-  WPP_LOG_LEVEL: z.enum(['error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly']).default('warn'),
+  // Nível do log interno do Baileys. Em "debug" ou "trace" ele registra cada
+  // pacote trocado com o WhatsApp. Os níveis antigos do WPPConnect continuam valendo.
+  WPP_LOG_LEVEL: z
+    .enum(['silent', 'fatal', 'error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly', 'trace'])
+    .default('warn')
+    .transform((nivel) => ({ http: 'debug', verbose: 'debug', silly: 'trace' })[nivel as string] ?? nivel),
 
   // Quais sessões WhatsApp sobem no boot (ex.: "menu" para testar só a gestão).
   WPP_SESSOES: z
