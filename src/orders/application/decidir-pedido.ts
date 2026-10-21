@@ -14,6 +14,18 @@ export interface DecidirPedidoDeps {
  * pago na entrega fica confirmado. Só o dono da loja do pedido decide, e só
  * enquanto o pedido aguarda o aceite.
  */
+/** Só o dono da loja do pedido pode responder ou atualizar o pedido. */
+export async function garantirDonoDaLoja(
+  contatos: ContatoEmpreendedores,
+  pedido: Pick<Pedido, 'empreendedorId' | 'codigoCurto'>,
+  telefone: string,
+): Promise<void> {
+  const telefoneDono = await contatos.telefoneDe(pedido.empreendedorId);
+  if (!telefoneDono || chaveTelefone(telefoneDono) !== chaveTelefone(telefone)) {
+    throw new DomainError(`O pedido ${pedido.codigoCurto} não é da sua loja.`, 'PEDIDO_DE_OUTRA_LOJA', 'CONFLITO');
+  }
+}
+
 export async function decidirPedido(
   deps: DecidirPedidoDeps,
   pedido: Pedido,
@@ -21,10 +33,7 @@ export async function decidirPedido(
   telefoneQuemDecide: string,
   agora: Date = new Date(),
 ): Promise<Pedido> {
-  const telefoneDono = await deps.contatos.telefoneDe(pedido.empreendedorId);
-  if (!telefoneDono || chaveTelefone(telefoneDono) !== chaveTelefone(telefoneQuemDecide)) {
-    throw new DomainError(`O pedido ${pedido.codigoCurto} não é da sua loja.`, 'PEDIDO_DE_OUTRA_LOJA', 'CONFLITO');
-  }
+  await garantirDonoDaLoja(deps.contatos, pedido, telefoneQuemDecide);
   if (estaExpirado(pedido, agora)) {
     throw new DomainError(
       `O pedido ${pedido.codigoCurto} expirou antes da resposta.`,

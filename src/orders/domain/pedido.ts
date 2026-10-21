@@ -4,6 +4,9 @@ export type StatusPedido =
   | 'AGUARDANDO_PAGAMENTO'
   | 'PAGO'
   | 'CONFIRMADO'
+  | 'SAIU_PARA_ENTREGA'
+  | 'PRONTO_PARA_RETIRADA'
+  | 'CONCLUIDO'
   | 'EXPIRADO'
   | 'RECUSADO'
   | 'CANCELADO';
@@ -16,6 +19,9 @@ export const ROTULO_STATUS_PEDIDO: Record<StatusPedido, string> = {
   // Pago (PIX) e confirmado (pagamento na entrega) são os dois "a loja está preparando".
   PAGO: 'Pago, em preparo',
   CONFIRMADO: 'Confirmado, em preparo (pagamento na entrega)',
+  SAIU_PARA_ENTREGA: 'Saiu para entrega',
+  PRONTO_PARA_RETIRADA: 'Pronto para retirar',
+  CONCLUIDO: 'Concluído',
   EXPIRADO: 'Expirado',
   RECUSADO: 'Recusado pela loja',
   CANCELADO: 'Cancelado',
@@ -101,6 +107,8 @@ export interface Pedido extends DetalhesPedido {
   confirmadoEm?: Date;
   /** Enquete de aceitar/recusar enviada à loja (id da mensagem no WhatsApp). */
   enqueteAceiteId?: string;
+  /** Enquete de andamento (saiu/pronto, entregue/retirado) enviada à loja depois do pago/confirmado. */
+  enqueteAndamentoId?: string;
 }
 
 /** O que o app do cliente vê de um pedido: sem telefone, endereço do cliente nem ids internos. */
@@ -131,8 +139,12 @@ const TRANSICOES_PERMITIDAS: Record<StatusPedido, StatusPedido[]> = {
   AGUARDANDO_CONFIRMACAO: ['AGUARDANDO_ACEITE', 'EXPIRADO', 'CANCELADO'],
   AGUARDANDO_ACEITE: ['AGUARDANDO_PAGAMENTO', 'CONFIRMADO', 'RECUSADO', 'EXPIRADO', 'CANCELADO'],
   AGUARDANDO_PAGAMENTO: ['PAGO', 'EXPIRADO', 'CANCELADO'],
-  PAGO: [],
-  CONFIRMADO: [],
+  // Pago e confirmado são "em preparo"; dali a loja avisa que saiu/está pronto e depois conclui.
+  PAGO: ['SAIU_PARA_ENTREGA', 'PRONTO_PARA_RETIRADA', 'CONCLUIDO'],
+  CONFIRMADO: ['SAIU_PARA_ENTREGA', 'PRONTO_PARA_RETIRADA', 'CONCLUIDO'],
+  SAIU_PARA_ENTREGA: ['CONCLUIDO'],
+  PRONTO_PARA_RETIRADA: ['CONCLUIDO'],
+  CONCLUIDO: [],
   EXPIRADO: [],
   RECUSADO: [],
   CANCELADO: [],
@@ -185,6 +197,32 @@ export function validarCarrinho(carrinho: CarrinhoInput): string[] {
   }
 
   return erros;
+}
+
+/** Pedido aceito e ainda não concluído: em preparo, saiu para entrega ou pronto para retirar. */
+export const STATUS_EM_ANDAMENTO: StatusPedido[] = ['PAGO', 'CONFIRMADO', 'SAIU_PARA_ENTREGA', 'PRONTO_PARA_RETIRADA'];
+
+/** O que a loja informa depois do preparo: saiu/está pronto (conforme a modalidade) ou foi entregue/retirado. */
+export type AndamentoPedido = 'A_CAMINHO' | 'CONCLUIDO';
+
+const REGEX_ANDAMENTO = /^\s*(saiu|pronto|pronta|entregue|retirado|retirada|conclu[ií]do)\b.*?(PED-[A-Z0-9]{4})/i;
+
+/** "saiu PED-7KQ2", "pronto PED-7KQ2", "entregue PED-7KQ2": alternativa em texto à enquete de andamento. */
+export function extrairAndamentoPedido(texto: string): { andamento: AndamentoPedido; codigoCurto: string } | null {
+  const match = REGEX_ANDAMENTO.exec(texto);
+  if (!match) {
+    return null;
+  }
+  const palavra = match[1]!.toLowerCase();
+  return {
+    andamento: palavra === 'saiu' || palavra.startsWith('pront') ? 'A_CAMINHO' : 'CONCLUIDO',
+    codigoCurto: match[2]!.toUpperCase(),
+  };
+}
+
+/** Saiu para entrega ou pronto para retirar, conforme a modalidade. */
+export function statusACaminho(modalidade: ModalidadePedido | undefined): StatusPedido {
+  return modalidade === 'ENTREGA' ? 'SAIU_PARA_ENTREGA' : 'PRONTO_PARA_RETIRADA';
 }
 
 /** Status que vencem em `expiraEm`: o cliente não mandou o código ou a loja não respondeu. */

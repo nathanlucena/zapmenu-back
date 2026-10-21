@@ -45,46 +45,46 @@ model Categoria {
 /// Dados exibidos no cardápio público. Separada do Empreendedor para permitir
 /// mais de uma loja por empreendedor no futuro.
 model Loja {
-  id               String       @id @default(cuid())
-  empreendedorId   String       @unique
-  empreendedor     Empreendedor @relation(fields: [empreendedorId], references: [id])
-  nome             String?
-  descricao        String?
+  id                       String       @id @default(cuid())
+  empreendedorId           String       @unique
+  empreendedor             Empreendedor @relation(fields: [empreendedorId], references: [id])
+  nome                     String?
+  descricao                String?
   /// Texto exibido no cardápio; com endereço verificado, é o endereço formatado.
-  endereco         String?
-  cep              String?
-  logradouro       String?
+  endereco                 String?
+  cep                      String?
+  logradouro               String?
   /// Texto: aceita "s/n", "123A".
-  numero           String?
-  complemento      String?
-  bairro           String?
-  cidade           String?
-  uf               String?      @db.Char(2)
+  numero                   String?
+  complemento              String?
+  bairro                   String?
+  cidade                   String?
+  uf                       String?      @db.Char(2)
   /// Vêm só da geocodificação (Google), nunca da IA.
-  latitude         Decimal?     @db.Decimal(9, 6)
-  longitude        Decimal?     @db.Decimal(9, 6)
+  latitude                 Decimal?     @db.Decimal(9, 6)
+  longitude                Decimal?     @db.Decimal(9, 6)
   /// location_type do Google (ROOFTOP, RANGE_INTERPOLATED, GEOMETRIC_CENTER, APPROXIMATE).
-  precisaoEndereco String?
-  aceitaRetirada   Boolean      @default(true)
-  fazEntrega       Boolean      @default(false)
+  precisaoEndereco         String?
+  aceitaRetirada           Boolean      @default(true)
+  fazEntrega               Boolean      @default(false)
   /// Cliente pode pagar na entrega ou no balcão (dinheiro ou cartão na maquininha) em vez do PIX.
-  aceitaPagamentoNaEntrega Boolean @default(true)
+  aceitaPagamentoNaEntrega Boolean      @default(true)
   /// [{ "ateKm": 1, "taxa": 0 }, { "ateKm": 3, "taxa": 5 }], ordenada por ateKm.
-  faixasEntrega    Json         @default("[]")
+  faixasEntrega            Json         @default("[]")
   /// Depreciada: taxa fixa antiga. Loja com ela e sem faixas fica com a entrega indisponível.
-  taxaEntrega      Decimal?     @db.Decimal(10, 2)
-  pedidoMinimo     Decimal?     @db.Decimal(10, 2)
+  taxaEntrega              Decimal?     @db.Decimal(10, 2)
+  pedidoMinimo             Decimal?     @db.Decimal(10, 2)
   /// [{ "dia": "seg", "abre": "18:00", "fecha": "23:00" }]
-  horarios         Json         @default("[]")
+  horarios                 Json         @default("[]")
   /// Endereço curto do cardápio (zapmenu.com/<slug>). Sempre tem uma letra, para não ser confundido com telefone.
-  slug             String?      @unique
-  capaUrl          String?
-  logoUrl          String?
+  slug                     String?      @unique
+  capaUrl                  String?
+  logoUrl                  String?
   /// Hex "#RRGGBB".
-  corDestaque      String?
+  corDestaque              String?
   /// Fuso dos horários de funcionamento.
-  fuso             String       @default("America/Sao_Paulo")
-  atualizadoEm     DateTime     @updatedAt
+  fuso                     String       @default("America/Sao_Paulo")
+  atualizadoEm             DateTime     @updatedAt
 }
 
 model ItemCardapio {
@@ -127,6 +127,9 @@ enum StatusPedido {
   PAGO
   /// Aceito pela loja, com pagamento na entrega ou no balcão.
   CONFIRMADO
+  SAIU_PARA_ENTREGA
+  PRONTO_PARA_RETIRADA
+  CONCLUIDO
   EXPIRADO
   RECUSADO
   CANCELADO
@@ -141,29 +144,31 @@ enum FormaPagamento {
 }
 
 model Pedido {
-  id              String           @id @default(cuid())
-  codigoCurto     String           @unique
-  empreendedorId  String
-  empreendedor    Empreendedor     @relation(fields: [empreendedorId], references: [id])
-  telefoneCliente String?
-  status          StatusPedido     @default(AGUARDANDO_CONFIRMACAO)
-  modalidade      ModalidadePedido @default(RETIRADA)
-  nomeCliente     String?
-  observacao      String?
-  formaPagamento  FormaPagamento   @default(PIX)
+  id                 String           @id @default(cuid())
+  codigoCurto        String           @unique
+  empreendedorId     String
+  empreendedor       Empreendedor     @relation(fields: [empreendedorId], references: [id])
+  telefoneCliente    String?
+  status             StatusPedido     @default(AGUARDANDO_CONFIRMACAO)
+  modalidade         ModalidadePedido @default(RETIRADA)
+  nomeCliente        String?
+  observacao         String?
+  formaPagamento     FormaPagamento   @default(PIX)
   /// Só no dinheiro: quanto o cliente vai entregar, para a loja levar o troco.
-  trocoPara       Decimal?         @db.Decimal(10, 2)
+  trocoPara          Decimal?         @db.Decimal(10, 2)
   /// Já somada no valorTotal.
-  taxaEntrega     Decimal          @default(0) @db.Decimal(10, 2)
+  taxaEntrega        Decimal          @default(0) @db.Decimal(10, 2)
   /// Cópia do endereço de entrega localizado: { enderecoFormatado, cep, numero, ..., latitude, longitude, distanciaKm }.
-  enderecoEntrega Json?
+  enderecoEntrega    Json?
   /// Itens + taxa de entrega.
-  valorTotal      Decimal          @db.Decimal(10, 2)
-  expiraEm        DateTime
-  criadoEm        DateTime         @default(now())
-  confirmadoEm    DateTime?
+  valorTotal         Decimal          @db.Decimal(10, 2)
+  expiraEm           DateTime
+  criadoEm           DateTime         @default(now())
+  confirmadoEm       DateTime?
   /// Id da mensagem da enquete de aceitar/recusar enviada à loja.
-  enqueteAceiteId String?          @unique
+  enqueteAceiteId    String?          @unique
+  /// Id da enquete de andamento (saiu/pronto, entregue/retirado) enviada à loja.
+  enqueteAndamentoId String?          @unique
 
   itens     ItemPedido[]
   pagamento Pagamento?

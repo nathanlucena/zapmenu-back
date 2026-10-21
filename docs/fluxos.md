@@ -181,6 +181,7 @@ sequenceDiagram
 5. **Pagamento na entrega.** Se o cliente escolheu dinheiro ou cartão (`formaPagamento`; a loja precisa ter `aceitaPagamentoNaEntrega`, ligado por padrão), o aceite leva o pedido direto para `CONFIRMADO`, sem PIX, e o cliente recebe como e quanto pagar ("Dinheiro na entrega (troco para R$ 150.00)"). O resumo da loja mostra a forma de pagamento.
 6. **Cobrança PIX.** No aceite de um pedido com PIX, `criarGeradorCobranca` cria a cobrança no Mercado Pago só se o pedido ainda não tiver pagamento; o cliente recebe o copia e cola e, se houver, a imagem do QR. Na recusa o pedido vira `RECUSADO` e o cliente é avisado.
 7. **Pagamento.** Webhook ou polling levam ao mesmo `aplicarStatusPagamento`: atualiza o `Pagamento`; se `APROVADO`, marca o pedido como `PAGO`, manda à loja os dados completos com o telefone do cliente e avisa o cliente ("Pagamento confirmado ✅ A loja já está preparando…"). `PAGO` e `CONFIRMADO` são o "em preparo": a tela do pedido mostra "Preparando…" e continua atualizando.
+8. **Andamento.** Junto com o aviso de pago (PIX) ou logo depois do aceite (na entrega), a loja recebe a enquete "Andamento do pedido PED-XXXX": *Saiu para entrega* / *Entregue* (entrega) ou *Pronto para retirar* / *Retirado* (retirada). Trocar o voto na mesma enquete avança o pedido; o texto `saiu`/`pronto`/`entregue`/`retirado PED-XXXX` faz o mesmo. A cada passo o cliente recebe o aviso no WhatsApp (com a forma de pagamento, se for na entrega) e a tela do pedido atualiza. Só o dono da loja do pedido atualiza.
 
 ### Respostas do número de pedidos
 
@@ -203,8 +204,10 @@ sequenceDiagram
 ### Pedido (`StatusPedido`)
 
 ```
-AGUARDANDO_CONFIRMACAO ──código──▶ AGUARDANDO_ACEITE ──loja aceita (PIX)──▶ AGUARDANDO_PAGAMENTO ──PIX aprovado──▶ PAGO
-        │                               │    ├──loja aceita (na entrega)──▶ CONFIRMADO
+AGUARDANDO_CONFIRMACAO ──código──▶ AGUARDANDO_ACEITE ──loja aceita (PIX)──▶ AGUARDANDO_PAGAMENTO ──PIX aprovado──▶ PAGO ─┐
+        │                               │    ├──loja aceita (na entrega)──▶ CONFIRMADO ───────────────────────────────────────┤
+        │                               │    │       (PAGO e CONFIRMADO = em preparo)                                         ▼
+        │                               │    │                SAIU_PARA_ENTREGA / PRONTO_PARA_RETIRADA ──entregue/retirado──▶ CONCLUIDO
         │                               │    └──loja recusa──▶ RECUSADO
         └──prazo vence (job)──▶ EXPIRADO ◀──prazo vence (job)
 ```
@@ -216,7 +219,10 @@ AGUARDANDO_CONFIRMACAO ──código──▶ AGUARDANDO_ACEITE ──loja aceit
 | `AGUARDANDO_ACEITE` | `CONFIRMADO` | Loja aceita um pedido pago na entrega (dinheiro ou cartão) | `decidirPedido` |
 | `AGUARDANDO_CONFIRMACAO`, `AGUARDANDO_ACEITE` | `EXPIRADO` | Job de expiração, depois de `expiraEm` | `expirarPedidosPendentes` |
 | `AGUARDANDO_PAGAMENTO` | `PAGO` | Pagamento aprovado (webhook ou polling) | `confirmarPagamento` |
-| `PAGO`, `CONFIRMADO`, `EXPIRADO`, `RECUSADO`, `CANCELADO` | — | Estados finais | `TRANSICOES_PERMITIDAS` |
+| `PAGO`, `CONFIRMADO` | `SAIU_PARA_ENTREGA` (entrega) / `PRONTO_PARA_RETIRADA` (retirada) / `CONCLUIDO` | Loja vota na enquete de andamento ou escreve `saiu`/`pronto`/`entregue`/`retirado PED-XXXX` | `atualizarAndamento` |
+| `SAIU_PARA_ENTREGA`, `PRONTO_PARA_RETIRADA` | `CONCLUIDO` | Loja (mesma enquete, trocando o voto, ou texto) | `atualizarAndamento` |
+| `PAGO`, `CONFIRMADO`, `SAIU_PARA_ENTREGA`, `PRONTO_PARA_RETIRADA` | `CONCLUIDO` | Job, `PEDIDO_CONCLUSAO_HORAS` (padrão 12) depois da criação | `concluirPedidosAntigos` |
+| `CONCLUIDO`, `EXPIRADO`, `RECUSADO`, `CANCELADO` | — | Estados finais | `TRANSICOES_PERMITIDAS` |
 
 - O prazo (`PEDIDO_TTL_MINUTOS`, padrão 20) vale para `AGUARDANDO_CONFIRMACAO`; ao receber o código, `expiraEm` passa a ser o prazo da loja (`PEDIDO_ACEITE_MINUTOS`). Quando a loja não responde a tempo o pedido expira, mas o cliente não é avisado pelo WhatsApp (a tela do pedido mostra). A confirmação confere o prazo na hora (`estaExpirado`), então um pedido vencido é recusado mesmo que o job ainda não tenha rodado.
 - As transições `AGUARDANDO_PAGAMENTO → EXPIRADO` e `→ CANCELADO` são permitidas no código, mas nada as dispara (lacunas L5 e L6).

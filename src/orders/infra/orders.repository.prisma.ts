@@ -4,6 +4,7 @@ import { empreendedorPorIdentificador } from '../../shared/db/identificador-loja
 import { DomainError } from '../../shared/errors/domain-error.js';
 import {
   STATUS_COM_PRAZO,
+  STATUS_EM_ANDAMENTO,
   type EnderecoEntrega,
   type ItemPedidoInput,
   type Pedido,
@@ -45,6 +46,7 @@ function paraPedido(pedido: PedidoComItens): Pedido {
     criadoEm: pedido.criadoEm,
     confirmadoEm: pedido.confirmadoEm ?? undefined,
     enqueteAceiteId: pedido.enqueteAceiteId ?? undefined,
+    enqueteAndamentoId: pedido.enqueteAndamentoId ?? undefined,
   };
 }
 
@@ -146,9 +148,20 @@ export function criarOrdersRepositoryPrisma(prisma: PrismaClient): OrdersReposit
       return pedido ? paraPedido(pedido) : null;
     },
 
-    async buscarPorEnquete(enqueteAceiteId: string) {
-      const pedido = await prisma.pedido.findUnique({ where: { enqueteAceiteId }, include: COM_ITENS });
+    async buscarPorEnquete(enqueteId: string) {
+      const pedido = await prisma.pedido.findFirst({
+        where: { OR: [{ enqueteAceiteId: enqueteId }, { enqueteAndamentoId: enqueteId }] },
+        include: COM_ITENS,
+      });
       return pedido ? paraPedido(pedido) : null;
+    },
+
+    async listarEmAndamentoAntesDe(limite: Date) {
+      const pedidos = await prisma.pedido.findMany({
+        where: { status: { in: STATUS_EM_ANDAMENTO }, criadoEm: { lt: limite } },
+        include: COM_ITENS,
+      });
+      return pedidos.map(paraPedido);
     },
 
     async atualizar(id: string, alteracoes) {

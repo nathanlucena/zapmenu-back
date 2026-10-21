@@ -2,7 +2,7 @@ import { processarMensagemGestao, type GestaoDeps } from '../../menu/gestao/gest
 import type { IdempotencyRepository } from '../../shared/idempotency/idempotency.repository.js';
 import { logger } from '../../shared/logger/logger.js';
 import type { WhatsAppClient } from '../whatsapp-client.interface.js';
-import { registrarVotosDeAceite, tratarDecisaoEmTexto, type DecisaoPedidoDeps } from './decisao-pedido.js';
+import { registrarVotosDaLoja, tratarRespostaDaLojaEmTexto, type DecisaoPedidoDeps } from './decisao-pedido.js';
 
 const ORIGEM_IDEMPOTENCIA = 'whatsapp_menu';
 
@@ -38,7 +38,7 @@ export function registrarMenuInboundRouter(deps: MenuInboundRouterDeps): void {
   const enfileirar = criarFilaPorTelefone();
   const decisoes = deps.decisoes && { ...deps.decisoes, idempotency: deps.idempotency };
   if (decisoes) {
-    registrarVotosDeAceite(decisoes, deps.whatsapp);
+    registrarVotosDaLoja(decisoes, deps.whatsapp);
   }
 
   deps.whatsapp.onMessage((mensagem) => enfileirar(mensagem.telefone, async () => {
@@ -47,7 +47,7 @@ export function registrarMenuInboundRouter(deps: MenuInboundRouterDeps): void {
       return;
     }
 
-    if (decisoes && (await tratarDecisaoEmTexto(decisoes, deps.whatsapp, mensagem))) {
+    if (decisoes && (await tratarRespostaDaLojaEmTexto(decisoes, deps.whatsapp, mensagem))) {
       await deps.idempotency.marcarProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id);
       return;
     }

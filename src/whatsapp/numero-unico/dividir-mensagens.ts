@@ -1,4 +1,4 @@
-import { extrairCodigoPedido, extrairDecisaoPedido } from '../../orders/domain/pedido.js';
+import { extrairAndamentoPedido, extrairCodigoPedido, extrairDecisaoPedido } from '../../orders/domain/pedido.js';
 import type { ManipuladorMensagem, WhatsAppClient } from '../whatsapp-client.interface.js';
 
 export interface ClientesDivididos {
@@ -25,10 +25,11 @@ function comFiltro(client: WhatsAppClient, aceita: (texto: string) => boolean, r
 /**
  * Para testar gestão e pedidos com um só número: mensagens de cliente com
  * código de pedido (PED-XXXX) vão para o fluxo de pedidos; o resto, inclusive
- * a resposta da loja ("aceitar PED-XXXX") e os votos da enquete, vai para a gestão.
+ * as respostas da loja ("aceitar PED-XXXX", "saiu PED-XXXX") e os votos das enquetes, vai para a gestão.
  */
 export function dividirMensagens(client: WhatsAppClient): ClientesDivididos {
-  const ehDoCliente = (texto: string) => extrairCodigoPedido(texto) !== null && extrairDecisaoPedido(texto) === null;
+  const ehDaLoja = (texto: string) => extrairDecisaoPedido(texto) !== null || extrairAndamentoPedido(texto) !== null;
+  const ehDoCliente = (texto: string) => extrairCodigoPedido(texto) !== null && !ehDaLoja(texto);
   return {
     gestao: comFiltro(client, (texto) => !ehDoCliente(texto), true),
     pedidos: comFiltro(client, ehDoCliente, false),

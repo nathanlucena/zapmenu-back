@@ -65,6 +65,8 @@ const envSchema = z.object({
   PEDIDO_TTL_MINUTOS: z.coerce.number().default(20),
   // Quanto tempo a loja tem para aceitar ou recusar um pedido depois que o cliente manda o código.
   PEDIDO_ACEITE_MINUTOS: z.coerce.number().int().positive().default(15),
+  // Pedido em preparo/a caminho há mais que isso (desde a criação) é concluído sozinho.
+  PEDIDO_CONCLUSAO_HORAS: z.coerce.number().positive().default(12),
   PAGAMENTO_POLLING_INTERVALO_SEGUNDOS: z.coerce.number().default(60),
   // Só no modo autoteste: o PIX é dado como pago N segundos depois de gerado. 0 desliga.
   PAGAMENTO_SIMULADO_SEGUNDOS: z.coerce.number().int().min(0).default(30),

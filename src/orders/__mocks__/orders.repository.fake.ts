@@ -1,6 +1,6 @@
 import { DomainError } from '../../shared/errors/domain-error.js';
 import type { OrdersRepository } from '../application/ports/orders.repository.js';
-import { estaExpirado, type Pedido } from '../domain/pedido.js';
+import { estaExpirado, STATUS_EM_ANDAMENTO, type Pedido } from '../domain/pedido.js';
 
 let proximoId = 1;
 
@@ -65,8 +65,18 @@ export function criarOrdersRepositoryFake(): OrdersRepositoryFake {
       return Array.from(pedidos.values()).find((pedido) => pedido.codigoCurto === codigoCurto) ?? null;
     },
 
-    async buscarPorEnquete(enqueteAceiteId: string) {
-      return Array.from(pedidos.values()).find((pedido) => pedido.enqueteAceiteId === enqueteAceiteId) ?? null;
+    async buscarPorEnquete(enqueteId: string) {
+      return (
+        Array.from(pedidos.values()).find(
+          (pedido) => pedido.enqueteAceiteId === enqueteId || pedido.enqueteAndamentoId === enqueteId,
+        ) ?? null
+      );
+    },
+
+    async listarEmAndamentoAntesDe(limite: Date) {
+      return Array.from(pedidos.values()).filter(
+        (pedido) => STATUS_EM_ANDAMENTO.includes(pedido.status) && pedido.criadoEm < limite,
+      );
     },
 
     async atualizar(id: string, alteracoes) {

@@ -19,6 +19,7 @@ import { criarGeradorCobranca } from './payments/application/gerar-cobranca.js';
 import { comPagamentoSimulado } from './payments/infra/pagamento-simulado.js';
 import { pedirAceiteDaLoja } from './orders/application/pedir-aceite-da-loja.js';
 import { mensagemPagamentoConfirmado } from './orders/application/avisos-cliente.js';
+import { pedirAndamentoDaLoja } from './orders/application/andamento-pedido.js';
 import { criarEnquetesRepositoryPrisma } from './whatsapp/baileys/enquetes.repository.prisma.js';
 import type { PaymentsServiceDeps } from './payments/application/dependencias.js';
 import { getPrismaClient } from './shared/db/prisma-client.js';
@@ -91,7 +92,11 @@ async function main(): Promise<void> {
     },
   };
   const avisoPedidoPago = { contatos, mensageiro: mensageiroLoja };
-  const notificarEmpreendedor = (pedido: Pedido) => avisarPedidoPago(avisoPedidoPago, pedido);
+  // Pago: a loja recebe os dados completos e a enquete de andamento (saiu/pronto, entregue/retirado).
+  const notificarEmpreendedor = async (pedido: Pedido) => {
+    await avisarPedidoPago(avisoPedidoPago, pedido);
+    await pedirAndamentoDaLoja({ ordersRepo, contatos, mensageiro: mensageiroLoja }, pedido);
+  };
   const avisarCliente = async (pedido: Pedido) => {
     if (!pedidosWhatsAppClient || !pedido.telefoneCliente) {
       logger.warn({ codigoCurto: pedido.codigoCurto }, 'sessão de pedidos indisponível, cliente não foi avisado do pagamento');
@@ -177,7 +182,7 @@ async function main(): Promise<void> {
     }
   }
 
-  iniciarJobExpiracaoPedidos(ordersRepo, env.PEDIDO_TTL_MINUTOS * 60_000);
+  iniciarJobExpiracaoPedidos(ordersRepo, env.PEDIDO_TTL_MINUTOS * 60_000, env.PEDIDO_CONCLUSAO_HORAS);
   iniciarJobPollingPagamentos(
     paymentsDeps,
     env.PAGAMENTO_POLLING_INTERVALO_SEGUNDOS * 1000,

@@ -142,7 +142,31 @@ describe('loja aceita ou recusa o pedido antes do PIX', () => {
     expect((await ordersRepo.buscarPorId(naEntrega.id))?.status).toBe('CONFIRMADO');
     expect(pixGerados).toEqual([]);
     expect(cliente.mensagensEnviadas.at(-1)?.conteudo).toContain('Pagamento: Dinheiro na entrega (troco para R$ 100.00) — R$ 47.00');
-    expect(loja.mensagensEnviadas.at(-1)?.conteudo).toContain('aceito ✅ Pagamento: Dinheiro na entrega');
-    expect(loja.mensagensEnviadas.at(-1)?.conteudo).toContain(`📞 wa.me/${TELEFONE_CLIENTE}`);
+    const confirmacao = loja.mensagensEnviadas.at(-2)?.conteudo;
+    expect(confirmacao).toContain('aceito ✅ Pagamento: Dinheiro na entrega');
+    expect(confirmacao).toContain(`📞 wa.me/${TELEFONE_CLIENTE}`);
+
+    // Já em preparo: a loja recebe a enquete de andamento.
+    const andamento = loja.mensagensEnviadas.at(-1)!;
+    expect(andamento).toMatchObject({ tipo: 'enquete', opcoes: ['Saiu para entrega', 'Entregue'] });
+
+    await loja.emitirVoto({ id: 'v-saiu', telefone: TELEFONE_LOJA, enqueteId: andamento.enqueteId!, opcoes: ['Saiu para entrega'] });
+    expect((await ordersRepo.buscarPorId(naEntrega.id))?.status).toBe('SAIU_PARA_ENTREGA');
+    expect(cliente.mensagensEnviadas.at(-1)?.conteudo).toBe(
+      `Seu pedido ${naEntrega.codigoCurto} saiu para entrega 🛵\nPagamento: Dinheiro na entrega (troco para R$ 100.00) — R$ 47.00.`,
+    );
+
+    // Trocar o voto na mesma enquete conclui; a resposta em texto também funciona e não repete.
+    await loja.emitirVoto({ id: 'v-entregue', telefone: TELEFONE_LOJA, enqueteId: andamento.enqueteId!, opcoes: ['Entregue'] });
+    expect((await ordersRepo.buscarPorId(naEntrega.id))?.status).toBe('CONCLUIDO');
+    await loja.emitirMensagem({ id: 'l3', telefone: TELEFONE_LOJA, corpo: `entregue ${naEntrega.codigoCurto}`, timestamp: new Date() });
+    expect(loja.mensagensEnviadas.at(-1)?.conteudo).toContain('já está como "concluído"');
+  });
+
+  it('"pronto PED-XXXX" antes do pagamento é recusado com explicação', async () => {
+    await loja.emitirMensagem({ id: 'l9', telefone: TELEFONE_LOJA, corpo: `pronto ${pedido.codigoCurto}`, timestamp: new Date() });
+
+    expect(await status()).toBe('AGUARDANDO_ACEITE');
+    expect(loja.mensagensEnviadas.at(-1)?.conteudo).toContain('ainda não foi pago ou aceito');
   });
 });
