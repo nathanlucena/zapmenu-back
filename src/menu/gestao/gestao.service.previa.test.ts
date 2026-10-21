@@ -113,4 +113,24 @@ describe('gestão: prévia em imagem junto com o resumo', () => {
       vi.useRealTimers();
     }
   });
+
+  it('"como vai ficar?" manda a prévia do rascunho atual, sem chamar a IA', async () => {
+    const { deps, roteiro } = criarDeps();
+    roteiro.push(resposta({ operacoes: [{ tipo: 'NOVO_ITEM', ref: 'n1', dados: { nome: 'Calabresa', precoBase: 50 } }] }));
+    await processarMensagemGestao({ telefone: TELEFONE, texto: 'pizza calabresa 50' }, deps);
+
+    const respostas = await processarMensagemGestao({ telefone: TELEFONE, texto: 'Como vai ficar?' }, deps);
+
+    expect(respostas[0]).toMatchObject({ imagemUrl: expect.stringContaining('/api/previa/') });
+    expect(respostas[1]).toContain('diga *pronto*');
+    expect(roteiro).toHaveLength(0);
+  });
+
+  it('"como vai ficar?" sem nada anotado explica que não há o que mostrar', async () => {
+    const { deps } = criarDeps();
+
+    const respostas = await processarMensagemGestao({ telefone: TELEFONE, texto: 'como vai ficar' }, deps);
+
+    expect(respostas).toEqual([expect.stringContaining('Ainda não tem nenhum item')]);
+  });
 });

@@ -193,6 +193,15 @@ async function tratar(rodada: Rodada): Promise<void> {
     case 'PENDENCIAS':
       responder(rodada, descreverPendencias(rodada));
       return;
+    case 'PREVIA':
+      if (!rodada.deps.previas) {
+        responder(rodada, 'A prévia em imagem não está disponível agora. O resumo em texto continua: diga *pronto* quando terminar.');
+      } else if (await responderPrevia(rodada, 'Assim vai ficar no cardápio 👇')) {
+        responder(rodada, 'Quando terminar, diga *pronto* para revisar e salvar.');
+      } else {
+        responder(rodada, 'Ainda não tem nenhum item ou dado da loja anotado para mostrar. Me conta o que você quer mudar! 🙂');
+      }
+      return;
     case 'NAO_LEMBRAR':
       await rodada.deps.gestaoRepo.registrarLembreteOpcionais(rodada.empreendedorId, { desligar: true });
       responder(rodada, 'Combinado, não lembro mais dos dados opcionais. Se quiser ver o que falta, mande *o que falta*. 🙂');

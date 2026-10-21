@@ -2,7 +2,7 @@
  * Palavras-chave tratadas sem IA: funcionam mesmo com a IA fora do ar e não
  * gastam uma chamada para o óbvio. O resto da conversa é interpretado pela IA.
  */
-export type Comando = 'CANCELAR' | 'CARDAPIO' | 'SIM' | 'NAO' | 'PENDENCIAS' | 'NAO_LEMBRAR';
+export type Comando = 'CANCELAR' | 'CARDAPIO' | 'SIM' | 'NAO' | 'PENDENCIAS' | 'NAO_LEMBRAR' | 'PREVIA';
 
 const PALAVRAS: Record<Comando, string[]> = {
   CANCELAR: ['cancelar', 'cancela'],
@@ -19,6 +19,17 @@ const PALAVRAS: Record<Comando, string[]> = {
     'cadastro',
     'meu cadastro',
     'status da loja',
+  ],
+  PREVIA: [
+    'como vai ficar',
+    'como fica',
+    'como ficou',
+    'como vai ficar no cardapio',
+    'ver previa',
+    'mostrar previa',
+    'mostra como fica',
+    'mostra como vai ficar',
+    'previa',
   ],
   NAO_LEMBRAR: ['nao lembrar mais', 'nao quero lembrete', 'para de lembrar', 'pare de lembrar', 'sem lembrete'],
 };
