@@ -61,7 +61,7 @@ cp .env.example .env
 ```
 Edite o `.env` e preencha pelo menos:
 - `DATABASE_URL` — string de conexão do Postgres
-- `WPP_MENU_PHONE_NUMBER` / `WPP_ORDERS_PHONE_NUMBER` — os dois números fixos do produto
+- `WPP_MENU_PHONE_NUMBER` / `WPP_ORDERS_PHONE_NUMBER` — os dois números fixos do produto. Para testar com um número só, coloque o mesmo nos dois: sobe uma sessão só, e as mensagens com `PED-XXXX` vão para o fluxo de pedidos enquanto as outras vão para a gestão
 - `MERCADO_PAGO_ACCESS_TOKEN`, `MERCADO_PAGO_WEBHOOK_SECRET` e `MERCADO_PAGO_NOTIFICATION_URL` (o segredo é a "assinatura secreta" do painel de webhooks do Mercado Pago; notificações sem assinatura válida recebem `401`)
 - `GESTAO_TELEFONES_PERMITIDOS` — telefones que podem usar o número de gestão. Vazia, qualquer número pode cadastrar cardápio (o boot avisa)
 - `FRONTEND_ALLOWED_ORIGIN` — origem do seu app Next.js (para CORS)

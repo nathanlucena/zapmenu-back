@@ -16,6 +16,7 @@ import { criarMercadoPagoClient } from './payments/infra/mercado-pago.client.js'
 import { iniciarJobPollingPagamentos } from './payments/infra/payment-status-poller.job.js';
 import { criarPaymentsRepositoryPrisma } from './payments/infra/payments.repository.prisma.js';
 import { criarGeradorCobranca } from './payments/application/gerar-cobranca.js';
+import { comPagamentoSimulado } from './payments/infra/pagamento-simulado.js';
 import type { PaymentsServiceDeps } from './payments/application/dependencias.js';
 import { getPrismaClient } from './shared/db/prisma-client.js';
 import { criarIdempotencyRepositoryPrisma } from './shared/idempotency/idempotency.repository.prisma.js';
@@ -24,6 +25,8 @@ import type { WhatsAppClient } from './whatsapp/whatsapp-client.interface.js';
 import { registrarMenuInboundRouter } from './whatsapp/menu-session/menu-inbound.router.js';
 import { registrarOrdersInboundRouter } from './whatsapp/orders-session/orders-inbound.router.js';
 import { iniciarSessaoWhatsApp } from './whatsapp/baileys/session-manager.js';
+import { dividirMensagens } from './whatsapp/numero-unico/dividir-mensagens.js';
+import { chaveTelefone } from './shared/telefone/telefone.js';
 
 async function main(): Promise<void> {
   const env = getEnv();
@@ -35,7 +38,9 @@ async function main(): Promise<void> {
   const conversationRepo = criarConversationRepositoryPrisma(prisma);
   const gestaoRepo = criarGestaoRepositoryPrisma(prisma);
   const idempotency = criarIdempotencyRepositoryPrisma(prisma);
-  const gatewayPix = criarMercadoPagoClient(env.MERCADO_PAGO_ACCESS_TOKEN);
+  const gatewayPix = criarMercadoPagoClient(env.MERCADO_PAGO_ACCESS_TOKEN, fetch, {
+    pagadorTeste: env.MERCADO_PAGO_PAGADOR_TESTE,
+  });
 
   const interpretador = env.DEEPSEEK_API_KEY
     ? criarInterpretadorDeepSeek({
@@ -88,48 +93,58 @@ async function main(): Promise<void> {
     notificarEmpreendedor,
   };
 
-  if (env.WPP_SESSOES.includes('menu')) {
-    await iniciarSessaoWhatsApp(
-      {
-        sessionName: env.WPP_MENU_SESSION_NAME,
-        tokenStorePath: env.WPP_MENU_TOKEN_STORE_PATH,
+  const registrarGestao = (client: WhatsAppClient) => {
+    menuWhatsAppClient = client;
+    registrarMenuInboundRouter({
+      whatsapp: client,
+      conversationRepo,
+      gestaoRepo,
+      idempotency,
+      interpretador,
+      endereco,
+      cadastro: cadastroEmpreendedores,
+    });
+  };
+  const registrarPedidos = (client: WhatsAppClient) => {
+    registrarOrdersInboundRouter({
+      whatsapp: client,
+      ordersRepo,
+      idempotency,
+      geradorCobranca: comPagamentoSimulado(criarGeradorCobranca(paymentsDeps), paymentsDeps, {
         modoAutoteste: env.WPP_MODO_AUTOTESTE,
-        logLevelBaileys: env.WPP_LOG_LEVEL,
-        numerosPermitidos: env.WPP_NUMEROS_PERMITIDOS,
-      },
-      (client) => {
-        menuWhatsAppClient = client;
-        registrarMenuInboundRouter({
-          whatsapp: client,
-          conversationRepo,
-          gestaoRepo,
-          idempotency,
-          interpretador,
-          endereco,
-          cadastro: cadastroEmpreendedores,
-        });
-      },
-    );
-  }
+        segundos: env.PAGAMENTO_SIMULADO_SEGUNDOS,
+      }),
+    });
+  };
+  const sessao = (sessionName: string, tokenStorePath: string) => ({
+    sessionName,
+    tokenStorePath,
+    modoAutoteste: env.WPP_MODO_AUTOTESTE,
+    logLevelBaileys: env.WPP_LOG_LEVEL,
+    numerosPermitidos: env.WPP_NUMEROS_PERMITIDOS,
+  });
 
-  if (env.WPP_SESSOES.includes('orders')) {
-    await iniciarSessaoWhatsApp(
-      {
-        sessionName: env.WPP_ORDERS_SESSION_NAME,
-        tokenStorePath: env.WPP_ORDERS_TOKEN_STORE_PATH,
-        modoAutoteste: env.WPP_MODO_AUTOTESTE,
-        logLevelBaileys: env.WPP_LOG_LEVEL,
-        numerosPermitidos: env.WPP_NUMEROS_PERMITIDOS,
-      },
-      (client) => {
-        registrarOrdersInboundRouter({
-          whatsapp: client,
-          ordersRepo,
-          idempotency,
-          geradorCobranca: criarGeradorCobranca(paymentsDeps),
-        });
-      },
+  const numeroUnico =
+    env.WPP_SESSOES.includes('menu') &&
+    env.WPP_SESSOES.includes('orders') &&
+    chaveTelefone(env.WPP_MENU_PHONE_NUMBER) === chaveTelefone(env.WPP_ORDERS_PHONE_NUMBER);
+
+  if (numeroUnico) {
+    logger.warn(
+      'gestão e pedidos usam o mesmo número: uma sessão só, mensagens com PED-XXXX vão para pedidos e as outras para a gestão',
     );
+    await iniciarSessaoWhatsApp(sessao(env.WPP_MENU_SESSION_NAME, env.WPP_MENU_TOKEN_STORE_PATH), (client) => {
+      const { gestao, pedidos } = dividirMensagens(client);
+      registrarGestao(gestao);
+      registrarPedidos(pedidos);
+    });
+  } else {
+    if (env.WPP_SESSOES.includes('menu')) {
+      await iniciarSessaoWhatsApp(sessao(env.WPP_MENU_SESSION_NAME, env.WPP_MENU_TOKEN_STORE_PATH), registrarGestao);
+    }
+    if (env.WPP_SESSOES.includes('orders')) {
+      await iniciarSessaoWhatsApp(sessao(env.WPP_ORDERS_SESSION_NAME, env.WPP_ORDERS_TOKEN_STORE_PATH), registrarPedidos);
+    }
   }
 
   iniciarJobExpiracaoPedidos(ordersRepo, env.PEDIDO_TTL_MINUTOS * 60_000);

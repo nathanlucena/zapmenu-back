@@ -249,6 +249,7 @@ Cada número é uma sessão Baileys (`session-manager.ts`): uma conexão direta 
 | Mídia | Imagens baixadas como data URI base64; o texto da mensagem passa a ser a legenda |
 | Envio | O número é consultado no WhatsApp antes do primeiro envio, porque celulares antigos existem lá sem o 9º dígito; a resposta fica em cache |
 | Ordem por telefone | A sessão de gestão processa uma mensagem por vez por telefone (fila), para uma rodada não apagar o estado gravado pela outra |
+| Número único | Se `WPP_MENU_PHONE_NUMBER` e `WPP_ORDERS_PHONE_NUMBER` forem o mesmo, sobe só a sessão de gestão; mensagens com `PED-XXXX` vão para o router de pedidos e as outras para o de gestão (`numero-unico/dividir-mensagens.ts`) |
 | Aviso de pedido pago | Enviado pela sessão de **gestão** (é ela que fala com os donos); se ela não estiver conectada, o aviso é perdido e só fica no log |
 
 ### Modo autoteste (`WPP_MODO_AUTOTESTE=true`)
@@ -258,6 +259,7 @@ Para testar com um único celular:
 - Envios para qualquer outro número são bloqueados e logados.
 - As respostas do bot levam um caractere invisível no começo, para o bot não reprocessar a própria resposta no chat consigo mesmo.
 - Usa `onAnyMessage` (o `onMessage` normal descarta mensagens da própria conta).
+- O PIX é dado como pago `PAGAMENTO_SIMULADO_SEGUNDOS` (padrão 30; 0 desliga) depois de gerado, pelo mesmo caminho do webhook: pagamento aprovado, pedido `PAGO` e aviso ao empreendedor. Não faz nada se o pedido já foi pago, expirou ou foi cancelado (`payments/infra/pagamento-simulado.ts`).
 
 ---
 
@@ -365,7 +367,7 @@ A marca de "processado" é gravada **depois** do tratamento. Se o processo cair 
 |---|---|---|---|
 | WhatsApp Web (Baileys) | Os dois números | `WPP_*` | Reconexão com backoff; mensagens reentregues ao voltar |
 | DeepSeek (SDK `openai`) | Interpretar a conversa de gestão | `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `DEEPSEEK_BASE_URL` | Sem chave: só palavras-chave. Sobrecarga (429/5xx): 2 novas tentativas. Timeout de 45 s. |
-| Mercado Pago | Cobrança PIX e status | `MERCADO_PAGO_ACCESS_TOKEN`, `MERCADO_PAGO_NOTIFICATION_URL` | Falha ao criar cobrança: erro logado, cliente fica sem PIX (sem nova tentativa automática) |
+| Mercado Pago | Cobrança PIX e status | `MERCADO_PAGO_ACCESS_TOKEN`, `MERCADO_PAGO_NOTIFICATION_URL` | Falha ao criar cobrança: erro logado, cliente fica sem PIX (sem nova tentativa automática). Com credenciais de teste o PIX só existe no sandbox (nenhum banco reconhece); `MERCADO_PAGO_PAGADOR_TESTE=APRO` faz o Mercado Pago aprová-lo sozinho |
 | ViaCEP | CEP → rua, bairro, cidade | nenhuma | Segue só com o Google |
 | Google Geocoding | Endereço → coordenada | `GOOGLE_MAPS_API_KEY` (opcional) | Sem chave ou fora do ar: cadastro de endereço indisponível |
 

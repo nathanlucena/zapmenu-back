@@ -48,6 +48,25 @@ describe('criarMercadoPagoClient (API de Orders)', () => {
     });
   });
 
+  it('só envia payer.first_name quando há pagador de teste', async () => {
+    const semPagador = vi.fn().mockResolvedValue(respostaFake(orderPendente));
+    await criarMercadoPagoClient('token-teste', semPagador as unknown as typeof fetch).criarCobrancaPix({
+      valor: 10,
+      descricao: 'x',
+      referenciaExterna: 'pedido-1',
+    });
+    expect(JSON.parse(semPagador.mock.calls[0]![1].body).payer).toEqual({ email: 'pedido-1@zapmenu.local' });
+
+    const comPagador = vi.fn().mockResolvedValue(respostaFake(orderPendente));
+    await criarMercadoPagoClient('token-teste', comPagador as unknown as typeof fetch, {
+      pagadorTeste: 'APRO',
+    }).criarCobrancaPix({ valor: 10, descricao: 'x', referenciaExterna: 'pedido-1' });
+    expect(JSON.parse(comPagador.mock.calls[0]![1].body).payer).toEqual({
+      email: 'pedido-1@zapmenu.local',
+      first_name: 'APRO',
+    });
+  });
+
   it('lança erro quando a criação da cobrança falha', async () => {
     const fetchMock = vi.fn().mockResolvedValue(respostaFake({}, false, 500));
     const client = criarMercadoPagoClient('token-teste', fetchMock as unknown as typeof fetch);

@@ -29,7 +29,16 @@ function statusDa(order: RespostaOrderMp): string {
 }
 
 /** Cobrança PIX pela API de Orders do Mercado Pago (Checkout API). */
-export function criarMercadoPagoClient(accessToken: string, fetchFn: typeof fetch = fetch): GatewayPix {
+export interface OpcoesMercadoPago {
+  /** Só com credenciais de teste: enviado como `payer.first_name` ("APRO" aprova o PIX de teste). */
+  pagadorTeste?: string;
+}
+
+export function criarMercadoPagoClient(
+  accessToken: string,
+  fetchFn: typeof fetch = fetch,
+  opcoes: OpcoesMercadoPago = {},
+): GatewayPix {
   return {
     async criarCobrancaPix({ valor, descricao, referenciaExterna }) {
       // A API de Orders recebe valores como texto com duas casas ("25.00").
@@ -47,7 +56,10 @@ export function criarMercadoPagoClient(accessToken: string, fetchFn: typeof fetc
           total_amount: total,
           external_reference: referenciaExterna,
           description: descricao,
-          payer: { email: `${referenciaExterna}@zapmenu.local` },
+          payer: {
+            email: `${referenciaExterna}@zapmenu.local`,
+            ...(opcoes.pagadorTeste && { first_name: opcoes.pagadorTeste }),
+          },
           transactions: {
             payments: [
               {

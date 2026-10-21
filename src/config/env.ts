@@ -56,9 +56,16 @@ const envSchema = z.object({
   MERCADO_PAGO_ACCESS_TOKEN: z.string().min(1),
   MERCADO_PAGO_WEBHOOK_SECRET: z.string().min(1),
   MERCADO_PAGO_NOTIFICATION_URL: z.string().url(),
+  // Só com credenciais de teste: vai como payer.first_name da order ("APRO" aprova o PIX de teste). Vazia = desligada.
+  MERCADO_PAGO_PAGADOR_TESTE: z
+    .string()
+    .optional()
+    .transform((valor) => valor || undefined),
 
   PEDIDO_TTL_MINUTOS: z.coerce.number().default(20),
   PAGAMENTO_POLLING_INTERVALO_SEGUNDOS: z.coerce.number().default(60),
+  // Só no modo autoteste: o PIX é dado como pago N segundos depois de gerado. 0 desliga.
+  PAGAMENTO_SIMULADO_SEGUNDOS: z.coerce.number().int().min(0).default(30),
 
   FRONTEND_ALLOWED_ORIGIN: z.string().min(1),
 });

@@ -15,7 +15,7 @@ export interface WhatsAppClientFake {
 
 export function criarWhatsAppClientFake(): WhatsAppClientFake {
   const mensagensEnviadas: MensagemEnviada[] = [];
-  let manipulador: ManipuladorMensagem | undefined;
+  const manipuladores: ManipuladorMensagem[] = [];
 
   const client: WhatsAppClient = {
     async sendText(telefone, texto) {
@@ -25,7 +25,7 @@ export function criarWhatsAppClientFake(): WhatsAppClientFake {
       mensagensEnviadas.push({ telefone, tipo: 'imagem', conteudo: imagemUrlOuBase64, legenda });
     },
     onMessage(h) {
-      manipulador = h;
+      manipuladores.push(h);
     },
   };
 
@@ -33,10 +33,12 @@ export function criarWhatsAppClientFake(): WhatsAppClientFake {
     client,
     mensagensEnviadas,
     async emitirMensagem(mensagem) {
-      if (!manipulador) {
+      if (manipuladores.length === 0) {
         throw new Error('Nenhum manipulador de mensagens registrado.');
       }
-      await manipulador(mensagem);
+      for (const manipulador of manipuladores) {
+        await manipulador(mensagem);
+      }
     },
   };
 }
