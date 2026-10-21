@@ -28,6 +28,7 @@ import { logger } from './shared/logger/logger.js';
 import type { WhatsAppClient } from './whatsapp/whatsapp-client.interface.js';
 import { registrarMenuInboundRouter } from './whatsapp/menu-session/menu-inbound.router.js';
 import { registrarOrdersInboundRouter } from './whatsapp/orders-session/orders-inbound.router.js';
+import { reenviarPixPendentes } from './whatsapp/orders-session/pix-pendente.js';
 import { iniciarSessaoWhatsApp } from './whatsapp/baileys/session-manager.js';
 import { dividirMensagens } from './whatsapp/numero-unico/dividir-mensagens.js';
 import { identificarBot, ROTULO_GESTAO, ROTULO_PEDIDOS } from './whatsapp/identificacao/identificar-bot.js';
@@ -189,6 +190,12 @@ async function main(): Promise<void> {
     env.PAGAMENTO_POLLING_INTERVALO_SEGUNDOS * 1000,
     env.PAGAMENTO_POLLING_INTERVALO_SEGUNDOS,
   );
+  // PIX que falhou no aceite da loja: tenta de novo no mesmo ritmo do polling.
+  setInterval(() => {
+    reenviarPixPendentes({ ordersRepo, paymentsRepo, geradorCobranca, cliente: () => pedidosWhatsAppClient }).catch(
+      (erro: unknown) => logger.error({ err: erro }, 'falha ao reenviar PIX pendentes'),
+    );
+  }, env.PAGAMENTO_POLLING_INTERVALO_SEGUNDOS * 1000);
 
   const app = buildApp({
     menuRepo,

@@ -73,6 +73,10 @@ export function criarOrdersRepositoryFake(): OrdersRepositoryFake {
       );
     },
 
+    async listarPorStatus(status) {
+      return Array.from(pedidos.values()).filter((pedido) => pedido.status === status);
+    },
+
     async listarEmAndamentoAntesDe(limite: Date) {
       return Array.from(pedidos.values()).filter(
         (pedido) => STATUS_EM_ANDAMENTO.includes(pedido.status) && pedido.criadoEm < limite,

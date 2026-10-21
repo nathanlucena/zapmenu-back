@@ -7,6 +7,7 @@ export interface OrdersRepository {
   buscarPorCodigo(codigoCurto: string): Promise<Pedido | null>;
   /** Pelo id da enquete de aceite ou da de andamento. */
   buscarPorEnquete(enqueteId: string): Promise<Pedido | null>;
+  listarPorStatus(status: StatusPedido): Promise<Pedido[]>;
   /** Pedidos em andamento criados antes de `limite`, para concluir sozinhos. */
   listarEmAndamentoAntesDe(limite: Date): Promise<Pedido[]>;
   buscarResumoPublico(codigoCurto: string): Promise<ResumoPedidoPublico | null>;

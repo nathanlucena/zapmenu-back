@@ -156,6 +156,11 @@ export function criarOrdersRepositoryPrisma(prisma: PrismaClient): OrdersReposit
       return pedido ? paraPedido(pedido) : null;
     },
 
+    async listarPorStatus(status) {
+      const pedidos = await prisma.pedido.findMany({ where: { status }, include: COM_ITENS });
+      return pedidos.map(paraPedido);
+    },
+
     async listarEmAndamentoAntesDe(limite: Date) {
       const pedidos = await prisma.pedido.findMany({
         where: { status: { in: STATUS_EM_ANDAMENTO }, criadoEm: { lt: limite } },
