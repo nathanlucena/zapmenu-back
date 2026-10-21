@@ -259,6 +259,7 @@ Para testar com um único celular:
 - Envios para qualquer outro número são bloqueados e logados.
 - As respostas do bot levam um caractere invisível no começo, para o bot não reprocessar a própria resposta no chat consigo mesmo.
 - Usa `onAnyMessage` (o `onMessage` normal descarta mensagens da própria conta).
+- Cada mensagem do bot começa com uma linha dizendo quem fala: `🧑‍🍳 *Gestão*` ou `🛍️ *Pedidos*` (`whatsapp/identificacao/identificar-bot.ts`). Fora do autoteste as mensagens saem sem essa linha.
 - O PIX é dado como pago `PAGAMENTO_SIMULADO_SEGUNDOS` (padrão 30; 0 desliga) depois de gerado, pelo mesmo caminho do webhook: pagamento aprovado, pedido `PAGO` e aviso ao empreendedor. Não faz nada se o pedido já foi pago, expirou ou foi cancelado (`payments/infra/pagamento-simulado.ts`).
 
 ---

@@ -26,6 +26,7 @@ import { registrarMenuInboundRouter } from './whatsapp/menu-session/menu-inbound
 import { registrarOrdersInboundRouter } from './whatsapp/orders-session/orders-inbound.router.js';
 import { iniciarSessaoWhatsApp } from './whatsapp/baileys/session-manager.js';
 import { dividirMensagens } from './whatsapp/numero-unico/dividir-mensagens.js';
+import { identificarBot, ROTULO_GESTAO, ROTULO_PEDIDOS } from './whatsapp/identificacao/identificar-bot.js';
 import { chaveTelefone } from './shared/telefone/telefone.js';
 
 async function main(): Promise<void> {
@@ -93,7 +94,12 @@ async function main(): Promise<void> {
     notificarEmpreendedor,
   };
 
-  const registrarGestao = (client: WhatsAppClient) => {
+  // No autoteste cada mensagem diz qual bot está falando (gestão ou pedidos).
+  const comRotulo = (client: WhatsAppClient, rotulo: string) =>
+    env.WPP_MODO_AUTOTESTE ? identificarBot(client, rotulo) : client;
+
+  const registrarGestao = (conexao: WhatsAppClient) => {
+    const client = comRotulo(conexao, ROTULO_GESTAO);
     menuWhatsAppClient = client;
     registrarMenuInboundRouter({
       whatsapp: client,
@@ -105,9 +111,9 @@ async function main(): Promise<void> {
       cadastro: cadastroEmpreendedores,
     });
   };
-  const registrarPedidos = (client: WhatsAppClient) => {
+  const registrarPedidos = (conexao: WhatsAppClient) => {
     registrarOrdersInboundRouter({
-      whatsapp: client,
+      whatsapp: comRotulo(conexao, ROTULO_PEDIDOS),
       ordersRepo,
       idempotency,
       geradorCobranca: comPagamentoSimulado(criarGeradorCobranca(paymentsDeps), paymentsDeps, {
