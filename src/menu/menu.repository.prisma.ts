@@ -67,7 +67,7 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
       data: dados,
     });
     if (count === 0) {
-      throw new DomainError(`Item ${itemId} não encontrado neste cardápio.`, 'ITEM_NAO_ENCONTRADO');
+      throw new DomainError('Este item não existe mais no cardápio.', 'ITEM_NAO_ENCONTRADO');
     }
   }
 

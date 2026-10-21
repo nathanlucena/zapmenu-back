@@ -148,10 +148,7 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
         }
 
         for (const novo of rascunho.novosItens) {
-          if (!novo.nome || novo.precoBase === undefined) {
-            const qual = novo.nome ? `O item *${novo.nome}*` : 'Um dos itens novos';
-            throw new DomainError(`${qual} está sem ${novo.nome ? 'preço' : 'nome'}.`, 'ITEM_INCOMPLETO');
-          }
+          garantirItemCompleto(novo);
           await tx.itemCardapio.create({
             data: {
               cardapioId,
@@ -198,7 +195,17 @@ function paraVariacaoPrisma(variacao: Variacao) {
   return { nome: variacao.nome, opcoes: variacao.opcoes as unknown as Prisma.InputJsonValue };
 }
 
-async function atualizarItem(
+/** Item novo só é gravado com nome e preço (a IA às vezes deixa um dos dois para depois). */
+export function garantirItemCompleto<T extends { nome?: string; precoBase?: number }>(
+  novo: T,
+): asserts novo is T & { nome: string; precoBase: number } {
+  if (!novo.nome || novo.precoBase === undefined) {
+    const qual = novo.nome ? `O item *${novo.nome}*` : 'Um dos itens novos';
+    throw new DomainError(`${qual} está sem ${novo.nome ? 'preço' : 'nome'}.`, 'ITEM_INCOMPLETO');
+  }
+}
+
+export async function atualizarItem(
   tx: Tx,
   cardapioId: string,
   itemId: string,
