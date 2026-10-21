@@ -2,6 +2,7 @@ import { processarMensagemGestao, type GestaoDeps } from '../../menu/gestao/gest
 import type { IdempotencyRepository } from '../../shared/idempotency/idempotency.repository.js';
 import { logger } from '../../shared/logger/logger.js';
 import type { WhatsAppClient } from '../whatsapp-client.interface.js';
+import { criarAvisoDeFalha } from '../falhas.js';
 import { registrarVotosDaLoja, tratarRespostaDaLojaEmTexto, type DecisaoPedidoDeps } from './decisao-pedido.js';
 
 const ORIGEM_IDEMPOTENCIA = 'whatsapp_menu';
@@ -41,24 +42,31 @@ export function registrarMenuInboundRouter(deps: MenuInboundRouterDeps): void {
     registrarVotosDaLoja(decisoes, deps.whatsapp);
   }
 
+  const avisarFalha = criarAvisoDeFalha('mensagem de gestão');
+
   deps.whatsapp.onMessage((mensagem) => enfileirar(mensagem.telefone, async () => {
-    if (await deps.idempotency.jaProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id)) {
-      logger.info({ mensagemId: mensagem.id }, 'mensagem de gestão já processada (reentrega), ignorando');
-      return;
-    }
+    try {
+      if (await deps.idempotency.jaProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id)) {
+        logger.info({ mensagemId: mensagem.id }, 'mensagem de gestão já processada (reentrega), ignorando');
+        return;
+      }
 
-    if (decisoes && (await tratarRespostaDaLojaEmTexto(decisoes, deps.whatsapp, mensagem))) {
+      if (decisoes && (await tratarRespostaDaLojaEmTexto(decisoes, deps.whatsapp, mensagem))) {
+        await deps.idempotency.marcarProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id);
+        return;
+      }
+
+      const respostas = await processarMensagemGestao(
+        { telefone: mensagem.telefone, texto: mensagem.corpo, imagemUrl: mensagem.imagemUrl },
+        deps,
+      );
+      for (const resposta of respostas) {
+        await deps.whatsapp.sendText(mensagem.telefone, resposta);
+      }
       await deps.idempotency.marcarProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id);
-      return;
+    } catch (erro) {
+      // Sem marcar como processada: a reentrega (ou a pessoa mandando de novo) tenta outra vez.
+      await avisarFalha(deps.whatsapp, mensagem.telefone, mensagem.id, erro);
     }
-
-    const respostas = await processarMensagemGestao(
-      { telefone: mensagem.telefone, texto: mensagem.corpo, imagemUrl: mensagem.imagemUrl },
-      deps,
-    );
-    for (const resposta of respostas) {
-      await deps.whatsapp.sendText(mensagem.telefone, resposta);
-    }
-    await deps.idempotency.marcarProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id);
   }));
 }

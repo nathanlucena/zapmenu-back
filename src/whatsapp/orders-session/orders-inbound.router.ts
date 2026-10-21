@@ -7,6 +7,7 @@ import type { OrdersRepository } from '../../orders/application/ports/orders.rep
 import type { Pedido } from '../../orders/domain/pedido.js';
 import type { GeradorCobranca } from '../../payments/application/gerar-cobranca.js';
 import type { MensagemRecebida, WhatsAppClient } from '../whatsapp-client.interface.js';
+import { criarAvisoDeFalha } from '../falhas.js';
 
 const ORIGEM_IDEMPOTENCIA = 'whatsapp_orders';
 
@@ -91,13 +92,18 @@ async function tratarMensagem(mensagem: MensagemRecebida, deps: OrdersInboundRou
 }
 
 export function registrarOrdersInboundRouter(deps: OrdersInboundRouterDeps): void {
+  const avisarFalha = criarAvisoDeFalha('mensagem de pedido');
   deps.whatsapp.onMessage(async (mensagem) => {
-    if (await deps.idempotency.jaProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id)) {
-      logger.info({ mensagemId: mensagem.id }, 'mensagem de pedidos já processada (reentrega), ignorando');
-      return;
+    try {
+      if (await deps.idempotency.jaProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id)) {
+        logger.info({ mensagemId: mensagem.id }, 'mensagem de pedidos já processada (reentrega), ignorando');
+        return;
+      }
+      await tratarMensagem(mensagem, deps);
+      await deps.idempotency.marcarProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id);
+    } catch (erro) {
+      // Sem marcar como processada: se o WhatsApp reentregar ou o cliente mandar de novo, tenta outra vez.
+      await avisarFalha(deps.whatsapp, mensagem.telefone, mensagem.id, erro);
     }
-
-    await tratarMensagem(mensagem, deps);
-    await deps.idempotency.marcarProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id);
   });
 }

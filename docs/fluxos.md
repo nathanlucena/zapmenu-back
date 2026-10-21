@@ -276,6 +276,7 @@ Cada número é uma sessão Baileys (`session-manager.ts`): uma conexão direta 
 | Envio | O número é consultado no WhatsApp antes do primeiro envio, porque celulares antigos existem lá sem o 9º dígito; a resposta fica em cache |
 | Ordem por telefone | A sessão de gestão processa uma mensagem por vez por telefone (fila), para uma rodada não apagar o estado gravado pela outra |
 | Número único | Se `WPP_MENU_PHONE_NUMBER` e `WPP_ORDERS_PHONE_NUMBER` forem o mesmo, sobe só a sessão de gestão; mensagens do cliente com `PED-XXXX` vão para o router de pedidos; as outras, inclusive `aceitar/recusar PED-XXXX` e os votos da enquete, vão para o de gestão (`numero-unico/dividir-mensagens.ts`) |
+| Falha inesperada | Os routers de pedidos e gestão e os votos têm rede de segurança (`whatsapp/falhas.ts`): a pessoa recebe "Tive um problema agora 😕 Tente de novo em instantes." (ou a mensagem do pagamento/endereço instável), uma vez por mensagem, e a mensagem **não** é marcada como processada, para a reentrega ou o reenvio tentar de novo |
 | Aviso de pedido pago | Enviado pela sessão de **gestão** (é ela que fala com os donos); se ela não estiver conectada, o aviso é perdido e só fica no log |
 
 ### Modo autoteste (`WPP_MODO_AUTOTESTE=true`)

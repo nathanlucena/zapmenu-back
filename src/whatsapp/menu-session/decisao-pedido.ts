@@ -19,7 +19,8 @@ import { DomainError } from '../../shared/errors/domain-error.js';
 import type { IdempotencyRepository } from '../../shared/idempotency/idempotency.repository.js';
 import { logger } from '../../shared/logger/logger.js';
 import { enviarPix } from '../orders-session/orders-inbound.router.js';
-import type { MensagemRecebida, WhatsAppClient } from '../whatsapp-client.interface.js';
+import type { MensagemRecebida, VotoRecebido, WhatsAppClient } from '../whatsapp-client.interface.js';
+import { criarAvisoDeFalha } from '../falhas.js';
 
 const ORIGEM_VOTO = 'whatsapp_voto_aceite';
 
@@ -162,21 +163,30 @@ export async function tratarRespostaDaLojaEmTexto(
 
 /** Votos nas enquetes da loja: Aceitar/Recusar e a de andamento (saiu/pronto, entregue/retirado). */
 export function registrarVotosDaLoja(deps: DecisaoPedidoDeps, whatsapp: WhatsAppClient): void {
+  const avisarFalha = criarAvisoDeFalha('voto da loja');
   whatsapp.onPollVote(async (voto) => {
-    const pedido = await deps.ordersRepo.buscarPorEnquete(voto.enqueteId);
-    const opcao = voto.opcoes[0];
-    if (!pedido || !opcao || (await deps.idempotency.jaProcessado(ORIGEM_VOTO, voto.id))) {
-      return;
+    try {
+      await tratarVoto(deps, whatsapp, voto);
+    } catch (erro) {
+      await avisarFalha(whatsapp, voto.telefone, voto.id, erro, 'Não consegui registrar seu voto. ');
     }
-    if (voto.enqueteId === pedido.enqueteAceiteId && (opcao === OPCAO_ACEITAR || opcao === OPCAO_RECUSAR)) {
-      await aplicarDecisao(deps, whatsapp, voto.telefone, pedido, opcao === OPCAO_ACEITAR ? 'ACEITAR' : 'RECUSAR');
-    } else if (voto.enqueteId === pedido.enqueteAndamentoId) {
-      const andamento = andamentoDaOpcao(pedido, opcao);
-      if (!andamento) return;
-      await aplicarAndamento(deps, whatsapp, voto.telefone, pedido, andamento);
-    } else {
-      return;
-    }
-    await deps.idempotency.marcarProcessado(ORIGEM_VOTO, voto.id);
   });
+}
+
+async function tratarVoto(deps: DecisaoPedidoDeps, whatsapp: WhatsAppClient, voto: VotoRecebido): Promise<void> {
+  const pedido = await deps.ordersRepo.buscarPorEnquete(voto.enqueteId);
+  const opcao = voto.opcoes[0];
+  if (!pedido || !opcao || (await deps.idempotency.jaProcessado(ORIGEM_VOTO, voto.id))) {
+    return;
+  }
+  if (voto.enqueteId === pedido.enqueteAceiteId && (opcao === OPCAO_ACEITAR || opcao === OPCAO_RECUSAR)) {
+    await aplicarDecisao(deps, whatsapp, voto.telefone, pedido, opcao === OPCAO_ACEITAR ? 'ACEITAR' : 'RECUSAR');
+  } else if (voto.enqueteId === pedido.enqueteAndamentoId) {
+    const andamento = andamentoDaOpcao(pedido, opcao);
+    if (!andamento) return;
+    await aplicarAndamento(deps, whatsapp, voto.telefone, pedido, andamento);
+  } else {
+    return;
+  }
+  await deps.idempotency.marcarProcessado(ORIGEM_VOTO, voto.id);
 }
