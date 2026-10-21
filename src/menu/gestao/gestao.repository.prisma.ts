@@ -149,7 +149,8 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
 
         for (const novo of rascunho.novosItens) {
           if (!novo.nome || novo.precoBase === undefined) {
-            throw new DomainError(`Item "${novo.nome ?? novo.ref}" está incompleto.`, 'ITEM_INCOMPLETO');
+            const qual = novo.nome ? `O item *${novo.nome}*` : 'Um dos itens novos';
+            throw new DomainError(`${qual} está sem ${novo.nome ? 'preço' : 'nome'}.`, 'ITEM_INCOMPLETO');
           }
           await tx.itemCardapio.create({
             data: {
@@ -205,7 +206,8 @@ async function atualizarItem(
 ): Promise<void> {
   const { count } = await tx.itemCardapio.updateMany({ where: { id: itemId, cardapioId, removidoEm: null }, data: dados });
   if (count === 0) {
-    throw new DomainError(`Item ${itemId} não encontrado neste cardápio.`, 'ITEM_NAO_ENCONTRADO');
+    // O item sumiu entre o rascunho e o "sim" (removido em outra conversa, por exemplo).
+    throw new DomainError('Um dos itens que você alterou não existe mais no cardápio.', 'ITEM_NAO_ENCONTRADO');
   }
 }
 

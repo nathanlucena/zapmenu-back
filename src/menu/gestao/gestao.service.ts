@@ -527,6 +527,16 @@ async function salvar(rodada: Rodada): Promise<void> {
       responder(rodada, `😕 ${erro.message} Me diga outro link para o cardápio e depois *pronto* para salvar.`);
       return;
     }
+    if (erro instanceof DomainError) {
+      // Erro com motivo (item que sumiu, item sem preço): repetir o "sim" não resolve, então volta a conversar.
+      logger.warn({ err: erro }, 'rascunho recusado ao salvar');
+      rodada.estado = 'CONVERSANDO';
+      responder(
+        rodada,
+        `😕 Não consegui salvar: ${erro.message} Nada foi alterado. Me diga o que ajustar e depois *pronto* para revisar de novo.`,
+      );
+      return;
+    }
     logger.error({ err: erro }, '💥 falha ao salvar o rascunho');
     responder(rodada, '😕 Deu um erro ao salvar e nada foi alterado. Tente responder *sim* de novo em instantes.');
     return;

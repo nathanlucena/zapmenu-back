@@ -3,6 +3,7 @@ import type { ConversaPersistida, ConversationRepository } from '../conversation
 import { contextoInicial, type DadosLoja, type EnderecoVerificado } from '../conversation/conversation-state.types.js';
 import { criarGestaoRepositoryFake, type GestaoRepositoryFake } from './__mocks__/gestao.repository.fake.js';
 import { criarCadastroPorLista } from './cadastro-empreendedores.js';
+import { DomainError } from '../../shared/errors/domain-error.js';
 import { processarMensagemGestao, type GestaoDeps } from './gestao.service.js';
 import type { EntradaConversa, InterpretadorMensagem, Operacao, RespostaConversa } from './interpretador.js';
 
@@ -60,6 +61,8 @@ function criarCenario(loja: DadosLoja, lojaSalva: Partial<GestaoRepositoryFake['
     (await processarMensagemGestao({ telefone: TELEFONE, texto, imagemUrl }, deps)).join('\n---\n');
   return { gestaoRepo, roteiro, entradas, enviar };
 }
+
+const HORARIOS_SEG = [{ dia: 'seg' as const, abre: '18:00', fecha: '23:00' }];
 
 const HORARIOS: Operacao = {
   tipo: 'ATUALIZAR_LOJA',
@@ -160,5 +163,31 @@ describe('gestão: lembrete dos dados opcionais', () => {
     const texto = await cenario.enviar('essa é a logo', 'data:image/png;base64,AAA');
 
     expect(texto).toContain('🖼️ Logo nova 📷');
+  });
+});
+
+describe('gestão: erro ao salvar', () => {
+  it('erro com motivo mostra o motivo e volta a conversar', async () => {
+    const cenario = criarCenario({ ...LOJA_QUASE_PRONTA, horarios: HORARIOS_SEG }, { naoLembrarOpcionais: true });
+    cenario.roteiro.push(resposta({ operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { descricao: 'Pizzas' } }], finalizou: true }));
+    await cenario.enviar('descrição: pizzas, é isso');
+    cenario.gestaoRepo.erroAoSalvar = new DomainError(
+      'Um dos itens que você alterou não existe mais no cardápio.',
+      'ITEM_NAO_ENCONTRADO',
+    );
+
+    const texto = await cenario.enviar('sim');
+
+    expect(texto).toContain('Não consegui salvar: Um dos itens que você alterou não existe mais no cardápio.');
+    expect(texto).toContain('Nada foi alterado');
+  });
+
+  it('erro inesperado pede para tentar o "sim" de novo', async () => {
+    const cenario = criarCenario({ ...LOJA_QUASE_PRONTA, horarios: HORARIOS_SEG }, { naoLembrarOpcionais: true });
+    cenario.roteiro.push(resposta({ operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { descricao: 'Pizzas' } }], finalizou: true }));
+    await cenario.enviar('descrição: pizzas, é isso');
+    cenario.gestaoRepo.erroAoSalvar = new Error('banco caiu');
+
+    expect(await cenario.enviar('sim')).toContain('Tente responder *sim* de novo');
   });
 });
