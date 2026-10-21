@@ -371,7 +371,7 @@ Todo erro sai como `{ "erro": "mensagem para pessoas", "codigo": "CODIGO" }` (`h
 
 | Erro | Corpo |
 |---|---|
-| Carrinho fora do formato (zod) | `400 { "erro": "Carrinho inválido.", "detalhes": { … } }` |
+| Carrinho fora do formato (zod) | `400 { "erro": "Carrinho inválido.", "codigo": "CARRINHO_INVALIDO", "detalhes": { "campos": { "itens.0.quantidade": "deve ser maior que 0" } } }` — mensagens em português, um erro por campo (`http/validacao/mensagens-zod.ts`) |
 | Item fora do cardápio | `400 { "erro": "Um dos itens do carrinho não está mais disponível." }` |
 | Variação desconhecida ou faltando | `400 { "erro": "Escolha uma opção de \"Tamanho\" para \"Pizza Calabresa\"." }` |
 | Pagamento na entrega com a loja só aceitando PIX | `400 { "codigo": "PAGAMENTO_NA_ENTREGA_INDISPONIVEL" }` |

@@ -184,6 +184,34 @@ describe('POST /v1/orders', () => {
     expect(resposta.json().codigo).toBe('LOJA_EM_MONTAGEM');
   });
 
+  it('validação em português, um erro por campo', async () => {
+    const app = montarApp();
+
+    const resposta = await app.inject({
+      method: 'POST',
+      url: '/v1/orders',
+      payload: {
+        itens: [{ itemCardapioId: 'i1', quantidade: 0 }],
+        modalidade: 'VOANDO',
+        endereco: { uf: 'São Paulo' },
+      },
+    });
+
+    expect(resposta.statusCode).toBe(400);
+    expect(resposta.json()).toMatchObject({
+      codigo: 'CARRINHO_INVALIDO',
+      detalhes: {
+        campos: {
+          empreendedorId: 'é obrigatório',
+          'itens.0.quantidade': 'deve ser maior que 0',
+          modalidade: 'deve ser um destes: RETIRADA, ENTREGA',
+          'endereco.uf': expect.stringContaining('2'),
+        },
+      },
+    });
+    expect(resposta.body).not.toMatch(/Invalid|expected/);
+  });
+
   it('retorna 400 para payload com schema inválido', async () => {
     const app = montarApp();
 

@@ -4,6 +4,7 @@ import { consultarPedido } from '../../orders/application/consultar-pedido.js';
 import { cotarEntrega } from '../../orders/application/cotar-entrega.js';
 import { criarPedidoDoCarrinho, type CriarPedidoDoCarrinhoDeps } from '../../orders/application/criar-pedido.js';
 import { DomainError } from '../../shared/errors/domain-error.js';
+import { detalhesDaValidacao } from '../validacao/mensagens-zod.js';
 
 const texto = (max: number) => z.string().trim().min(1).max(max);
 
@@ -56,7 +57,7 @@ export function registerOrdersRoutes(app: FastifyInstance, deps: CriarPedidoDoCa
     if (!parseResult.success) {
       return reply
         .status(400)
-        .send({ erro: 'Carrinho inválido.', codigo: 'CARRINHO_INVALIDO', detalhes: parseResult.error.flatten() });
+        .send({ erro: 'Carrinho inválido.', codigo: 'CARRINHO_INVALIDO', detalhes: detalhesDaValidacao(parseResult.error) });
     }
 
     const { itens, ...carrinho } = parseResult.data;
@@ -78,7 +79,7 @@ export function registerOrdersRoutes(app: FastifyInstance, deps: CriarPedidoDoCa
     if (!parseResult.success) {
       return reply
         .status(400)
-        .send({ erro: 'Endereço inválido.', codigo: 'ENDERECO_INVALIDO', detalhes: parseResult.error.flatten() });
+        .send({ erro: 'Endereço inválido.', codigo: 'ENDERECO_INVALIDO', detalhes: detalhesDaValidacao(parseResult.error) });
     }
 
     const { empreendedorId, endereco } = parseResult.data;

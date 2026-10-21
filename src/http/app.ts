@@ -9,6 +9,7 @@ import { criarLocalizadorEntrega } from '../menu/endereco/localizador-entrega.js
 import type { EnderecoDeps } from '../menu/endereco/endereco.types.js';
 import { criarLojaParaPedidos } from '../menu/loja-para-pedidos.js';
 import { errorHandler, rotaNaoEncontrada } from './middlewares/error-handler.js';
+import { configurarMensagensDeValidacao } from './validacao/mensagens-zod.js';
 import { registerRequestLogger } from './middlewares/request-logger.js';
 import { registerMenuRoutes } from './v1/menu.routes.js';
 import { registerOrdersRoutes } from './v1/orders.routes.js';
@@ -27,6 +28,8 @@ export interface AppDeps {
   /** Obrigatório junto com paymentsDeps: o webhook só aceita notificações assinadas. */
   mercadoPagoWebhookSecret?: string;
 }
+
+configurarMensagensDeValidacao();
 
 export function buildApp(deps: AppDeps): FastifyInstance {
   // Id curto em cada requisição: vai no log e no corpo dos 500 ("rastreio"), para achar o erro.
