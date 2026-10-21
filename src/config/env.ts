@@ -72,6 +72,11 @@ const envSchema = z.object({
   PAGAMENTO_SIMULADO_SEGUNDOS: z.coerce.number().int().min(0).default(30),
 
   FRONTEND_ALLOWED_ORIGIN: z.string().min(1),
+  // Endereço público do app (ex.: o domínio do ngrok), usado nos links mandados no WhatsApp. Vazio: FRONTEND_ALLOWED_ORIGIN.
+  FRONTEND_URL_PUBLICA: z
+    .string()
+    .optional()
+    .transform((valor) => valor?.trim() || undefined),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -65,6 +65,7 @@ Edite o `.env` e preencha pelo menos:
 - `MERCADO_PAGO_ACCESS_TOKEN`, `MERCADO_PAGO_WEBHOOK_SECRET` e `MERCADO_PAGO_NOTIFICATION_URL` (o segredo é a "assinatura secreta" do painel de webhooks do Mercado Pago; notificações sem assinatura válida recebem `401`)
 - `GESTAO_TELEFONES_PERMITIDOS` — telefones que podem usar o número de gestão. Vazia, qualquer número pode cadastrar cardápio (o boot avisa)
 - `FRONTEND_ALLOWED_ORIGIN` — origem do seu app Next.js (para CORS)
+- `FRONTEND_URL_PUBLICA` (opcional) — endereço público do app, usado nos links mandados no WhatsApp. Para testar no celular com o ngrok, coloque o domínio do túnel aqui e aponte o `MERCADO_PAGO_NOTIFICATION_URL` para `https://<dominio>/api/webhooks/mercado-pago` (passo a passo no README do `zapmenu-front`, "Testar no celular")
 
 Opcionais, mas sem eles parte da gestão fica desligada:
 - `DEEPSEEK_API_KEY` — sem ela, a gestão só entende as palavras-chave (`cardápio`, `cancelar`, `sim`, `não`).

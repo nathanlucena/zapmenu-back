@@ -136,7 +136,7 @@ async function main(): Promise<void> {
       interpretador,
       endereco,
       cadastro: cadastroEmpreendedores,
-      urlDoCardapio: (slug) => `${env.FRONTEND_ALLOWED_ORIGIN.replace(/\/$/, '')}/${slug}`,
+      urlDoCardapio: (slug) => `${(env.FRONTEND_URL_PUBLICA ?? env.FRONTEND_ALLOWED_ORIGIN).replace(/\/$/, '')}/${slug}`,
       decisoes: { ordersRepo, contatos, geradorCobranca, clientePedidos: () => pedidosWhatsAppClient },
     });
   };
