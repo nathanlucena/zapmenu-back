@@ -73,6 +73,11 @@ const envSchema = z.object({
 
   FRONTEND_ALLOWED_ORIGIN: z.string().min(1),
   // Endereço público do app (ex.: o domínio do ngrok), usado nos links mandados no WhatsApp. Vazio: FRONTEND_ALLOWED_ORIGIN.
+  // Como o backend alcança o front (para a imagem da prévia). Vazio: FRONTEND_ALLOWED_ORIGIN.
+  FRONTEND_URL_INTERNA: z
+    .string()
+    .optional()
+    .transform((valor) => valor?.trim() || undefined),
   FRONTEND_URL_PUBLICA: z
     .string()
     .optional()

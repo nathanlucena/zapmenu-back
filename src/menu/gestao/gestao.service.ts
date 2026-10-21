@@ -14,6 +14,7 @@ import type { EnderecoDeps } from '../endereco/endereco.types.js';
 import { entregaConfigurada } from '../entrega.js';
 import type { CadastroEmpreendedores } from './cadastro-empreendedores.js';
 import { reconhecerComando } from './comandos.js';
+import { montarPrevia, type PreviasRepository } from './previa.js';
 import type { GestaoRepository, SnapshotCardapio } from './gestao.repository.js';
 import type { InterpretadorMensagem, RespostaConversa } from './interpretador.js';
 import {
@@ -56,6 +57,8 @@ export interface GestaoDeps {
   cadastro: CadastroEmpreendedores;
   /** Link público do cardápio pelo slug, para mandar quando a loja entra no ar. */
   urlDoCardapio?: (slug: string) => string;
+  /** Prévia em imagem das alterações: onde guardar e a URL da imagem no front. Sem isso, só texto. */
+  previas?: { repo: PreviasRepository; urlDaImagem: (id: string) => string };
 }
 
 export interface MensagemGestao {
@@ -72,7 +75,7 @@ interface Rodada {
   snapshot: SnapshotCardapio;
   estado: Estado;
   contexto: Contexto;
-  respostas: string[];
+  respostas: RespostaGestao[];
 }
 
 /**
@@ -82,7 +85,10 @@ interface Rodada {
  * ele. Quando a IA percebe que a pessoa terminou, este serviço monta o resumo
  * e só grava no banco depois do "sim".
  */
-export async function processarMensagemGestao(mensagem: MensagemGestao, deps: GestaoDeps): Promise<string[]> {
+/** Texto, ou a imagem da prévia (URL que o WhatsApp baixa) com legenda. */
+export type RespostaGestao = string | { imagemUrl: string; legenda: string };
+
+export async function processarMensagemGestao(mensagem: MensagemGestao, deps: GestaoDeps): Promise<RespostaGestao[]> {
   const empreendedorId = await deps.cadastro.empreendedorIdDoTelefone(mensagem.telefone);
   if (!empreendedorId) {
     logger.info({ telefone: mensagem.telefone }, '🚫 número sem acesso à gestão');
@@ -306,7 +312,7 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
   rodada.estado = 'CONVERSANDO';
   // Com um endereço acabando de ser encontrado, a pergunta "é aqui?" vem antes do resumo.
   if (saida.finalizou && !rodada.contexto.enderecoPendente) {
-    finalizar(rodada);
+    await finalizar(rodada);
   }
 }
 
@@ -491,7 +497,7 @@ function avisarEntregaPorConfigurar(rodada: Rodada): void {
 }
 
 /** A pessoa terminou: mostra o resumo (ou o que falta) e pede confirmação. */
-function finalizar(rodada: Rodada): void {
+async function finalizar(rodada: Rodada): Promise<void> {
   const { rascunho } = rodada.contexto;
   if (estaVazio(rascunho)) {
     reiniciar(rodada);
@@ -505,14 +511,38 @@ function finalizar(rodada: Rodada): void {
     return;
   }
   rodada.estado = 'CONFIRMANDO';
+  await responderPrevia(rodada, 'Assim vai ficar no cardápio 👇');
   responder(rodada, montarResumo(rascunho, rodada.snapshot));
+}
+
+/** Validade da prévia guardada: o link da imagem funciona por 1 h. */
+const VALIDADE_PREVIA_MS = 60 * 60_000;
+
+/**
+ * Guarda a prévia do rascunho e põe a imagem nas respostas. Devolve false
+ * quando não há o que mostrar. Falha aqui nunca impede o resumo: só não vai a imagem.
+ */
+async function responderPrevia(rodada: Rodada, legenda: string): Promise<boolean> {
+  const { previas } = rodada.deps;
+  const previa = previas && montarPrevia(rodada.contexto.rascunho, rodada.snapshot);
+  if (!previas || !previa) {
+    return false;
+  }
+  try {
+    const id = await previas.repo.guardar(previa, VALIDADE_PREVIA_MS);
+    rodada.respostas.push({ imagemUrl: previas.urlDaImagem(id), legenda });
+    return true;
+  } catch (erro) {
+    logger.warn({ err: erro }, 'não foi possível guardar a prévia; vai só o resumo');
+    return false;
+  }
 }
 
 async function salvar(rodada: Rodada): Promise<void> {
   const { rascunho } = rodada.contexto;
   const pendencias = pendenciasParaSalvar(rodada.contexto, rodada.snapshot);
   if (estaVazio(rascunho) || pendencias.length > 0) {
-    finalizar(rodada);
+    await finalizar(rodada);
     return;
   }
 

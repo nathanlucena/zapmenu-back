@@ -35,6 +35,26 @@ function criarFilaPorTelefone() {
   };
 }
 
+/** Quanto esperar a imagem da prévia (o front desenha, o WhatsApp baixa) antes de seguir só com o texto. */
+const TEMPO_MAXIMO_IMAGEM_MS = 8_000;
+
+/** A prévia é um extra: se demorar ou falhar, segue com o resumo em texto. */
+async function enviarImagemSemTravar(whatsapp: WhatsAppClient, telefone: string, url: string, legenda: string) {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      whatsapp.sendImage(telefone, url, legenda),
+      new Promise((_, rejeitar) => {
+        timer = setTimeout(() => rejeitar(new Error('tempo esgotado')), TEMPO_MAXIMO_IMAGEM_MS);
+      }),
+    ]);
+  } catch (erro) {
+    logger.warn({ err: erro, url }, 'prévia em imagem não foi enviada; segue só o texto');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function registrarMenuInboundRouter(deps: MenuInboundRouterDeps): void {
   const enfileirar = criarFilaPorTelefone();
   const decisoes = deps.decisoes && { ...deps.decisoes, idempotency: deps.idempotency };
@@ -61,7 +81,11 @@ export function registrarMenuInboundRouter(deps: MenuInboundRouterDeps): void {
         deps,
       );
       for (const resposta of respostas) {
-        await deps.whatsapp.sendText(mensagem.telefone, resposta);
+        if (typeof resposta === 'string') {
+          await deps.whatsapp.sendText(mensagem.telefone, resposta);
+        } else {
+          await enviarImagemSemTravar(deps.whatsapp, mensagem.telefone, resposta.imagemUrl, resposta.legenda);
+        }
       }
       await deps.idempotency.marcarProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id);
     } catch (erro) {

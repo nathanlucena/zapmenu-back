@@ -114,6 +114,10 @@ OCIOSO ◀──── "sim" (grava numa transação) ◀───────�
 
 Guardado em `EstadoConversa` (`estado` + `contexto` JSON com rascunho, histórico, foto pendente, endereço em andamento e endereço pendente).
 
+### Prévia em imagem
+
+Quando a IA finaliza e o resumo vai ser mostrado, a gestão monta a prévia do rascunho (`menu/gestao/previa.ts`: itens novos e editados com os valores finais e, se a loja mudou, o cabeçalho), guarda em `PreviaGestao` por 1 h e manda **antes do resumo** a imagem `FRONTEND_URL_INTERNA/api/previa/<id>` com a legenda "Assim vai ficar no cardápio 👇". O front desenha o PNG com Satori (`next/og`) no visual do app, buscando os dados em `GET /v1/previas/:id`. A prévia nunca segura o resumo: se não der para guardar, ou se a imagem falhar ou passar de 8 s, vai só o texto. Pausar, reativar, remover e mudar só a categoria não geram prévia.
+
 ### Cadastro da loja
 
 - **Obrigatórios** para a loja entrar no ar (`menu/cadastro-da-loja.ts`): nome, link (sai do nome se não for escolhido), como entrega, endereço confirmado, taxas por distância (só se entrega) e horário de funcionamento. Os itens do cardápio ficam de fora: são cadastrados depois, na conversa.

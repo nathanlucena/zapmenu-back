@@ -138,6 +138,10 @@ async function main(): Promise<void> {
       interpretador,
       endereco,
       cadastro: cadastroEmpreendedores,
+      previas: {
+        repo: previas,
+        urlDaImagem: (id) => `${(env.FRONTEND_URL_INTERNA ?? env.FRONTEND_ALLOWED_ORIGIN).replace(/\/$/, '')}/api/previa/${id}`,
+      },
       urlDoCardapio: (slug) => `${(env.FRONTEND_URL_PUBLICA ?? env.FRONTEND_ALLOWED_ORIGIN).replace(/\/$/, '')}/${slug}`,
       decisoes: { ordersRepo, contatos, geradorCobranca, clientePedidos: () => pedidosWhatsAppClient },
     });
