@@ -12,6 +12,8 @@ export interface ItemSnapshot {
   precoBase: number;
   ativo: boolean;
   temFoto: boolean;
+  /** A foto atual (data URI), só para a prévia em imagem; nunca vai para a IA. */
+  imagemUrl?: string;
   categoriaId?: string;
   categoriaNome?: string;
   variacoes: Variacao[];
@@ -30,6 +32,9 @@ export interface SnapshotCardapio {
     existe: boolean;
     temLogo: boolean;
     temCapa: boolean;
+    /** Fotos atuais, só para a prévia em imagem. */
+    logoUrl?: string;
+    capaUrl?: string;
     lembreteOpcionaisEm?: Date;
     naoLembrarOpcionais: boolean;
   };

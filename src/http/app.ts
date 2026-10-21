@@ -13,6 +13,8 @@ import { configurarMensagensDeValidacao } from './validacao/mensagens-zod.js';
 import { registerRequestLogger } from './middlewares/request-logger.js';
 import { registerMenuRoutes } from './v1/menu.routes.js';
 import { registerOrdersRoutes } from './v1/orders.routes.js';
+import { registerPreviasRoutes } from './v1/previas.routes.js';
+import type { PreviasRepository } from '../menu/gestao/previa.js';
 import { registerMercadoPagoWebhook } from './webhooks/mercado-pago.webhook.js';
 
 export interface AppDeps {
@@ -27,6 +29,8 @@ export interface AppDeps {
   paymentsDeps?: PaymentsServiceDeps;
   /** Obrigatório junto com paymentsDeps: o webhook só aceita notificações assinadas. */
   mercadoPagoWebhookSecret?: string;
+  /** Prévias em imagem da gestão (o front busca os dados e desenha). */
+  previas?: PreviasRepository;
 }
 
 configurarMensagensDeValidacao();
@@ -50,6 +54,9 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         localizador: deps.endereco && criarLocalizadorEntrega(deps.endereco),
         pedidoTtlMinutos: deps.pedidoTtlMinutos,
       });
+      if (deps.previas) {
+        registerPreviasRoutes(v1, deps.previas);
+      }
       if (deps.paymentsDeps) {
         if (!deps.mercadoPagoWebhookSecret) {
           throw new Error('mercadoPagoWebhookSecret é obrigatório para registrar o webhook do Mercado Pago.');

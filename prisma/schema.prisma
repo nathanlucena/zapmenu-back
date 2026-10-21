@@ -259,3 +259,13 @@ model EnqueteWhatsApp {
   opcoes     Json
   criadoEm   DateTime @default(now())
 }
+
+/// Prévia em imagem das alterações da gestão: os dados que o front desenha. Vence em 1 h.
+model PreviaGestao {
+  id       String   @id
+  dados    Json
+  expiraEm DateTime
+  criadoEm DateTime @default(now())
+
+  @@index([expiraEm])
+}

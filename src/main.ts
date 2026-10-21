@@ -21,6 +21,7 @@ import { pedirAceiteDaLoja } from './orders/application/pedir-aceite-da-loja.js'
 import { mensagemPagamentoConfirmado } from './orders/application/avisos-cliente.js';
 import { pedirAndamentoDaLoja } from './orders/application/andamento-pedido.js';
 import { criarEnquetesRepositoryPrisma } from './whatsapp/baileys/enquetes.repository.prisma.js';
+import { criarPreviasRepositoryPrisma } from './menu/gestao/previas.repository.prisma.js';
 import type { PaymentsServiceDeps } from './payments/application/dependencias.js';
 import { getPrismaClient } from './shared/db/prisma-client.js';
 import { criarIdempotencyRepositoryPrisma } from './shared/idempotency/idempotency.repository.prisma.js';
@@ -120,6 +121,7 @@ async function main(): Promise<void> {
     segundos: env.PAGAMENTO_SIMULADO_SEGUNDOS,
   });
   const enquetes = criarEnquetesRepositoryPrisma(prisma);
+  const previas = criarPreviasRepositoryPrisma(prisma);
 
   // No autoteste cada mensagem diz qual bot está falando (gestão ou pedidos).
   const comRotulo = (client: WhatsAppClient, rotulo: string) =>
@@ -190,6 +192,10 @@ async function main(): Promise<void> {
     env.PAGAMENTO_POLLING_INTERVALO_SEGUNDOS * 1000,
     env.PAGAMENTO_POLLING_INTERVALO_SEGUNDOS,
   );
+  // Prévias em imagem vencem em 1 h; limpa de hora em hora.
+  setInterval(() => {
+    previas.apagarVencidas().catch((erro: unknown) => logger.error({ err: erro }, 'falha ao apagar prévias vencidas'));
+  }, 60 * 60_000);
   // PIX que falhou no aceite da loja: tenta de novo no mesmo ritmo do polling.
   setInterval(() => {
     reenviarPixPendentes({ ordersRepo, paymentsRepo, geradorCobranca, cliente: () => pedidosWhatsAppClient }).catch(
@@ -206,6 +212,7 @@ async function main(): Promise<void> {
     whatsappPedidos: env.WPP_ORDERS_PHONE_NUMBER,
     paymentsDeps,
     mercadoPagoWebhookSecret: env.MERCADO_PAGO_WEBHOOK_SECRET,
+    previas,
   });
 
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
