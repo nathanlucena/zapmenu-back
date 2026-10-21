@@ -98,6 +98,7 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
           descricao: loja.descricao ?? undefined,
           endereco: loja.endereco ?? undefined,
           aceitaRetirada: loja.aceitaRetirada,
+          aceitaPagamentoNaEntrega: loja.aceitaPagamentoNaEntrega,
           // Loja antiga (taxa fixa, sem endereço verificado ou faixas) não entrega até configurar.
           fazEntrega: loja.fazEntrega && entregaConfigurada({ enderecoVerificado: enderecoVerificadoDaLoja(loja), faixasEntrega }),
           faixasEntrega,
@@ -128,11 +129,12 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
       const { loja } = empreendedor;
       if (!loja) {
         // Loja sem nada configurado: os mesmos padrões do schema.
-        return { aceitaRetirada: true, fazEntrega: false, faixasEntrega: [], horarios: [] };
+        return { aceitaRetirada: true, fazEntrega: false, aceitaPagamentoNaEntrega: true, faixasEntrega: [], horarios: [] };
       }
       const regras: RegrasDaLoja = {
         aceitaRetirada: loja.aceitaRetirada,
         fazEntrega: loja.fazEntrega,
+        aceitaPagamentoNaEntrega: loja.aceitaPagamentoNaEntrega,
         origem:
           loja.latitude === null || loja.longitude === null
             ? undefined

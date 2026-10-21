@@ -10,6 +10,8 @@ export interface FaixaTaxaEntrega {
 export interface RegrasDaLoja {
   aceitaRetirada: boolean;
   fazEntrega: boolean;
+  /** Dinheiro ou cartão na entrega/balcão, além do PIX. */
+  aceitaPagamentoNaEntrega: boolean;
   /** Coordenada do endereço verificado da loja; sem ela não há entrega. */
   origem?: { latitude: number; longitude: number };
   faixasEntrega: FaixaTaxaEntrega[];

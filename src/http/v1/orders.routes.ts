@@ -39,6 +39,9 @@ const carrinhoInputSchema = z
     endereco: enderecoSchema.optional(),
     nomeCliente: texto(80).optional(),
     observacao: texto(280).optional(),
+    formaPagamento: z.enum(['PIX', 'DINHEIRO', 'CARTAO']).default('PIX'),
+    /** Só no dinheiro: quanto o cliente vai entregar. */
+    trocoPara: z.number().positive().optional(),
   })
   .refine((carrinho) => carrinho.modalidade === 'RETIRADA' || carrinho.endereco, {
     message: 'Informe o endereço de entrega.',

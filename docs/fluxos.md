@@ -178,8 +178,9 @@ sequenceDiagram
 2. **Pedido.** `POST /v1/orders` valida o carrinho com zod, confere se cada item ainda está no cardápio e **recalcula o preço no servidor** (`calcularPrecoUnitario`: preço base + adicional da opção escolhida em cada variação; toda variação é obrigatória). O `precoUnitario` enviado pelo cliente é ignorado. Gera um código `PED-` + 4 caracteres (alfabeto sem `I`, `O`, `0`, `1`; até 5 tentativas para achar um livre).
 3. **Código no WhatsApp.** O router de pedidos procura `PED-XXXX` em qualquer posição da mensagem (sem diferenciar maiúsculas). Se achar e o pedido estiver em `AGUARDANDO_CONFIRMACAO` e dentro do prazo, passa para `AGUARDANDO_ACEITE`, grava o telefone do cliente e dá à loja `PEDIDO_ACEITE_MINUTOS` (padrão 15) para responder.
 4. **Aceite da loja.** `pedirAceiteDaLoja` manda ao dono, pela sessão de gestão, o resumo (itens com variações e observações, cliente, entrega ou retirada, total) e uma enquete **Aceitar / Recusar**; o id da enquete fica em `Pedido.enqueteAceiteId`. O voto chega cifrado: a enquete é enviada com um segredo nosso, guardado em `EnqueteWhatsApp`, e `whatsapp/baileys/enquete.ts` decifra o voto (tentando o JID de telefone e o LID). Se a enquete não aparecer, o dono pode escrever `aceitar PED-XXXX` / `recusar PED-XXXX`. Só o dono da loja do pedido decide, só enquanto o pedido aguarda o aceite, e só a primeira decisão vale (`decidirPedido`).
-5. **Cobrança PIX.** No aceite, `criarGeradorCobranca` cria a cobrança no Mercado Pago só se o pedido ainda não tiver pagamento; o cliente recebe o copia e cola e, se houver, a imagem do QR. Na recusa o pedido vira `RECUSADO` e o cliente é avisado.
-6. **Pagamento.** Webhook ou polling levam ao mesmo `aplicarStatusPagamento`: atualiza o `Pagamento`; se `APROVADO`, marca o pedido como `PAGO` e avisa o dono.
+5. **Pagamento na entrega.** Se o cliente escolheu dinheiro ou cartão (`formaPagamento`; a loja precisa ter `aceitaPagamentoNaEntrega`, ligado por padrão), o aceite leva o pedido direto para `CONFIRMADO`, sem PIX, e o cliente recebe como e quanto pagar ("Dinheiro na entrega (troco para R$ 150.00)"). O resumo da loja mostra a forma de pagamento.
+6. **Cobrança PIX.** No aceite de um pedido com PIX, `criarGeradorCobranca` cria a cobrança no Mercado Pago só se o pedido ainda não tiver pagamento; o cliente recebe o copia e cola e, se houver, a imagem do QR. Na recusa o pedido vira `RECUSADO` e o cliente é avisado.
+7. **Pagamento.** Webhook ou polling levam ao mesmo `aplicarStatusPagamento`: atualiza o `Pagamento`; se `APROVADO`, marca o pedido como `PAGO` e avisa o dono.
 
 ### Respostas do número de pedidos
 
@@ -202,7 +203,8 @@ sequenceDiagram
 ### Pedido (`StatusPedido`)
 
 ```
-AGUARDANDO_CONFIRMACAO ──código──▶ AGUARDANDO_ACEITE ──loja aceita──▶ AGUARDANDO_PAGAMENTO ──PIX aprovado──▶ PAGO
+AGUARDANDO_CONFIRMACAO ──código──▶ AGUARDANDO_ACEITE ──loja aceita (PIX)──▶ AGUARDANDO_PAGAMENTO ──PIX aprovado──▶ PAGO
+        │                               │    ├──loja aceita (na entrega)──▶ CONFIRMADO
         │                               │    └──loja recusa──▶ RECUSADO
         └──prazo vence (job)──▶ EXPIRADO ◀──prazo vence (job)
 ```
@@ -211,9 +213,10 @@ AGUARDANDO_CONFIRMACAO ──código──▶ AGUARDANDO_ACEITE ──loja aceit
 |---|---|---|---|
 | `AGUARDANDO_CONFIRMACAO` | `AGUARDANDO_ACEITE` | Cliente manda o código no número de pedidos | `confirmarRecebimentoCliente` |
 | `AGUARDANDO_ACEITE` | `AGUARDANDO_PAGAMENTO` / `RECUSADO` | Loja vota na enquete ou responde em texto | `decidirPedido` |
+| `AGUARDANDO_ACEITE` | `CONFIRMADO` | Loja aceita um pedido pago na entrega (dinheiro ou cartão) | `decidirPedido` |
 | `AGUARDANDO_CONFIRMACAO`, `AGUARDANDO_ACEITE` | `EXPIRADO` | Job de expiração, depois de `expiraEm` | `expirarPedidosPendentes` |
 | `AGUARDANDO_PAGAMENTO` | `PAGO` | Pagamento aprovado (webhook ou polling) | `confirmarPagamento` |
-| `PAGO`, `EXPIRADO`, `RECUSADO`, `CANCELADO` | — | Estados finais | `TRANSICOES_PERMITIDAS` |
+| `PAGO`, `CONFIRMADO`, `EXPIRADO`, `RECUSADO`, `CANCELADO` | — | Estados finais | `TRANSICOES_PERMITIDAS` |
 
 - O prazo (`PEDIDO_TTL_MINUTOS`, padrão 20) vale para `AGUARDANDO_CONFIRMACAO`; ao receber o código, `expiraEm` passa a ser o prazo da loja (`PEDIDO_ACEITE_MINUTOS`). Quando a loja não responde a tempo o pedido expira, mas o cliente não é avisado pelo WhatsApp (a tela do pedido mostra). A confirmação confere o prazo na hora (`estaExpirado`), então um pedido vencido é recusado mesmo que o job ainda não tenha rodado.
 - As transições `AGUARDANDO_PAGAMENTO → EXPIRADO` e `→ CANCELADO` são permitidas no código, mas nada as dispara (lacunas L5 e L6).
@@ -320,7 +323,9 @@ Base: `/v1`. CORS liberado só para `FRONTEND_ALLOWED_ORIGIN`. Toda requisição
   "empreendedorId": "5581999990000",
   "itens": [
     { "itemCardapioId": "ckx…", "quantidade": 2, "variacaoEscolhida": { "Tamanho": "G" } }
-  ]
+  ],
+  "formaPagamento": "DINHEIRO", // PIX (padrão) | DINHEIRO | CARTAO
+  "trocoPara": 150              // só no dinheiro; precisa ser >= total
 }
 // "precoUnitario" ainda é aceito, mas ignorado.
 
@@ -338,6 +343,8 @@ Base: `/v1`. CORS liberado só para `FRONTEND_ALLOWED_ORIGIN`. Toda requisição
 | Carrinho fora do formato (zod) | `400 { "erro": "Carrinho inválido.", "detalhes": { … } }` |
 | Item fora do cardápio | `400 { "erro": "Um dos itens do carrinho não está mais disponível." }` |
 | Variação desconhecida ou faltando | `400 { "erro": "Escolha uma opção de \"Tamanho\" para \"Pizza Calabresa\"." }` |
+| Pagamento na entrega com a loja só aceitando PIX | `400 { "codigo": "PAGAMENTO_NA_ENTREGA_INDISPONIVEL" }` |
+| Troco menor que o total | `400 { "codigo": "TROCO_INVALIDO" }` |
 | Outro erro de domínio | `400 { "erro": "…", "codigo": "CARRINHO_INVALIDO" }` |
 | Erro inesperado | `500 { "erro": "Erro interno." }` |
 
@@ -406,3 +413,4 @@ Problemas e ausências encontrados no código, por impacto. Os marcados com **(f
 | ~~L15~~ | ~~2 testes de pedidos desatualizados~~ | **Resolvida na Sprint 1** | — |
 | ~~L16~~ | ~~Sem teste ponta a ponta do fluxo de gestão~~ | **Resolvida na Sprint 1**: `test/integration/fluxo1-gestao-cardapio.e2e.test.ts` | — |
 | L17 | Preço em texto sem número vira `0` na leitura da IA (`"grátis"`, `"abc"` → `Number('') === 0` em `deepseek-interpretador.ts`) | Baixo. A IA quase sempre manda número, e o resumo mostra o preço antes do "sim" | Tratar string vazia depois da limpeza como inválida |
+| L18 | A loja não liga/desliga o pagamento na entrega pela conversa de gestão (`Loja.aceitaPagamentoNaEntrega`, padrão ligado) | Baixo | Operação nova na gestão, depois que as mudanças da capa em `menu/gestao/` forem commitadas |

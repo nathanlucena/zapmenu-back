@@ -16,6 +16,8 @@ function motivoSemConfirmacao(codigoCurto: string, status: StatusPedido): string
   switch (status) {
     case 'PAGO':
       return `O pedido ${codigoCurto} já foi pago ✅`;
+    case 'CONFIRMADO':
+      return `O pedido ${codigoCurto} já está confirmado ✅ O pagamento é na entrega.`;
     case 'RECUSADO':
       return `A loja não pôde aceitar o pedido ${codigoCurto}. Se quiser, faça um novo pedido pelo cardápio.`;
     case 'CANCELADO':

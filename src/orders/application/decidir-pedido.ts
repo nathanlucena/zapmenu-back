@@ -1,6 +1,6 @@
 import { DomainError } from '../../shared/errors/domain-error.js';
 import { chaveTelefone } from '../../shared/telefone/telefone.js';
-import { estaExpirado, ROTULO_STATUS_PEDIDO, type DecisaoPedido, type Pedido } from '../domain/pedido.js';
+import { estaExpirado, pagaNaEntrega, ROTULO_STATUS_PEDIDO, type DecisaoPedido, type Pedido } from '../domain/pedido.js';
 import type { ContatoEmpreendedores } from './ports/avisos-empreendedor.js';
 import type { OrdersRepository } from './ports/orders.repository.js';
 
@@ -10,8 +10,9 @@ export interface DecidirPedidoDeps {
 }
 
 /**
- * A loja aceita (o pedido vai para pagamento) ou recusa. Só o dono da loja do
- * pedido decide, e só enquanto o pedido aguarda o aceite.
+ * A loja aceita ou recusa. Aceito, o pedido com PIX vai para pagamento e o
+ * pago na entrega fica confirmado. Só o dono da loja do pedido decide, e só
+ * enquanto o pedido aguarda o aceite.
  */
 export async function decidirPedido(
   deps: DecidirPedidoDeps,
@@ -39,7 +40,10 @@ export async function decidirPedido(
     );
   }
 
-  return deps.ordersRepo.atualizar(pedido.id, {
-    status: decisao === 'ACEITAR' ? 'AGUARDANDO_PAGAMENTO' : 'RECUSADO',
-  });
+  if (decisao === 'RECUSAR') {
+    return deps.ordersRepo.atualizar(pedido.id, { status: 'RECUSADO' });
+  }
+  return pagaNaEntrega(pedido.formaPagamento)
+    ? deps.ordersRepo.atualizar(pedido.id, { status: 'CONFIRMADO', confirmadoEm: agora })
+    : deps.ordersRepo.atualizar(pedido.id, { status: 'AGUARDANDO_PAGAMENTO' });
 }

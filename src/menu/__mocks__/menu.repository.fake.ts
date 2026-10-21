@@ -5,7 +5,13 @@ import type { ItemCardapio, ItemDraft } from '../menu.types.js';
 
 let proximoId = 1;
 
-export const REGRAS_PADRAO: RegrasDaLoja = { aceitaRetirada: true, fazEntrega: false, faixasEntrega: [], horarios: [] };
+export const REGRAS_PADRAO: RegrasDaLoja = {
+  aceitaRetirada: true,
+  fazEntrega: false,
+  aceitaPagamentoNaEntrega: true,
+  faixasEntrega: [],
+  horarios: [],
+};
 
 export type MenuRepositoryFake = MenuRepository & {
   /** Muda as regras de pedido de uma loja que já existe no fake. */

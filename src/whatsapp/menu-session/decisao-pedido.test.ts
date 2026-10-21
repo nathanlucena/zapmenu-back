@@ -125,4 +125,23 @@ describe('loja aceita ou recusa o pedido antes do PIX', () => {
     expect(await status()).toBe('AGUARDANDO_PAGAMENTO');
     expect(loja.mensagensEnviadas.at(-1)?.conteudo).toContain('já foi respondido');
   });
+
+  it('pagamento na entrega: aceitar confirma o pedido sem PIX e avisa como pagar', async () => {
+    const naEntrega = await criarPedido(
+      ordersRepo,
+      { empreendedorId: 'emp-1', itens: [{ itemCardapioId: 'i1', quantidade: 1, precoUnitario: 47 }] },
+      20,
+      new Date(),
+      { modalidade: 'ENTREGA', formaPagamento: 'DINHEIRO', trocoPara: 100 },
+    );
+    await cliente.emitirMensagem({ id: 'c2', telefone: TELEFONE_CLIENTE, corpo: naEntrega.codigoCurto, timestamp: new Date() });
+    expect(loja.mensagensEnviadas.at(-2)?.conteudo).toContain('Total: R$ 47.00 — Dinheiro na entrega (troco para R$ 100.00)');
+
+    await loja.emitirMensagem({ id: 'l2', telefone: TELEFONE_LOJA, corpo: `aceitar ${naEntrega.codigoCurto}`, timestamp: new Date() });
+
+    expect((await ordersRepo.buscarPorId(naEntrega.id))?.status).toBe('CONFIRMADO');
+    expect(pixGerados).toEqual([]);
+    expect(cliente.mensagensEnviadas.at(-1)?.conteudo).toContain('Pagamento: Dinheiro na entrega (troco para R$ 100.00) — R$ 47.00');
+    expect(loja.mensagensEnviadas.at(-1)?.conteudo).toContain('aceito ✅ Pagamento: Dinheiro na entrega');
+  });
 });

@@ -33,6 +33,8 @@ export function criarOrdersRepositoryFake(): OrdersRepository {
         codigoCurto,
         status,
         modalidade: pedido.modalidade ?? 'RETIRADA',
+        formaPagamento: pedido.formaPagamento ?? 'PIX',
+        trocoPara: pedido.trocoPara,
         taxaEntrega: pedido.taxaEntrega ?? 0,
         valorTotal,
         expiraEm,

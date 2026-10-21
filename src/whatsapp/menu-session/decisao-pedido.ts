@@ -2,7 +2,7 @@ import { decidirPedido } from '../../orders/application/decidir-pedido.js';
 import { OPCAO_ACEITAR, OPCAO_RECUSAR } from '../../orders/application/pedir-aceite-da-loja.js';
 import type { ContatoEmpreendedores } from '../../orders/application/ports/avisos-empreendedor.js';
 import type { OrdersRepository } from '../../orders/application/ports/orders.repository.js';
-import { extrairDecisaoPedido, type DecisaoPedido, type Pedido } from '../../orders/domain/pedido.js';
+import { descreverPagamento, extrairDecisaoPedido, type DecisaoPedido, type Pedido } from '../../orders/domain/pedido.js';
 import type { GeradorCobranca } from '../../payments/application/gerar-cobranca.js';
 import { DomainError } from '../../shared/errors/domain-error.js';
 import type { IdempotencyRepository } from '../../shared/idempotency/idempotency.repository.js';
@@ -27,7 +27,12 @@ async function avisarCliente(deps: DecisaoPedidoDeps, pedido: Pedido, decisao: D
     logger.warn({ codigoCurto: pedido.codigoCurto }, 'sessão de pedidos indisponível, cliente não foi avisado da decisão');
     return false;
   }
-  if (decisao === 'ACEITAR') {
+  if (decisao === 'ACEITAR' && pedido.status === 'CONFIRMADO') {
+    await cliente.sendText(
+      pedido.telefoneCliente,
+      `A loja aceitou seu pedido ${pedido.codigoCurto}! 🎉\nPagamento: ${descreverPagamento(pedido)} — R$ ${pedido.valorTotal.toFixed(2)}.`,
+    );
+  } else if (decisao === 'ACEITAR') {
     await cliente.sendText(pedido.telefoneCliente, `A loja aceitou seu pedido ${pedido.codigoCurto}! 🎉 Pague com o PIX abaixo:`);
     await enviarPix(cliente, deps.geradorCobranca, pedido, pedido.telefoneCliente);
   } else {
@@ -60,10 +65,14 @@ async function aplicarDecisao(
 
   logger.info({ codigoCurto: pedido.codigoCurto, decisao }, '🧾 loja respondeu o pedido');
   const clienteAvisado = await avisarCliente(deps, decidido, decisao);
-  const resultado =
-    decisao === 'ACEITAR'
-      ? `Pedido ${pedido.codigoCurto} aceito ✅ ${clienteAvisado ? 'O PIX foi enviado ao cliente.' : 'Não consegui enviar o PIX ao cliente agora.'}`
-      : `Pedido ${pedido.codigoCurto} recusado. ${clienteAvisado ? 'O cliente foi avisado.' : 'Não consegui avisar o cliente agora.'}`;
+  let resultado: string;
+  if (decisao === 'RECUSAR') {
+    resultado = `Pedido ${pedido.codigoCurto} recusado. ${clienteAvisado ? 'O cliente foi avisado.' : 'Não consegui avisar o cliente agora.'}`;
+  } else if (decidido.status === 'CONFIRMADO') {
+    resultado = `Pedido ${pedido.codigoCurto} aceito ✅ Pagamento: ${descreverPagamento(decidido)}. ${clienteAvisado ? 'O cliente foi avisado.' : 'Não consegui avisar o cliente agora.'}`;
+  } else {
+    resultado = `Pedido ${pedido.codigoCurto} aceito ✅ ${clienteAvisado ? 'O PIX foi enviado ao cliente.' : 'Não consegui enviar o PIX ao cliente agora.'}`;
+  }
   await whatsapp.sendText(telefoneLoja, resultado);
 }
 

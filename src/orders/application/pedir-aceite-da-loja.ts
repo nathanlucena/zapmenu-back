@@ -1,5 +1,5 @@
 import { logger } from '../../shared/logger/logger.js';
-import type { Pedido } from '../domain/pedido.js';
+import { descreverPagamento, type Pedido } from '../domain/pedido.js';
 import type { ContatoEmpreendedores, MensageiroEmpreendedor } from './ports/avisos-empreendedor.js';
 import type { OrdersRepository } from './ports/orders.repository.js';
 
@@ -46,7 +46,7 @@ export function montarResumoParaLoja(pedido: Pedido): string {
   if (pedido.observacao) {
     linhas.push(`📝 ${pedido.observacao}`);
   }
-  linhas.push(`💰 Total: ${reais(pedido.valorTotal)}`);
+  linhas.push(`💰 Total: ${reais(pedido.valorTotal)} — ${descreverPagamento(pedido)}`);
   linhas.push('');
   linhas.push(`Responda na enquete abaixo ou escreva "aceitar ${pedido.codigoCurto}" / "recusar ${pedido.codigoCurto}".`);
   return linhas.join('\n');

@@ -3,6 +3,7 @@ export type StatusPedido =
   | 'AGUARDANDO_ACEITE'
   | 'AGUARDANDO_PAGAMENTO'
   | 'PAGO'
+  | 'CONFIRMADO'
   | 'EXPIRADO'
   | 'RECUSADO'
   | 'CANCELADO';
@@ -13,12 +14,33 @@ export const ROTULO_STATUS_PEDIDO: Record<StatusPedido, string> = {
   AGUARDANDO_ACEITE: 'Aguardando a loja aceitar',
   AGUARDANDO_PAGAMENTO: 'Aguardando pagamento',
   PAGO: 'Pago',
+  CONFIRMADO: 'Confirmado, pagamento na entrega',
   EXPIRADO: 'Expirado',
   RECUSADO: 'Recusado pela loja',
   CANCELADO: 'Cancelado',
 };
 
 export type ModalidadePedido = 'RETIRADA' | 'ENTREGA';
+
+/** PIX antes; dinheiro ou cartão na maquininha, na entrega ou no balcão. */
+export type FormaPagamento = 'PIX' | 'DINHEIRO' | 'CARTAO';
+
+export function pagaNaEntrega(forma: FormaPagamento | undefined): boolean {
+  return forma === 'DINHEIRO' || forma === 'CARTAO';
+}
+
+/** "Dinheiro na entrega (troco para R$ 100.00)", "Cartão no balcão", "PIX". */
+export function descreverPagamento(pedido: Pick<DetalhesPedido, 'formaPagamento' | 'trocoPara' | 'modalidade'>): string {
+  const onde = pedido.modalidade === 'ENTREGA' ? 'na entrega' : 'no balcão';
+  switch (pedido.formaPagamento) {
+    case 'DINHEIRO':
+      return `Dinheiro ${onde}${pedido.trocoPara ? ` (troco para R$ ${pedido.trocoPara.toFixed(2)})` : ' (sem troco)'}`;
+    case 'CARTAO':
+      return `Cartão ${onde}`;
+    default:
+      return 'PIX';
+  }
+}
 
 /** Endereço de entrega já localizado no mapa (cópia: não muda se o cliente mudar de endereço depois). */
 export interface EnderecoEntrega {
@@ -43,6 +65,10 @@ export interface DetalhesPedido {
   /** Já somada no valorTotal. */
   taxaEntrega?: number;
   entrega?: EnderecoEntrega;
+  /** Ausente = PIX (pedidos antigos). */
+  formaPagamento?: FormaPagamento;
+  /** Só no dinheiro: quanto o cliente vai entregar. */
+  trocoPara?: number;
 }
 
 export interface ItemPedidoInput {
@@ -81,6 +107,8 @@ export interface ResumoPedidoPublico {
   codigoCurto: string;
   status: StatusPedido;
   modalidade: ModalidadePedido;
+  formaPagamento: FormaPagamento;
+  trocoPara?: number;
   /** Já inclui a taxa de entrega. */
   valorTotal: number;
   taxaEntrega: number;
@@ -98,9 +126,10 @@ export interface ResumoPedidoPublico {
 
 const TRANSICOES_PERMITIDAS: Record<StatusPedido, StatusPedido[]> = {
   AGUARDANDO_CONFIRMACAO: ['AGUARDANDO_ACEITE', 'EXPIRADO', 'CANCELADO'],
-  AGUARDANDO_ACEITE: ['AGUARDANDO_PAGAMENTO', 'RECUSADO', 'EXPIRADO', 'CANCELADO'],
+  AGUARDANDO_ACEITE: ['AGUARDANDO_PAGAMENTO', 'CONFIRMADO', 'RECUSADO', 'EXPIRADO', 'CANCELADO'],
   AGUARDANDO_PAGAMENTO: ['PAGO', 'EXPIRADO', 'CANCELADO'],
   PAGO: [],
+  CONFIRMADO: [],
   EXPIRADO: [],
   RECUSADO: [],
   CANCELADO: [],

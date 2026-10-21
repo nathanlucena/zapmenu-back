@@ -67,6 +67,8 @@ model Loja {
   precisaoEndereco String?
   aceitaRetirada   Boolean      @default(true)
   fazEntrega       Boolean      @default(false)
+  /// Cliente pode pagar na entrega ou no balcão (dinheiro ou cartão na maquininha) em vez do PIX.
+  aceitaPagamentoNaEntrega Boolean @default(true)
   /// [{ "ateKm": 1, "taxa": 0 }, { "ateKm": 3, "taxa": 5 }], ordenada por ateKm.
   faixasEntrega    Json         @default("[]")
   /// Depreciada: taxa fixa antiga. Loja com ela e sem faixas fica com a entrega indisponível.
@@ -123,9 +125,19 @@ enum StatusPedido {
   AGUARDANDO_ACEITE
   AGUARDANDO_PAGAMENTO
   PAGO
+  /// Aceito pela loja, com pagamento na entrega ou no balcão.
+  CONFIRMADO
   EXPIRADO
   RECUSADO
   CANCELADO
+}
+
+enum FormaPagamento {
+  PIX
+  /// Na entrega ou no balcão.
+  DINHEIRO
+  /// Cartão na maquininha, na entrega ou no balcão.
+  CARTAO
 }
 
 model Pedido {
@@ -138,6 +150,9 @@ model Pedido {
   modalidade      ModalidadePedido @default(RETIRADA)
   nomeCliente     String?
   observacao      String?
+  formaPagamento  FormaPagamento   @default(PIX)
+  /// Só no dinheiro: quanto o cliente vai entregar, para a loja levar o troco.
+  trocoPara       Decimal?         @db.Decimal(10, 2)
   /// Já somada no valorTotal.
   taxaEntrega     Decimal          @default(0) @db.Decimal(10, 2)
   /// Cópia do endereço de entrega localizado: { enderecoFormatado, cep, numero, ..., latitude, longitude, distanciaKm }.

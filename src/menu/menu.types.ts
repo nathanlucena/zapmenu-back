@@ -34,6 +34,8 @@ export interface LojaPublica {
   descricao?: string;
   endereco?: string;
   aceitaRetirada: boolean;
+  /** Dinheiro ou cartão na entrega/balcão. Opcional: só o cardápio público preenche. */
+  aceitaPagamentoNaEntrega?: boolean;
   /** false também para loja antiga que ainda não configurou endereço e faixas. */
   fazEntrega: boolean;
   /** Ordenadas por ateKm; o maior é o limite de entrega. */

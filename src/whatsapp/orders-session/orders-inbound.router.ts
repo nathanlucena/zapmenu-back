@@ -2,7 +2,7 @@ import { DomainError } from '../../shared/errors/domain-error.js';
 import type { IdempotencyRepository } from '../../shared/idempotency/idempotency.repository.js';
 import { logger } from '../../shared/logger/logger.js';
 import { confirmarRecebimentoCliente } from '../../orders/application/confirmar-recebimento-cliente.js';
-import { extrairCodigoPedido } from '../../orders/domain/pedido.js';
+import { extrairCodigoPedido, pagaNaEntrega } from '../../orders/domain/pedido.js';
 import type { OrdersRepository } from '../../orders/application/ports/orders.repository.js';
 import type { Pedido } from '../../orders/domain/pedido.js';
 import type { GeradorCobranca } from '../../payments/application/gerar-cobranca.js';
@@ -73,7 +73,9 @@ async function tratarMensagem(mensagem: MensagemRecebida, deps: OrdersInboundRou
   if (repetido) {
     await deps.whatsapp.sendText(
       mensagem.telefone,
-      `Seu pedido ${codigoCurto} ainda está com a loja. Assim que ela aceitar, o PIX chega aqui.`,
+      pagaNaEntrega(pedido.formaPagamento)
+        ? `Seu pedido ${codigoCurto} ainda está com a loja. Avisamos aqui assim que ela responder.`
+        : `Seu pedido ${codigoCurto} ainda está com a loja. Assim que ela aceitar, o PIX chega aqui.`,
     );
     return;
   }
@@ -81,7 +83,9 @@ async function tratarMensagem(mensagem: MensagemRecebida, deps: OrdersInboundRou
   logger.info({ telefone: mensagem.telefone, codigoCurto, valor: pedido.valorTotal }, '🧾 pedido recebido, pedindo aceite da loja');
   await deps.whatsapp.sendText(
     mensagem.telefone,
-    `Recebemos seu pedido ${codigoCurto} ✅\nAgora é só aguardar a loja aceitar — o PIX para pagamento chega aqui em seguida.`,
+    pagaNaEntrega(pedido.formaPagamento)
+      ? `Recebemos seu pedido ${codigoCurto} ✅\nAgora é só aguardar a loja aceitar — avisamos aqui assim que ela responder.`
+      : `Recebemos seu pedido ${codigoCurto} ✅\nAgora é só aguardar a loja aceitar — o PIX para pagamento chega aqui em seguida.`,
   );
   await deps.pedirAceite(pedido);
 }

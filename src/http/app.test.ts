@@ -91,7 +91,7 @@ describe('POST /v1/orders', () => {
       pedidoTtlMinutos: 20,
       frontendAllowedOrigin: 'http://localhost:3001',
     });
-    return { app, bolo };
+    return { app, bolo, menuRepo };
   }
 
   it('cria pedido a partir de um carrinho válido', async () => {
@@ -134,6 +134,40 @@ describe('POST /v1/orders', () => {
 
     expect(resposta.statusCode).toBe(400);
     expect(resposta.json().codigo).toBe('ITEM_INDISPONIVEL');
+  });
+
+  it('aceita pagamento em dinheiro na entrega, com troco', async () => {
+    const { app, bolo } = await montarAppComBolo(30);
+
+    const resposta = await app.inject({
+      method: 'POST',
+      url: '/v1/orders',
+      payload: {
+        empreendedorId: 'emp-1',
+        itens: [{ itemCardapioId: bolo.id, quantidade: 1 }],
+        formaPagamento: 'DINHEIRO',
+        trocoPara: 50,
+      },
+    });
+
+    expect(resposta.statusCode).toBe(201);
+    expect(resposta.json().pedido).toMatchObject({ formaPagamento: 'DINHEIRO', trocoPara: 50 });
+  });
+
+  it('recusa troco menor que o total e pagamento na entrega quando a loja não aceita', async () => {
+    const { app, bolo, menuRepo } = await montarAppComBolo(30);
+    const pedir = (extra: object) =>
+      app.inject({
+        method: 'POST',
+        url: '/v1/orders',
+        payload: { empreendedorId: 'emp-1', itens: [{ itemCardapioId: bolo.id, quantidade: 1 }], ...extra },
+      });
+
+    expect((await pedir({ formaPagamento: 'DINHEIRO', trocoPara: 20 })).json().codigo).toBe('TROCO_INVALIDO');
+
+    menuRepo.definirRegras('emp-1', { aceitaPagamentoNaEntrega: false });
+    expect((await pedir({ formaPagamento: 'CARTAO' })).json().codigo).toBe('PAGAMENTO_NA_ENTREGA_INDISPONIVEL');
+    expect((await pedir({ formaPagamento: 'PIX' })).statusCode).toBe(201);
   });
 
   it('retorna 400 para payload com schema inválido', async () => {

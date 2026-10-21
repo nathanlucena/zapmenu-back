@@ -5,7 +5,9 @@ import {
   calcularValorTotal,
   validarCarrinho,
   type CarrinhoInput,
+  pagaNaEntrega,
   type DetalhesPedido,
+  type FormaPagamento,
   type ModalidadePedido,
   type Pedido,
 } from '../domain/pedido.js';
@@ -72,6 +74,10 @@ export interface CarrinhoDoApp {
   endereco?: EnderecoDigitado;
   nomeCliente?: string;
   observacao?: string;
+  /** Padrão PIX. */
+  formaPagamento?: FormaPagamento;
+  /** Só no dinheiro. */
+  trocoPara?: number;
 }
 
 /**
@@ -100,10 +106,17 @@ export async function criarPedidoDoCarrinho(
     );
   }
 
+  const formaPagamento = carrinho.formaPagamento ?? 'PIX';
+  if (pagaNaEntrega(formaPagamento) && !regras.aceitaPagamentoNaEntrega) {
+    throw new DomainError('Esta loja só aceita pagamento por PIX.', 'PAGAMENTO_NA_ENTREGA_INDISPONIVEL');
+  }
+
   const detalhes: DetalhesPedido = {
     modalidade: carrinho.modalidade,
     nomeCliente: carrinho.nomeCliente,
     observacao: carrinho.observacao,
+    formaPagamento,
+    trocoPara: formaPagamento === 'DINHEIRO' ? carrinho.trocoPara : undefined,
   };
   if (carrinho.modalidade === 'RETIRADA') {
     if (!regras.aceitaRetirada) {
@@ -116,6 +129,14 @@ export async function criarPedidoDoCarrinho(
     const cotacao = await cotarEntrega(regras, deps.localizador, carrinho.endereco);
     detalhes.taxaEntrega = cotacao.taxa;
     detalhes.entrega = cotacao.endereco;
+  }
+
+  const total = arredondar(subtotal + (detalhes.taxaEntrega ?? 0));
+  if (detalhes.trocoPara !== undefined && detalhes.trocoPara < total) {
+    throw new DomainError(
+      `O troco precisa ser para um valor a partir de R$ ${total.toFixed(2)}, o total do pedido.`,
+      'TROCO_INVALIDO',
+    );
   }
 
   return criarPedido(
