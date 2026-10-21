@@ -2,16 +2,33 @@
  * Monta uma loja de exemplo para testar o app do cliente sem passar pela
  * conversa de gestão:
  *
- *   npm run loja-demo            cria (ou completa) a Pizzaria do Zé
- *   npm run loja-demo -- apagar  remove a loja de exemplo e tudo dela
+ *   npm run loja-demo                          cria (ou completa) a Pizzaria do Zé
+ *   npm run loja-demo -- --telefone 55119…     idem, com esse telefone como dono da loja
+ *   npm run loja-demo -- apagar                remove a loja de exemplo e tudo dela
+ *
+ * O telefone do dono também pode vir em LOJA_DEMO_TELEFONE. É para ele que vão
+ * o resumo do pedido e a enquete de aceite; com o número fictício padrão, o
+ * modo autoteste bloqueia esses envios. Use o número exatamente como aparece
+ * no log ("telefone": …).
+ *
+ * Se o telefone já for de um empreendedor sem loja (ex.: quem já conversou com
+ * a gestão), a loja de exemplo passa para ele. Se ele já tiver outra loja, nada
+ * é alterado.
  *
  * Depois abra http://localhost:3001/pizzaria-do-ze com o front rodando.
- * Só mexe no empreendedor de telefone TELEFONE_DEMO; o resto do banco fica intacto.
+ * Só mexe na loja de exemplo e no seu dono; o resto do banco fica intacto.
  */
 import { getPrismaClient } from '../src/shared/db/prisma-client.js';
 
 const TELEFONE_DEMO = '5519900000001';
 const SLUG = 'pizzaria-do-ze';
+
+function telefoneDoDono(): string {
+  const indice = process.argv.indexOf('--telefone');
+  const informado = indice >= 0 ? process.argv[indice + 1] : process.env.LOJA_DEMO_TELEFONE;
+  const telefone = (informado ?? '').replace(/\D/g, '');
+  return telefone || TELEFONE_DEMO;
+}
 
 // Fotos desenhadas em SVG para não depender de arquivos nem da internet.
 function foto(fundo: string, recheio: string): string {
@@ -84,12 +101,20 @@ const CARDAPIO: { categoria: string; itens: ItemDemo[] }[] = [
 
 const prisma = getPrismaClient(process.env.DATABASE_URL ?? '');
 
+/** Dono atual da loja de exemplo: quem tem o link dela, ou o número fictício. */
+async function donoDaLojaDemo() {
+  const loja = await prisma.loja.findUnique({ where: { slug: SLUG }, include: { empreendedor: true } });
+  return loja?.empreendedor ?? (await prisma.empreendedor.findUnique({ where: { telefone: TELEFONE_DEMO } }));
+}
+
 async function apagar(): Promise<void> {
-  const empreendedor = await prisma.empreendedor.findUnique({ where: { telefone: TELEFONE_DEMO } });
+  const empreendedor = await donoDaLojaDemo();
   if (!empreendedor) {
     console.log('A loja de exemplo não existe.');
     return;
   }
+  // Um empreendedor de verdade (que recebeu a loja de exemplo) continua existindo, com a conversa dele.
+  const apagaDono = empreendedor.telefone === TELEFONE_DEMO;
   const pedidos = await prisma.pedido.findMany({ where: { empreendedorId: empreendedor.id }, select: { id: true } });
   const pedidoIds = pedidos.map((pedido) => pedido.id);
   await prisma.$transaction([
@@ -101,23 +126,76 @@ async function apagar(): Promise<void> {
     prisma.categoria.deleteMany({ where: { cardapio: { empreendedorId: empreendedor.id } } }),
     prisma.cardapio.deleteMany({ where: { empreendedorId: empreendedor.id } }),
     prisma.loja.deleteMany({ where: { empreendedorId: empreendedor.id } }),
-    prisma.estadoConversa.deleteMany({ where: { empreendedorId: empreendedor.id } }),
-    prisma.empreendedor.delete({ where: { id: empreendedor.id } }),
+    ...(apagaDono
+      ? [
+          prisma.estadoConversa.deleteMany({ where: { empreendedorId: empreendedor.id } }),
+          prisma.empreendedor.delete({ where: { id: empreendedor.id } }),
+        ]
+      : []),
   ]);
   console.log(`Loja de exemplo apagada (${pedidoIds.length} pedidos de teste junto).`);
 }
 
-async function criar(): Promise<void> {
-  const slugOcupado = await prisma.loja.findUnique({ where: { slug: SLUG }, include: { empreendedor: true } });
-  if (slugOcupado && slugOcupado.empreendedor.telefone !== TELEFONE_DEMO) {
-    throw new Error(`O link "${SLUG}" já é de outra loja (${slugOcupado.nome ?? 'sem nome'}). Nada foi alterado.`);
+/**
+ * Deixa a loja de exemplo (se já existir) com o dono pedido. Se o telefone já
+ * é de outro empreendedor sem loja, a loja, o cardápio e os pedidos de teste
+ * passam para ele e o dono fictício é apagado.
+ */
+async function trocarDono(telefone: string): Promise<void> {
+  const atual = await donoDaLojaDemo();
+  if (!atual || atual.telefone === telefone) {
+    return;
+  }
+  const alvo = await prisma.empreendedor.findUnique({
+    where: { telefone },
+    include: { loja: true, cardapio: { include: { _count: { select: { itens: true, categorias: true } } } } },
+  });
+  if (!alvo) {
+    await prisma.empreendedor.update({ where: { id: atual.id }, data: { telefone } });
+    console.log(`Dono da loja de exemplo trocado de ${atual.telefone} para ${telefone}.`);
+    return;
+  }
+  if (alvo.loja) {
+    throw new Error(`O telefone ${telefone} já é dono da loja "${alvo.loja.nome ?? 'sem nome'}". Nada foi alterado.`);
+  }
+  const cardapioDoAlvoVazio = alvo.cardapio && alvo.cardapio._count.itens === 0 && alvo.cardapio._count.categorias === 0;
+  if (alvo.cardapio && !cardapioDoAlvoVazio) {
+    throw new Error(`O telefone ${telefone} já tem um cardápio com itens. Nada foi alterado.`);
   }
 
+  await prisma.$transaction([
+    ...(alvo.cardapio ? [prisma.cardapio.delete({ where: { id: alvo.cardapio.id } })] : []),
+    prisma.loja.updateMany({ where: { empreendedorId: atual.id }, data: { empreendedorId: alvo.id } }),
+    prisma.cardapio.updateMany({ where: { empreendedorId: atual.id }, data: { empreendedorId: alvo.id } }),
+    prisma.pedido.updateMany({ where: { empreendedorId: atual.id }, data: { empreendedorId: alvo.id } }),
+    ...(atual.telefone === TELEFONE_DEMO
+      ? [
+          prisma.estadoConversa.deleteMany({ where: { empreendedorId: atual.id } }),
+          prisma.empreendedor.delete({ where: { id: atual.id } }),
+        ]
+      : []),
+  ]);
+  console.log(`Loja de exemplo passada de ${atual.telefone} para ${telefone}.`);
+}
+
+async function criar(): Promise<void> {
+  const telefone = telefoneDoDono();
+  const slugOcupado = await prisma.loja.findUnique({ where: { slug: SLUG }, include: { empreendedor: true } });
+  const dono = await donoDaLojaDemo();
+  if (slugOcupado && dono && slugOcupado.empreendedorId !== dono.id) {
+    throw new Error(`O link "${SLUG}" já é de outra loja (${slugOcupado.nome ?? 'sem nome'}). Nada foi alterado.`);
+  }
+  await trocarDono(telefone);
+
   const empreendedor = await prisma.empreendedor.upsert({
-    where: { telefone: TELEFONE_DEMO },
+    where: { telefone },
     update: {},
-    create: { telefone: TELEFONE_DEMO, nome: 'Zé (exemplo)' },
+    create: { telefone, nome: 'Zé (exemplo)' },
   });
+  const outraLoja = await prisma.loja.findUnique({ where: { empreendedorId: empreendedor.id } });
+  if (outraLoja && outraLoja.slug !== SLUG) {
+    throw new Error(`O telefone ${telefone} já é dono da loja "${outraLoja.nome ?? 'sem nome'}". Nada foi alterado.`);
+  }
 
   const dadosLoja = {
     nome: 'Pizzaria do Zé',
