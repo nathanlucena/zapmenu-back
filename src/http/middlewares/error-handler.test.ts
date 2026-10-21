@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 import { criarMenuRepositoryFake } from '../../menu/__mocks__/menu.repository.fake.js';
 import { criarOrdersRepositoryFake } from '../../orders/__mocks__/orders.repository.fake.js';
+import { IntegracaoError } from '../../shared/errors/integracao-error.js';
 import { buildApp } from '../app.js';
 
 /** App cujo cardápio público lança o erro dado, para ver como ele chega na resposta. */
@@ -67,6 +68,16 @@ describe('errorHandler', () => {
     const resposta = await appQueLanca(erro).inject({ method: 'GET', url: '/v1/menu/emp-1' });
     expect(resposta.statusCode).toBe(503);
     expect(resposta.json().codigo).toBe('BANCO_INDISPONIVEL');
+  });
+
+  it('falha de serviço externo é 503 SERVICO_INDISPONIVEL com mensagem do serviço', async () => {
+    const erro = new IntegracaoError('mercado_pago', 'Falha (HTTP 502).', true);
+    const resposta = await appQueLanca(erro).inject({ method: 'GET', url: '/v1/menu/emp-1' });
+    expect(resposta.statusCode).toBe(503);
+    expect(resposta.json()).toEqual({
+      erro: 'O pagamento está fora do ar agora. Tente de novo em instantes.',
+      codigo: 'SERVICO_INDISPONIVEL',
+    });
   });
 
   it('erro inesperado é 500 ERRO_INTERNO com código de rastreio', async () => {

@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { DomainError, type TipoErroDominio } from '../../shared/errors/domain-error.js';
+import { IntegracaoError, type ServicoExterno } from '../../shared/errors/integracao-error.js';
 import { logger } from '../../shared/logger/logger.js';
 
 const STATUS_POR_TIPO: Record<TipoErroDominio, number> = {
@@ -25,6 +26,12 @@ const ERROS_DA_REQUISICAO: Record<string, Omit<RespostaDeErro, 'status'>> = {
   FST_ERR_CTP_INVALID_CONTENT_LENGTH: { codigo: 'CORPO_INVALIDO', erro: 'O tamanho informado não bate com o corpo.' },
 };
 
+const MENSAGEM_DO_SERVICO: Record<ServicoExterno, string> = {
+  mercado_pago: 'O pagamento está fora do ar agora. Tente de novo em instantes.',
+  viacep: 'A busca de endereço está fora do ar agora. Tente de novo em instantes.',
+  google: 'A busca de endereço está fora do ar agora. Tente de novo em instantes.',
+};
+
 /** Falhas do banco que têm uma resposta melhor que "erro interno". */
 function erroDoBanco(error: unknown): RespostaDeErro | undefined {
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
@@ -45,7 +52,11 @@ function erroDoBanco(error: unknown): RespostaDeErro | undefined {
 }
 
 function bancoIndisponivel(): RespostaDeErro {
-  return { status: 503, codigo: 'BANCO_INDISPONIVEL', erro: 'Estamos com instabilidade agora. Tente de novo em instantes.' };
+  return {
+    status: 503,
+    codigo: 'BANCO_INDISPONIVEL',
+    erro: 'Estamos com instabilidade agora. Tente de novo em instantes.',
+  };
 }
 
 /**
@@ -55,6 +66,12 @@ function bancoIndisponivel(): RespostaDeErro {
 export function errorHandler(error: FastifyError, request: FastifyRequest, reply: FastifyReply): void {
   if (error instanceof DomainError) {
     reply.status(STATUS_POR_TIPO[error.tipo]).send({ erro: error.message, codigo: error.code });
+    return;
+  }
+
+  if (error instanceof IntegracaoError) {
+    logger.error({ err: error, servico: error.servico, rastreio: request.id }, 'falha em serviço externo');
+    reply.status(503).send({ erro: MENSAGEM_DO_SERVICO[error.servico], codigo: 'SERVICO_INDISPONIVEL' });
     return;
   }
 
@@ -85,5 +102,7 @@ export function errorHandler(error: FastifyError, request: FastifyRequest, reply
 
 /** Rota que não existe, no mesmo formato dos outros erros. */
 export function rotaNaoEncontrada(request: FastifyRequest, reply: FastifyReply): void {
-  reply.status(404).send({ erro: `Rota não encontrada: ${request.method} ${request.url}`, codigo: 'ROTA_NAO_ENCONTRADA' });
+  reply
+    .status(404)
+    .send({ erro: `Rota não encontrada: ${request.method} ${request.url}`, codigo: 'ROTA_NAO_ENCONTRADA' });
 }

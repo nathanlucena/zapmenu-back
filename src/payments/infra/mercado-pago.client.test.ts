@@ -67,6 +67,27 @@ describe('criarMercadoPagoClient (API de Orders)', () => {
     });
   });
 
+  it('falha do Mercado Pago vira IntegracaoError: 5xx vale tentar de novo, 4xx não', async () => {
+    const pedido = { valor: 10, descricao: 'x', referenciaExterna: 'y' };
+    const fora = criarMercadoPagoClient(
+      't',
+      vi.fn().mockResolvedValue(respostaFake({}, false, 502)) as unknown as typeof fetch,
+    );
+    await expect(fora.criarCobrancaPix(pedido)).rejects.toMatchObject({ servico: 'mercado_pago', tentarDeNovo: true });
+
+    const recusado = criarMercadoPagoClient(
+      't',
+      vi.fn().mockResolvedValue(respostaFake({}, false, 400)) as unknown as typeof fetch,
+    );
+    await expect(recusado.criarCobrancaPix(pedido)).rejects.toMatchObject({ tentarDeNovo: false });
+
+    const semRede = criarMercadoPagoClient(
+      't',
+      vi.fn().mockRejectedValue(new TypeError('fetch failed')) as unknown as typeof fetch,
+    );
+    await expect(semRede.consultarPagamento('ORD1')).rejects.toThrow('sem conexão');
+  });
+
   it('lança erro quando a criação da cobrança falha', async () => {
     const fetchMock = vi.fn().mockResolvedValue(respostaFake({}, false, 500));
     const client = criarMercadoPagoClient('token-teste', fetchMock as unknown as typeof fetch);
@@ -77,7 +98,9 @@ describe('criarMercadoPagoClient (API de Orders)', () => {
   });
 
   it('consultarPagamento lê o status da order', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(respostaFake({ id: 'ORD1', status: 'processed', status_detail: 'accredited' }));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(respostaFake({ id: 'ORD1', status: 'processed', status_detail: 'accredited' }));
     const client = criarMercadoPagoClient('token-teste', fetchMock as unknown as typeof fetch);
 
     expect(await client.consultarPagamento('ORD1')).toEqual({ statusMp: 'processed' });
@@ -85,7 +108,9 @@ describe('criarMercadoPagoClient (API de Orders)', () => {
   });
 
   it('order vencida vira "expired", seja cancelada ou falha', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(respostaFake({ id: 'ORD1', status: 'canceled', status_detail: 'expired' }));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(respostaFake({ id: 'ORD1', status: 'canceled', status_detail: 'expired' }));
     const client = criarMercadoPagoClient('token-teste', fetchMock as unknown as typeof fetch);
 
     expect(await client.consultarPagamento('ORD1')).toEqual({ statusMp: 'expired' });

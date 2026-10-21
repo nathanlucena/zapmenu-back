@@ -307,6 +307,7 @@ Todo erro sai como `{ "erro": "mensagem para pessoas", "codigo": "CODIGO" }` (`h
 | Rota inexistente | 404 | `ROTA_NAO_ENCONTRADA` |
 | Prisma: único repetido / registro sumiu | 409 / 404 | `REGISTRO_DUPLICADO` / `REGISTRO_NAO_ENCONTRADO` |
 | Banco fora do ar | 503 | `BANCO_INDISPONIVEL` |
+| Mercado Pago, ViaCEP ou Google fora do ar, recusando ou sem responder (`IntegracaoError`, timeout de 5 s nos de endereço e 15 s no Mercado Pago) | 503 | `SERVICO_INDISPONIVEL` |
 | Qualquer outro | 500 | `ERRO_INTERNO`, com `"rastreio"`: o id da requisição, o mesmo do log |
 
 ### `GET /v1/menu/:empreendedorId`

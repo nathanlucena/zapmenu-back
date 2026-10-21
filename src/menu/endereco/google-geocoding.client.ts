@@ -1,3 +1,4 @@
+import { chamarServico, falhaHttp, IntegracaoError } from '../../shared/errors/integracao-error.js';
 import type { Geocodificador, ResultadoGeocodificacao } from './endereco.types.js';
 
 const BASE_URL = 'https://maps.googleapis.com/maps/api/geocode/json';
@@ -29,9 +30,11 @@ export function criarGoogleGeocodingClient(apiKey: string, fetchFn: typeof fetch
       url.searchParams.set('language', 'pt-BR');
       url.searchParams.set('key', apiKey);
 
-      const resposta = await fetchFn(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+      const resposta = await chamarServico('google', 'Falha ao consultar o Google Geocoding', () =>
+        fetchFn(url, { signal: AbortSignal.timeout(TIMEOUT_MS) }),
+      );
       if (!resposta.ok) {
-        throw new Error(`Falha ao consultar o Google Geocoding (HTTP ${resposta.status}).`);
+        throw falhaHttp('google', resposta.status, 'Falha ao consultar o Google Geocoding');
       }
       const dados = (await resposta.json()) as RespostaGoogle;
       if (dados.status === 'ZERO_RESULTS') {
@@ -40,7 +43,9 @@ export function criarGoogleGeocodingClient(apiKey: string, fetchFn: typeof fetch
       const primeiro = dados.results?.[0];
       if (dados.status !== 'OK' || !primeiro) {
         // Não inclui a URL na mensagem: ela carrega a chave.
-        throw new Error(`Google Geocoding respondeu ${dados.status}.`);
+        // OVER_QUERY_LIMIT e UNKNOWN_ERROR passam; REQUEST_DENIED (chave) e INVALID_REQUEST não.
+        const temporario = dados.status === 'OVER_QUERY_LIMIT' || dados.status === 'UNKNOWN_ERROR';
+        throw new IntegracaoError('google', `Google Geocoding respondeu ${dados.status}.`, temporario);
       }
 
       const componente = (tipo: string) => primeiro.address_components.find((item) => item.types.includes(tipo));

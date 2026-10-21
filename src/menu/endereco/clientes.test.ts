@@ -8,9 +8,17 @@ function respostaFake(body: unknown, ok = true, status = 200) {
 
 describe('criarViaCepClient', () => {
   it('mapeia a resposta do ViaCEP', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      respostaFake({ cep: '50050-000', logradouro: 'Rua da Aurora', bairro: 'Boa Vista', localidade: 'Recife', uf: 'PE' }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        respostaFake({
+          cep: '50050-000',
+          logradouro: 'Rua da Aurora',
+          bairro: 'Boa Vista',
+          localidade: 'Recife',
+          uf: 'PE',
+        }),
+      );
     const cliente = criarViaCepClient(fetchMock as unknown as typeof fetch);
 
     expect(await cliente.buscarCep('50050000')).toEqual({
@@ -24,7 +32,9 @@ describe('criarViaCepClient', () => {
   });
 
   it('CEP inexistente vira null; falha do serviço lança erro', async () => {
-    const inexistente = criarViaCepClient(vi.fn().mockResolvedValue(respostaFake({ erro: true })) as unknown as typeof fetch);
+    const inexistente = criarViaCepClient(
+      vi.fn().mockResolvedValue(respostaFake({ erro: true })) as unknown as typeof fetch,
+    );
     expect(await inexistente.buscarCep('99999999')).toBeNull();
 
     const fora = criarViaCepClient(vi.fn().mockResolvedValue(respostaFake({}, false, 503)) as unknown as typeof fetch);
@@ -41,7 +51,11 @@ describe('criarGoogleGeocodingClient', () => {
         address_components: [
           { long_name: '123', short_name: '123', types: ['street_number'] },
           { long_name: 'Rua da Aurora', short_name: 'R. da Aurora', types: ['route'] },
-          { long_name: 'Boa Vista', short_name: 'Boa Vista', types: ['sublocality_level_1', 'sublocality', 'political'] },
+          {
+            long_name: 'Boa Vista',
+            short_name: 'Boa Vista',
+            types: ['sublocality_level_1', 'sublocality', 'political'],
+          },
           { long_name: 'Recife', short_name: 'Recife', types: ['administrative_area_level_2', 'political'] },
           { long_name: 'Pernambuco', short_name: 'PE', types: ['administrative_area_level_1', 'political'] },
           { long_name: '50050-000', short_name: '50050-000', types: ['postal_code'] },
@@ -86,7 +100,10 @@ describe('criarGoogleGeocodingClient', () => {
         },
       ],
     };
-    const cliente = criarGoogleGeocodingClient('k', vi.fn().mockResolvedValue(respostaFake(comEstabelecimento)) as unknown as typeof fetch);
+    const cliente = criarGoogleGeocodingClient(
+      'k',
+      vi.fn().mockResolvedValue(respostaFake(comEstabelecimento)) as unknown as typeof fetch,
+    );
 
     const resultado = await cliente.geocodificar('Rua da Aurora, 123, Recife');
 
@@ -100,17 +117,25 @@ describe('criarGoogleGeocodingClient', () => {
         {
           ...resultadoGoogle.results[0]!,
           formatted_address: 'Recife - PE, Brasil',
-          address_components: resultadoGoogle.results[0]!.address_components.filter((item) => !item.types.includes('route')),
+          address_components: resultadoGoogle.results[0]!.address_components.filter(
+            (item) => !item.types.includes('route'),
+          ),
         },
       ],
     };
-    const cliente = criarGoogleGeocodingClient('k', vi.fn().mockResolvedValue(respostaFake(semRua)) as unknown as typeof fetch);
+    const cliente = criarGoogleGeocodingClient(
+      'k',
+      vi.fn().mockResolvedValue(respostaFake(semRua)) as unknown as typeof fetch,
+    );
 
     expect((await cliente.geocodificar('Recife'))?.enderecoFormatado).toBe('Recife - PE');
   });
 
   it('ZERO_RESULTS vira null; outros status lançam erro sem expor a chave', async () => {
-    const vazio = criarGoogleGeocodingClient('k', vi.fn().mockResolvedValue(respostaFake({ status: 'ZERO_RESULTS' })) as unknown as typeof fetch);
+    const vazio = criarGoogleGeocodingClient(
+      'k',
+      vi.fn().mockResolvedValue(respostaFake({ status: 'ZERO_RESULTS' })) as unknown as typeof fetch,
+    );
     expect(await vazio.geocodificar('x')).toBeNull();
 
     const negado = criarGoogleGeocodingClient(
@@ -123,6 +148,45 @@ describe('criarGoogleGeocodingClient', () => {
 
 describe('montarEndereco', () => {
   it('omite número, bairro e CEP quando não vieram', () => {
-    expect(montarEndereco({ logradouro: 'Rua da Aurora', cidade: 'Recife', uf: 'PE' })).toBe('Rua da Aurora, Recife - PE');
+    expect(montarEndereco({ logradouro: 'Rua da Aurora', cidade: 'Recife', uf: 'PE' })).toBe(
+      'Rua da Aurora, Recife - PE',
+    );
+  });
+});
+
+describe('falhas dos serviços de endereço', () => {
+  const resposta = (status: number, corpo: unknown = {}) =>
+    ({ ok: status < 400, status, json: async () => corpo }) as Response;
+
+  it('ViaCEP fora do ar vira IntegracaoError que vale tentar de novo', async () => {
+    const client = criarViaCepClient(vi.fn().mockResolvedValue(resposta(503)) as unknown as typeof fetch);
+    await expect(client.buscarCep('13010000')).rejects.toMatchObject({
+      name: 'IntegracaoError',
+      servico: 'viacep',
+      tentarDeNovo: true,
+    });
+  });
+
+  it('timeout vira IntegracaoError com "tempo esgotado"', async () => {
+    const timeout = Object.assign(new Error('timeout'), { name: 'TimeoutError' });
+    const client = criarViaCepClient(vi.fn().mockRejectedValue(timeout) as unknown as typeof fetch);
+    await expect(client.buscarCep('13010000')).rejects.toThrow('tempo esgotado');
+  });
+
+  it('Google com chave recusada não vale tentar de novo; sobrecarga vale', async () => {
+    const negado = criarGoogleGeocodingClient(
+      'chave',
+      vi.fn().mockResolvedValue(resposta(200, { status: 'REQUEST_DENIED' })) as unknown as typeof fetch,
+    );
+    await expect(negado.geocodificar('Av. Brasil, 450')).rejects.toMatchObject({
+      servico: 'google',
+      tentarDeNovo: false,
+    });
+
+    const cheio = criarGoogleGeocodingClient(
+      'chave',
+      vi.fn().mockResolvedValue(resposta(200, { status: 'OVER_QUERY_LIMIT' })) as unknown as typeof fetch,
+    );
+    await expect(cheio.geocodificar('Av. Brasil, 450')).rejects.toMatchObject({ tentarDeNovo: true });
   });
 });
