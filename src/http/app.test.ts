@@ -219,7 +219,7 @@ describe('GET /v1/orders/:codigoCurto', () => {
     const { pedido } = criado.json();
     // Simula o cliente que já confirmou pelo WhatsApp: o telefone não pode vazar.
     await ordersRepo.atualizar(pedido.id, { telefoneCliente: '5581988887777' });
-    return { app, codigo: pedido.codigoCurto as string };
+    return { app, codigo: pedido.codigoCurto as string, ordersRepo, pedidoId: pedido.id as string };
   }
 
   it('devolve status, itens, total e expiração sem o telefone do cliente', async () => {
@@ -234,6 +234,20 @@ describe('GET /v1/orders/:codigoCurto', () => {
     expect(pedido.expiraEm).toEqual(expect.any(String));
     expect(resposta.body).not.toContain('5581988887777');
     expect(pedido).not.toHaveProperty('id');
+  });
+
+  it('devolve o PIX para copiar só enquanto o pedido aguarda pagamento', async () => {
+    const { app, codigo, ordersRepo, pedidoId } = await criarPedidoDeBolo();
+    ordersRepo.definirPix(pedidoId, { copiaCola: '00020126...pix', qrCodeBase64: 'data:image/png;base64,ABC' });
+    const consultar = async () => (await app.inject({ method: 'GET', url: `/v1/orders/${codigo}` })).json().pedido;
+
+    expect(await consultar()).not.toHaveProperty('pix');
+
+    await ordersRepo.atualizar(pedidoId, { status: 'AGUARDANDO_PAGAMENTO' });
+    expect((await consultar()).pix).toEqual({ copiaCola: '00020126...pix', qrCodeBase64: 'data:image/png;base64,ABC' });
+
+    await ordersRepo.atualizar(pedidoId, { status: 'PAGO' });
+    expect(await consultar()).not.toHaveProperty('pix');
   });
 
   it('retorna 404 PEDIDO_NAO_ENCONTRADO para código inexistente ou fora do formato', async () => {

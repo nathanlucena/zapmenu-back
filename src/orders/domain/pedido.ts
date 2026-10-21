@@ -115,6 +115,8 @@ export interface ResumoPedidoPublico {
   expiraEm: Date;
   criadoEm: Date;
   nomeLoja?: string;
+  /** Só enquanto o pedido aguarda pagamento: o mesmo PIX enviado no WhatsApp, para copiar na tela. */
+  pix?: { copiaCola: string; qrCodeBase64?: string };
   itens: {
     nome: string;
     quantidade: number;

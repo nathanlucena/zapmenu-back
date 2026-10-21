@@ -104,6 +104,7 @@ export function criarOrdersRepositoryPrisma(prisma: PrismaClient): OrdersReposit
         include: {
           itens: { include: { itemCardapio: { select: { nome: true } } } },
           empreendedor: { select: { loja: { select: { nome: true } } } },
+          pagamento: { select: { copiaCola: true, qrCodeBase64: true } },
         },
       });
       if (!pedido) {
@@ -120,6 +121,10 @@ export function criarOrdersRepositoryPrisma(prisma: PrismaClient): OrdersReposit
         expiraEm: pedido.expiraEm,
         criadoEm: pedido.criadoEm,
         nomeLoja: pedido.empreendedor.loja?.nome ?? undefined,
+        pix:
+          pedido.status === 'AGUARDANDO_PAGAMENTO' && pedido.pagamento?.copiaCola
+            ? { copiaCola: pedido.pagamento.copiaCola, qrCodeBase64: pedido.pagamento.qrCodeBase64 ?? undefined }
+            : undefined,
         itens: pedido.itens.map((item) => ({
           nome: item.itemCardapio.nome,
           quantidade: item.quantidade,

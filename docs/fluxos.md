@@ -350,6 +350,10 @@ Base: `/v1`. CORS liberado só para `FRONTEND_ALLOWED_ORIGIN`. Toda requisição
 
 O valor total **não inclui taxa de entrega** e o pedido não guarda modalidade nem endereço (lacunas L3 e L4).
 
+### `GET /v1/orders/:codigoCurto`
+
+Acompanhamento do pedido no app, pelo código `PED-XXXX` (sem diferenciar maiúsculas). Devolve status, modalidade, forma de pagamento, itens com nome, total e prazo, **sem** telefone, endereço do cliente nem ids internos. Enquanto o pedido está em `AGUARDANDO_PAGAMENTO`, vem também `pix: { copiaCola, qrCodeBase64? }`, o mesmo PIX enviado no WhatsApp, para o cliente copiar na tela. Código inexistente ou fora do formato: `404 PEDIDO_NAO_ENCONTRADO`.
+
 ### `POST /v1/webhooks/mercado-pago`
 
 | Etapa | Comportamento |
@@ -404,7 +408,7 @@ Problemas e ausências encontrados no código, por impacto. Os marcados com **(f
 | L6 | `CANCELADO` nunca é atribuído; pagamento `REJEITADO` não muda o pedido | Médio | Definir o que acontece em recusa e estorno |
 | L7 | Aviso de pedido pago traz só código e valor | **Parcial**: o resumo completo (itens, variações, observações, entrega) chega no pedido de aceite, antes do pagamento; o aviso de pago continua curto | Telefone do cliente no resumo |
 | L8 | Aviso de pedido pago se perde se a sessão de gestão estiver desconectada | Médio | Guardar e reenviar ao reconectar |
-| L9 | Não existe `GET` de pedido **(front B1)** | Alto para o front (acompanhamento) | `GET /v1/orders/:codigoCurto` |
+| ~~L9~~ | ~~Não existe `GET` de pedido~~ | **Resolvida**: `GET /v1/orders/:codigoCurto` (seção 8), com o PIX para copiar | — |
 | ~~L10~~ | ~~Respostas do número de pedidos mostram o status técnico~~ | **Resolvida**: mensagem por status (`ROTULO_STATUS_PEDIDO` no domínio) e PIX reenviado quando o pedido já aguarda pagamento | — |
 | L11 | Qualquer número que escrever na gestão vira empreendedor | **Parcial (Sprint 1)**: com `GESTAO_TELEFONES_PERMITIDOS` preenchida, só esses números entram. Vazia, continua aberto | Cadastro de verdade (convite ou painel) depois do piloto |
 | L12 | Fotos em base64 no banco **(front B8)** | Médio. Cardápio público pesado | Storage de arquivos e URL pública |

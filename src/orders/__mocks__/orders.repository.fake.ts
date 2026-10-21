@@ -4,8 +4,14 @@ import { estaExpirado, type Pedido } from '../domain/pedido.js';
 
 let proximoId = 1;
 
-export function criarOrdersRepositoryFake(): OrdersRepository {
+export interface OrdersRepositoryFake extends OrdersRepository {
+  /** O fake não conhece pagamentos: o teste diz qual PIX o pedido tem. */
+  definirPix(pedidoId: string, pix: { copiaCola: string; qrCodeBase64?: string }): void;
+}
+
+export function criarOrdersRepositoryFake(): OrdersRepositoryFake {
   const pedidos = new Map<string, Pedido>();
+  const pixPorPedido = new Map<string, { copiaCola: string; qrCodeBase64?: string }>();
 
   return {
     async codigoJaExiste(codigoCurto: string) {
@@ -39,6 +45,7 @@ export function criarOrdersRepositoryFake(): OrdersRepository {
         valorTotal,
         expiraEm,
         criadoEm,
+        pix: status === 'AGUARDANDO_PAGAMENTO' ? pixPorPedido.get(pedido.id) : undefined,
         // O fake não conhece o cardápio: usa o id do item como nome.
         itens: pedido.itens.map(({ itemCardapioId, quantidade, precoUnitario, variacaoEscolhida, observacao }) => ({
           nome: itemCardapioId,
@@ -70,6 +77,10 @@ export function criarOrdersRepositoryFake(): OrdersRepository {
       const atualizado = { ...pedido, ...alteracoes };
       pedidos.set(id, atualizado);
       return atualizado;
+    },
+
+    definirPix(pedidoId, pix) {
+      pixPorPedido.set(pedidoId, pix);
     },
 
     async listarExpirados(agora: Date) {
