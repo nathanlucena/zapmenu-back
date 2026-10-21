@@ -9,6 +9,7 @@ export const REGRAS_PADRAO: RegrasDaLoja = {
   aceitaRetirada: true,
   fazEntrega: false,
   aceitaPagamentoNaEntrega: true,
+  cadastroCompleto: true,
   faixasEntrega: [],
   horarios: [],
 };

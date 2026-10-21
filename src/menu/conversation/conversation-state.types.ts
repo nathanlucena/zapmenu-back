@@ -79,6 +79,11 @@ export interface DadosLoja {
   slug?: string;
   /** Hex "#RRGGBB". */
   corDestaque?: string;
+  /** Foto do logo (data URI), vinda de uma foto mandada na conversa. */
+  logoUrl?: string;
+  /** Foto de capa (data URI), vinda de uma foto mandada na conversa. */
+  capaUrl?: string;
+  aceitaPagamentoNaEntrega?: boolean;
 }
 
 /** Item que ainda não existe no cardápio; `ref` é o apelido usado pela IA (ex.: "n1"). */

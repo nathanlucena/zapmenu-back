@@ -95,6 +95,12 @@ export async function criarPedidoDoCarrinho(
     throw new DomainError('Loja não encontrada.', 'LOJA_NAO_ENCONTRADA', 'NAO_ENCONTRADO');
   }
 
+  if (!regras.cadastroCompleto) {
+    throw new DomainError(
+      'Esta loja ainda está terminando o cadastro e não recebe pedidos.',
+      'LOJA_EM_MONTAGEM',
+    );
+  }
   if (!lojaAberta(regras.horarios, agora, regras.fuso)) {
     throw new DomainError('A loja está fechada agora.', 'LOJA_FECHADA');
   }

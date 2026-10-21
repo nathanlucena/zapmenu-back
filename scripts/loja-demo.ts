@@ -217,9 +217,9 @@ async function criar(): Promise<void> {
       { ateKm: 6, taxa: 12 },
     ],
     pedidoMinimo: 30,
-    // Sem horários = sempre aberta, para dar para testar a qualquer hora.
+    // Aberta o dia todo, para dar para testar a qualquer hora (o horário é obrigatório no cadastro).
     // Troque por algo como [{ dia: 'ter', abre: '18:00', fecha: '23:00' }] para ver o "Fechado".
-    horarios: [],
+    horarios: ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'].map((dia) => ({ dia, abre: '00:00', fecha: '23:59' })),
     slug: SLUG,
     capaUrl: foto('#5A2A14', '#B5462B'),
     corDestaque: '#C2410C',

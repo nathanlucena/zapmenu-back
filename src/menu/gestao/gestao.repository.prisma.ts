@@ -104,10 +104,26 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
               horarios: loja.horarios as unknown as Horario[],
               slug: loja.slug ?? undefined,
               corDestaque: loja.corDestaque ?? undefined,
+              aceitaPagamentoNaEntrega: loja.aceitaPagamentoNaEntrega,
             }
           : {},
+        lojaSalva: {
+          existe: Boolean(loja),
+          temLogo: Boolean(loja?.logoUrl),
+          temCapa: Boolean(loja?.capaUrl),
+          lembreteOpcionaisEm: loja?.lembreteOpcionaisEm ?? undefined,
+          naoLembrarOpcionais: loja?.naoLembrarOpcionais ?? false,
+        },
       };
       return snapshot;
+    },
+
+    async registrarLembreteOpcionais(telefone, registro) {
+      const { empreendedorId } = await obterCardapio(prisma, telefone);
+      await prisma.loja.updateMany({
+        where: { empreendedorId },
+        data: definidos({ lembreteOpcionaisEm: registro.em, naoLembrarOpcionais: registro.desligar }),
+      });
     },
 
     async salvarRascunho(telefone, rascunho) {
@@ -224,6 +240,9 @@ async function salvarLoja(tx: Tx, empreendedorId: string, loja: DadosLoja): Prom
     horarios: loja.horarios as unknown as Prisma.InputJsonValue | undefined,
     slug: loja.slug,
     corDestaque: loja.corDestaque,
+    logoUrl: loja.logoUrl,
+    capaUrl: loja.capaUrl,
+    aceitaPagamentoNaEntrega: loja.aceitaPagamentoNaEntrega,
   });
   // O endereço é gravado inteiro (null limpa o que não veio), para não misturar com o anterior.
   const dadosEndereco = endereco && {

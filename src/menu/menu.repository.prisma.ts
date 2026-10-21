@@ -8,6 +8,29 @@ import type { FaixaEntrega } from './conversation/conversation-state.types.js';
 import { entregaConfigurada, raioMaximoKm } from './entrega.js';
 import { enderecoVerificadoDaLoja } from './gestao/gestao.repository.prisma.js';
 import type { CardapioPublico, HorarioLoja, ItemCardapio, ItemDraft, VariacaoOpcao } from './menu.types.js';
+import { cadastroCompleto, type LojaParaCadastro } from './cadastro-da-loja.js';
+
+/** Os dados da loja salva que contam para o cadastro obrigatório. */
+function lojaParaCadastro(loja: {
+  nome: string | null;
+  slug: string | null;
+  aceitaRetirada: boolean;
+  fazEntrega: boolean;
+  latitude: unknown;
+  longitude: unknown;
+  faixasEntrega: unknown;
+  horarios: unknown;
+}): LojaParaCadastro {
+  return {
+    nome: loja.nome ?? undefined,
+    slug: loja.slug ?? undefined,
+    aceitaRetirada: loja.aceitaRetirada,
+    fazEntrega: loja.fazEntrega,
+    enderecoConfirmado: loja.latitude !== null && loja.longitude !== null,
+    faixasEntrega: Array.isArray(loja.faixasEntrega) ? loja.faixasEntrega : [],
+    horarios: Array.isArray(loja.horarios) ? loja.horarios : [],
+  };
+}
 
 type ItemCardapioComVariacoes = Prisma.ItemCardapioGetPayload<{ include: { variacoes: true } }>;
 
@@ -99,6 +122,7 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
           endereco: loja.endereco ?? undefined,
           aceitaRetirada: loja.aceitaRetirada,
           aceitaPagamentoNaEntrega: loja.aceitaPagamentoNaEntrega,
+          emMontagem: !cadastroCompleto(lojaParaCadastro(loja)),
           // Loja antiga (taxa fixa, sem endereço verificado ou faixas) não entrega até configurar.
           fazEntrega: loja.fazEntrega && entregaConfigurada({ enderecoVerificado: enderecoVerificadoDaLoja(loja), faixasEntrega }),
           faixasEntrega,
@@ -129,12 +153,20 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
       const { loja } = empreendedor;
       if (!loja) {
         // Loja sem nada configurado: os mesmos padrões do schema.
-        return { aceitaRetirada: true, fazEntrega: false, aceitaPagamentoNaEntrega: true, faixasEntrega: [], horarios: [] };
+        return {
+          aceitaRetirada: true,
+          fazEntrega: false,
+          aceitaPagamentoNaEntrega: true,
+          faixasEntrega: [],
+          horarios: [],
+          cadastroCompleto: false,
+        };
       }
       const regras: RegrasDaLoja = {
         aceitaRetirada: loja.aceitaRetirada,
         fazEntrega: loja.fazEntrega,
         aceitaPagamentoNaEntrega: loja.aceitaPagamentoNaEntrega,
+        cadastroCompleto: cadastroCompleto(lojaParaCadastro(loja)),
         origem:
           loja.latitude === null || loja.longitude === null
             ? undefined

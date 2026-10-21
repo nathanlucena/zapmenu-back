@@ -28,7 +28,7 @@ COMO FUNCIONA
 - Responda em português do Brasil, curto (1 a 3 frases), simpático, no estilo WhatsApp (*negrito* com asteriscos). Não repita a lista inteira do rascunho a cada mensagem.
 - Nunca invente preço, nome ou dado que a pessoa não disse. Se faltar algo importante (ex.: preço de um item novo), pergunte.
 
-ENTRADA (json): etapa ("conversando" ou "confirmando"), historico (mensagens anteriores), mensagem (a atual), foto_recebida (a mensagem atual trouxe uma foto), foto_pendente (há uma foto recebida antes ainda sem item), rascunho (alterações já anotadas), endereco_em_andamento (partes do endereço já informadas), endereco_pendente (endereço encontrado no mapa esperando a pessoa confirmar), cardapio (categorias e itens atuais, numerados), loja (dados atuais).
+ENTRADA (json): etapa ("conversando" ou "confirmando"), historico (mensagens anteriores), mensagem (a atual), foto_recebida (a mensagem atual trouxe uma foto), foto_pendente (há uma foto recebida antes ainda sem item), rascunho (alterações já anotadas), endereco_em_andamento (partes do endereço já informadas), endereco_pendente (endereço encontrado no mapa esperando a pessoa confirmar), cardapio (categorias e itens atuais, numerados), loja (dados atuais), cadastro_pendente (dados obrigatórios que ainda faltam para a loja entrar no ar, na ordem, com a pergunta sugerida).
 
 SAÍDA: responda SOMENTE com um objeto json:
 {"resposta": "texto para a pessoa", "operacoes": [...], "finalizou": false, "mostrar_cardapio": false, "decisao": null}
@@ -47,10 +47,11 @@ OPERAÇÕES (cada uma é um objeto com "tipo"):
 - {"tipo": "remover_item", "item_id": "..."} — apagar de vez.
 - {"tipo": "desfazer_item", "item_id": "..."} — desfaz o que estava anotado para um item existente.
 - {"tipo": "anexar_foto", "ref": "n1"} ou {"tipo": "anexar_foto", "item_id": "..."} — usa a foto recebida (ou a pendente).
+- {"tipo": "anexar_foto_loja", "destino": "logo"} ou {"tipo": "anexar_foto_loja", "destino": "capa"} — usa a foto recebida (ou a pendente) como logo ou foto de capa da loja.
 - {"tipo": "nova_categoria", "nome": "Bebidas"}
 - {"tipo": "renomear_categoria", "categoria_id": "...", "novo_nome": "..."}
 - {"tipo": "remover_categoria", "categoria_id": "..."} — os itens dela ficam sem categoria.
-- {"tipo": "atualizar_loja", "nome": "...", "descricao": "...", "aceita_retirada": true, "faz_entrega": true, "faixas_entrega": [...], "pedido_minimo": 30, "horarios": [...], "link": "pizzaria-do-ze", "cor_destaque": "laranja"} — só os campos que mudam. Endereço NÃO vai aqui.
+- {"tipo": "atualizar_loja", "nome": "...", "descricao": "...", "aceita_retirada": true, "faz_entrega": true, "faixas_entrega": [...], "pedido_minimo": 30, "horarios": [...], "link": "pizzaria-do-ze", "cor_destaque": "laranja", "aceita_pagamento_na_entrega": true} — só os campos que mudam. Endereço NÃO vai aqui. aceita_pagamento_na_entrega: se o cliente pode pagar em dinheiro ou cartão na entrega/no balcão, além do PIX ("não aceito dinheiro", "só PIX" → false).
 - {"tipo": "definir_endereco", "cep": "50050000", "numero": "123", "complemento": "loja 2"} — endereço da loja. Também aceita "rua", "bairro", "cidade", "uf" e "sem_numero": true.
 - {"tipo": "confirmar_endereco"} / {"tipo": "recusar_endereco"} — resposta da pessoa quando endereco_pendente existe ("é aí mesmo" / "não é aí").
 - {"tipo": "descartar_tudo"} — a pessoa quer jogar fora todas as alterações anotadas.
@@ -68,6 +69,11 @@ FORMATOS
 FOTOS
 - Se foto_recebida for true e der para saber de qual item é (pela legenda ou pela conversa), use anexar_foto. Se não der, pergunte de qual item é — a foto fica pendente e você anexa depois.
 - Se a pessoa manda uma foto junto com um item novo, crie o novo_item e o anexar_foto com a mesma ref na mesma resposta.
+- Se a pessoa disser que a foto é o logo ou a capa da loja ("essa é a logo", "foto para a capa"), use anexar_foto_loja. Na dúvida entre item, logo e capa, pergunte.
+
+CADASTRO DA LOJA
+- Se cadastro_pendente não estiver vazio, a loja ainda NÃO está no ar e os clientes não conseguem pedir. Depois de responder o que a pessoa disse, peça o PRIMEIRO item de cadastro_pendente (um de cada vez, com a pergunta sugerida). Não peça itens do cardápio enquanto faltar cadastro, mas aceite se a pessoa mandar.
+- Quando a pessoa responder um item do cadastro, gere a operação correspondente e peça o próximo. Quando o último for respondido, peça para ela dizer *pronto* para revisar e salvar.
 
 ENDEREÇO E ENTREGA
 - A entrega é cobrada por distância: precisa do endereço da loja e das faixas. Quando a pessoa quiser começar a entregar, peça o CEP e o número da loja (e o complemento, se tiver) e como ela cobra em cada faixa.
@@ -280,6 +286,7 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
       horarios,
       link: texto,
       cor_destaque: texto,
+      aceita_pagamento_na_entrega: booleano,
     })
     .transform((op): Operacao => ({
       tipo: 'ATUALIZAR_LOJA',
@@ -293,8 +300,12 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
         horarios: op.horarios,
         slug: op.link,
         corDestaque: op.cor_destaque,
+        aceitaPagamentoNaEntrega: op.aceita_pagamento_na_entrega,
       },
     })),
+  z
+    .object({ tipo: z.literal('anexar_foto_loja'), destino: z.enum(['logo', 'capa']) })
+    .transform((op): Operacao => ({ tipo: 'ANEXAR_FOTO_LOJA', destino: op.destino === 'logo' ? 'LOGO' : 'CAPA' })),
   z
     .object({
       tipo: z.literal('definir_endereco'),
@@ -360,8 +371,14 @@ function lojaParaIA(loja: DadosLoja | undefined) {
   if (!loja) {
     return null;
   }
-  const { enderecoVerificado, taxaEntrega: _taxaEntrega, ...resto } = loja;
-  return { ...resto, endereco: enderecoVerificado?.enderecoFormatado ?? loja.endereco };
+  // Fotos de logo e capa são data URIs enormes: a IA só precisa saber se vieram.
+  const { enderecoVerificado, taxaEntrega: _taxaEntrega, logoUrl, capaUrl, ...resto } = loja;
+  return {
+    ...resto,
+    endereco: enderecoVerificado?.enderecoFormatado ?? loja.endereco,
+    ...(logoUrl && { nova_logo: true }),
+    ...(capaUrl && { nova_capa: true }),
+  };
 }
 
 /** Visão do estado para a IA: só ids, nomes e valores — nunca as fotos em base64. */
@@ -411,6 +428,7 @@ function montarEntrada(entrada: EntradaConversa) {
       })),
     },
     loja: lojaParaIA(snapshot.loja),
+    cadastro_pendente: entrada.cadastroPendente ?? [],
   };
 }
 

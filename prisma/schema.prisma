@@ -82,6 +82,10 @@ model Loja {
   logoUrl                  String?
   /// Hex "#RRGGBB".
   corDestaque              String?
+  /// Último lembrete dos dados opcionais (descrição, logo, capa…) mandado na gestão.
+  lembreteOpcionaisEm      DateTime?
+  /// A loja pediu para não lembrar mais dos opcionais.
+  naoLembrarOpcionais      Boolean      @default(false)
   /// Fuso dos horários de funcionamento.
   fuso                     String       @default("America/Sao_Paulo")
   atualizadoEm             DateTime     @updatedAt

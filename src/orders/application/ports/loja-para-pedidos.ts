@@ -12,6 +12,8 @@ export interface RegrasDaLoja {
   fazEntrega: boolean;
   /** Dinheiro ou cartão na entrega/balcão, além do PIX. */
   aceitaPagamentoNaEntrega: boolean;
+  /** Todos os dados obrigatórios preenchidos (nome, endereço, horário…). Sem isso, não recebe pedidos. */
+  cadastroCompleto: boolean;
   /** Coordenada do endereço verificado da loja; sem ela não há entrega. */
   origem?: { latitude: number; longitude: number };
   faixasEntrega: FaixaTaxaEntrega[];

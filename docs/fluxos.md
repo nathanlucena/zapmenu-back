@@ -114,6 +114,14 @@ OCIOSO ◀──── "sim" (grava numa transação) ◀───────�
 
 Guardado em `EstadoConversa` (`estado` + `contexto` JSON com rascunho, histórico, foto pendente, endereço em andamento e endereço pendente).
 
+### Cadastro da loja
+
+- **Obrigatórios** para a loja entrar no ar (`menu/cadastro-da-loja.ts`): nome, link (sai do nome se não for escolhido), como entrega, endereço confirmado, taxas por distância (só se entrega) e horário de funcionamento. Os itens do cardápio ficam de fora: são cadastrados depois, na conversa.
+- Enquanto faltar algum, o começo de cada conversa mostra a lista com ✅/⬜ e o progresso ("3 de 6"), e a IA recebe `cadastro_pendente` para pedir o próximo dado, um de cada vez. O comando *o que falta* mostra a lista a qualquer momento (sem chamar a IA).
+- Loja incompleta: o cardápio público vem com `loja.emMontagem: true` (o app mostra "terminando o cadastro") e `POST /v1/orders` recusa com `LOJA_EM_MONTAGEM`.
+- Ao salvar o último obrigatório: "🎉 Sua loja está no ar!" com o link do cardápio (`FRONTEND_ALLOWED_ORIGIN/<slug>`), o pedido dos itens e a lista dos opcionais.
+- **Opcionais:** descrição, logo e capa (foto mandada na conversa dizendo que é o logo/a capa), cor e pedido mínimo; e o pagamento na entrega (liga/desliga, padrão ligado). Lembrete no começo de uma conversa no máximo 1 vez por semana (`Loja.lembreteOpcionaisEm`), até completar ou a loja responder *não lembrar mais* (`Loja.naoLembrarOpcionais`).
+
 ### Regras principais
 
 | Regra | Comportamento |
@@ -423,4 +431,4 @@ Problemas e ausências encontrados no código, por impacto. Os marcados com **(f
 | ~~L15~~ | ~~2 testes de pedidos desatualizados~~ | **Resolvida na Sprint 1** | — |
 | ~~L16~~ | ~~Sem teste ponta a ponta do fluxo de gestão~~ | **Resolvida na Sprint 1**: `test/integration/fluxo1-gestao-cardapio.e2e.test.ts` | — |
 | L17 | Preço em texto sem número vira `0` na leitura da IA (`"grátis"`, `"abc"` → `Number('') === 0` em `deepseek-interpretador.ts`) | Baixo. A IA quase sempre manda número, e o resumo mostra o preço antes do "sim" | Tratar string vazia depois da limpeza como inválida |
-| L18 | A loja não liga/desliga o pagamento na entrega pela conversa de gestão (`Loja.aceitaPagamentoNaEntrega`, padrão ligado) | Baixo | Operação nova na gestão, depois que as mudanças da capa em `menu/gestao/` forem commitadas |
+| ~~L18~~ | ~~A loja não liga/desliga o pagamento na entrega pela conversa de gestão~~ | **Resolvida**: `atualizar_loja.aceita_pagamento_na_entrega` ("só aceito PIX" → desliga) | — |

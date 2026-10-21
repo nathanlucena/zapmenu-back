@@ -1,7 +1,14 @@
 import { logger as loggerRaiz, trecho } from '../../shared/logger/logger.js';
 import { DomainError } from '../../shared/errors/domain-error.js';
 import type { ConversationRepository } from '../conversation/conversation.repository.js';
-import { contextoInicial, type Contexto, type Estado } from '../conversation/conversation-state.types.js';
+import { contextoInicial, type Contexto, type DadosLoja, type Estado } from '../conversation/conversation-state.types.js';
+import {
+  cadastroCompleto,
+  descreverObrigatorios,
+  obrigatoriosDaLoja,
+  opcionaisDaLoja,
+  type LojaParaCadastro,
+} from '../cadastro-da-loja.js';
 import { buscarEndereco, linkMapa, normalizarCep } from '../endereco/endereco.service.js';
 import type { EnderecoDeps } from '../endereco/endereco.types.js';
 import { entregaConfigurada } from '../entrega.js';
@@ -29,6 +36,8 @@ const logger = loggerRaiz.child({ modulo: 'gestao' });
 const LEMBRETE_APOS_MS = 30 * 60_000;
 /** Rascunho parado há mais que isso: é descartado. */
 const EXPIRA_APOS_MS = 24 * 60 * 60_000;
+/** Intervalo mínimo entre dois lembretes dos dados opcionais da loja. */
+const LEMBRETE_OPCIONAIS_MS = 7 * 24 * 60 * 60_000;
 /** Mensagens da conversa enviadas à IA como memória. */
 const MAX_HISTORICO = 20;
 /** Tamanho máximo de cada mensagem guardada no histórico. */
@@ -45,6 +54,8 @@ export interface GestaoDeps {
   /** Sem ele (sem chave do Google) o cadastro de endereço avisa que está indisponível. */
   endereco?: EnderecoDeps;
   cadastro: CadastroEmpreendedores;
+  /** Link público do cardápio pelo slug, para mandar quando a loja entra no ar. */
+  urlDoCardapio?: (slug: string) => string;
 }
 
 export interface MensagemGestao {
@@ -92,8 +103,16 @@ export async function processarMensagemGestao(mensagem: MensagemGestao, deps: Ge
 
   verificarAbandono(rodada);
   await tratar(rodada);
+  // Começo de conversa: mostra o que falta no cadastro ou, com a loja no ar, lembra dos opcionais.
   if (estadoAnterior === 'OCIOSO' && rodada.estado !== 'OCIOSO') {
-    avisarEntregaPorConfigurar(rodada);
+    if (!cadastroCompleto(lojaParaCadastro(rodada.snapshot))) {
+      const loja = lojaParaCadastro(rodada.snapshot, rodada.contexto.rascunho.loja);
+      responder(rodada, `Para sua loja entrar no ar ainda faltam alguns dados:\n${descreverObrigatorios(loja)}`);
+      avisarEntregaPorConfigurar(rodada);
+    } else {
+      avisarEntregaPorConfigurar(rodada);
+      await lembrarOpcionaisSeDevido(rodada);
+    }
   }
 
   rodada.contexto.atualizadoEm = new Date().toISOString();
@@ -165,6 +184,13 @@ async function tratar(rodada: Rodada): Promise<void> {
     case 'CARDAPIO':
       responder(rodada, descreverCardapio(rodada.snapshot));
       return;
+    case 'PENDENCIAS':
+      responder(rodada, descreverPendencias(rodada));
+      return;
+    case 'NAO_LEMBRAR':
+      await rodada.deps.gestaoRepo.registrarLembreteOpcionais(rodada.empreendedorId, { desligar: true });
+      responder(rodada, 'Combinado, não lembro mais dos dados opcionais. Se quiser ver o que falta, mande *o que falta*. 🙂');
+      return;
     case 'SIM':
       if (rodada.estado === 'CONFIRMANDO') {
         await salvar(rodada);
@@ -209,6 +235,9 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
         enderecoPendente: rodada.contexto.enderecoPendente,
       },
       snapshot: rodada.snapshot,
+      cadastroPendente: obrigatoriosDaLoja(lojaParaCadastro(rodada.snapshot, rodada.contexto.rascunho.loja))
+        .filter((item) => !item.ok)
+        .map((item) => `${item.rotulo}: ${item.comoPedir}`),
     });
   } catch (erro) {
     logger.warn({ err: erro }, 'falha ao conversar com a IA');
@@ -363,6 +392,94 @@ function responderSobreEndereco(rodada: Rodada, confirmou: boolean): void {
 }
 
 /** Loja que entregava com a taxa fixa antiga: a entrega fica parada até configurar endereço e faixas. */
+/** Loja como o cadastro vê: a salva, mais o que está anotado no rascunho. */
+function lojaParaCadastro(snapshot: SnapshotCardapio, rascunho?: DadosLoja): LojaParaCadastro {
+  const definidosDoRascunho = Object.fromEntries(Object.entries(rascunho ?? {}).filter(([, valor]) => valor !== undefined));
+  const loja: DadosLoja = { ...snapshot.loja, ...definidosDoRascunho };
+  return {
+    nome: loja.nome,
+    slug: loja.slug,
+    aceitaRetirada: loja.aceitaRetirada,
+    fazEntrega: loja.fazEntrega,
+    enderecoConfirmado: Boolean(loja.enderecoVerificado),
+    faixasEntrega: loja.faixasEntrega,
+    horarios: loja.horarios,
+    descricao: loja.descricao,
+    temLogo: snapshot.lojaSalva.temLogo || Boolean(rascunho?.logoUrl),
+    temCapa: snapshot.lojaSalva.temCapa || Boolean(rascunho?.capaUrl),
+    corDestaque: loja.corDestaque,
+    pedidoMinimo: loja.pedidoMinimo,
+  };
+}
+
+/** Resposta ao "o que falta?": obrigatórios com ✅/⬜ e, com a loja no ar, os opcionais. */
+function descreverPendencias(rodada: Rodada): string {
+  const loja = lojaParaCadastro(rodada.snapshot, rodada.contexto.rascunho.loja);
+  const proximo = obrigatoriosDaLoja(loja).find((item) => !item.ok);
+  if (proximo) {
+    return `${descreverObrigatorios(loja)}\n\nVamos lá: ${proximo.comoPedir}`;
+  }
+  return [descreverObrigatorios(loja), '', textoDosOpcionais(rodada) ?? '✨ Sua loja está completa! 🎉'].join('\n');
+}
+
+/** Lista dos opcionais que faltam, com como mandar cada um, e a situação do pagamento na entrega. */
+function textoDosOpcionais(rodada: Rodada): string | undefined {
+  const loja = lojaParaCadastro(rodada.snapshot);
+  const faltando = opcionaisDaLoja(loja).filter((item) => !item.ok);
+  if (faltando.length === 0) {
+    return undefined;
+  }
+  const pagamento = rodada.snapshot.loja.aceitaPagamentoNaEntrega === false ? 'desligado' : 'ligado';
+  return [
+    '✨ Para sua loja ficar mais completa, você ainda pode adicionar:',
+    ...faltando.map((item) => `• ${item.rotulo} — ${item.comoPedir}`),
+    `💵 Pagamento na entrega (dinheiro ou cartão) está *${pagamento}*: me diga se quiser mudar.`,
+  ].join('\n');
+}
+
+/** No máximo 1 vez por semana, com a loja no ar, até ela completar ou pedir para parar. */
+async function lembrarOpcionaisSeDevido(rodada: Rodada): Promise<void> {
+  const { lembreteOpcionaisEm, naoLembrarOpcionais } = rodada.snapshot.lojaSalva;
+  const recente = lembreteOpcionaisEm && Date.now() - new Date(lembreteOpcionaisEm).getTime() < LEMBRETE_OPCIONAIS_MS;
+  const texto = textoDosOpcionais(rodada);
+  if (naoLembrarOpcionais || recente || !texto) {
+    return;
+  }
+  responder(rodada, `${texto}\n\nSe não quiser mais este lembrete, responda *não lembrar mais*.`);
+  await rodada.deps.gestaoRepo.registrarLembreteOpcionais(rodada.empreendedorId, { em: new Date() });
+}
+
+/** Depois de salvar: comemora quando a loja entra no ar, ou mostra o que ainda falta. */
+async function avisarSituacaoDoCadastro(rodada: Rodada, completoAntes: boolean): Promise<void> {
+  rodada.snapshot = await rodada.deps.gestaoRepo.carregarSnapshot(rodada.empreendedorId);
+  const loja = lojaParaCadastro(rodada.snapshot);
+  if (!cadastroCompleto(loja)) {
+    responder(rodada, `Para a loja entrar no ar ainda falta:\n${descreverObrigatorios(loja)}`);
+    return;
+  }
+  if (completoAntes) {
+    return;
+  }
+  const { slug } = rodada.snapshot.loja;
+  const link = slug && rodada.deps.urlDoCardapio ? rodada.deps.urlDoCardapio(slug) : slug;
+  responder(
+    rodada,
+    [
+      '🎉 *Sua loja está no ar!*',
+      link ? `Link do cardápio para divulgar: ${link}` : '',
+      '',
+      'Próximo passo: me mande os itens do cardápio — nome, preço e, se quiser, uma foto. Ex.: _pizza calabresa 39,90_',
+    ]
+      .filter((linha, indice) => linha || indice !== 1)
+      .join('\n'),
+  );
+  const opcionais = textoDosOpcionais(rodada);
+  if (opcionais) {
+    responder(rodada, opcionais);
+    await rodada.deps.gestaoRepo.registrarLembreteOpcionais(rodada.empreendedorId, { em: new Date() });
+  }
+}
+
 function avisarEntregaPorConfigurar(rodada: Rodada): void {
   const loja = { ...rodada.snapshot.loja, ...rodada.contexto.rascunho.loja };
   if (loja.fazEntrega && !entregaConfigurada(loja)) {
@@ -416,8 +533,10 @@ async function salvar(rodada: Rodada): Promise<void> {
   }
 
   logger.info({ telefone: rodada.mensagem.telefone, alteracoes: total }, '💾 rascunho salvo no cardápio');
+  const completoAntes = cadastroCompleto(lojaParaCadastro(rodada.snapshot));
   reiniciar(rodada);
   responder(rodada, `✅ Pronto! ${total === 1 ? '1 alteração salva' : `${total} alterações salvas`} no cardápio.`);
+  await avisarSituacaoDoCadastro(rodada, completoAntes);
 }
 
 function reiniciar(rodada: Rodada): void {

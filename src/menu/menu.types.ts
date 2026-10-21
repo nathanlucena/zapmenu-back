@@ -36,6 +36,8 @@ export interface LojaPublica {
   aceitaRetirada: boolean;
   /** Dinheiro ou cartão na entrega/balcão. Opcional: só o cardápio público preenche. */
   aceitaPagamentoNaEntrega?: boolean;
+  /** Faltam dados obrigatórios do cadastro: o app mostra "em montagem" e não aceita pedidos. */
+  emMontagem?: boolean;
   /** false também para loja antiga que ainda não configurou endereço e faixas. */
   fazEntrega: boolean;
   /** Ordenadas por ateKm; o maior é o limite de entrega. */

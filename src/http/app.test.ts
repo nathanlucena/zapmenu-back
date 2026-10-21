@@ -170,6 +170,20 @@ describe('POST /v1/orders', () => {
     expect((await pedir({ formaPagamento: 'PIX' })).statusCode).toBe(201);
   });
 
+  it('loja com o cadastro incompleto não recebe pedidos (LOJA_EM_MONTAGEM)', async () => {
+    const { app, bolo, menuRepo } = await montarAppComBolo();
+    menuRepo.definirRegras('emp-1', { cadastroCompleto: false });
+
+    const resposta = await app.inject({
+      method: 'POST',
+      url: '/v1/orders',
+      payload: { empreendedorId: 'emp-1', itens: [{ itemCardapioId: bolo.id, quantidade: 1 }] },
+    });
+
+    expect(resposta.statusCode).toBe(400);
+    expect(resposta.json().codigo).toBe('LOJA_EM_MONTAGEM');
+  });
+
   it('retorna 400 para payload com schema inválido', async () => {
     const app = montarApp();
 

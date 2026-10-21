@@ -53,7 +53,13 @@ const smokes: Record<string, () => Promise<unknown>> = {
       fotoPendente: false,
       rascunho: contexto.rascunho,
       endereco: {},
-      snapshot: { cardapioId: 'smoke', categorias: [], itens: [], loja: {} },
+      snapshot: {
+        cardapioId: 'smoke',
+        categorias: [],
+        itens: [],
+        loja: {},
+        lojaSalva: { existe: false, temLogo: false, temCapa: false, naoLembrarOpcionais: false },
+      },
     });
     if (!resposta.operacoes.some((operacao) => operacao.tipo === 'NOVO_ITEM')) {
       throw new Error(`A IA não propôs NOVO_ITEM: ${JSON.stringify(resposta)}`);

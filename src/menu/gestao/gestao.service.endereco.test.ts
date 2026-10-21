@@ -31,6 +31,7 @@ function criarCenario(loja: DadosLoja = {}, opcoes: { semEndereco?: boolean } = 
     categorias: [],
     itens: [{ id: 'i1', nome: 'Coca 2L', precoBase: 14, ativo: true, temFoto: false, variacoes: [] }],
     loja,
+    lojaSalva: { existe: true, temLogo: false, temCapa: false, naoLembrarOpcionais: true },
   };
 
   const conversationRepo: ConversationRepository = {
@@ -48,6 +49,7 @@ function criarCenario(loja: DadosLoja = {}, opcoes: { semEndereco?: boolean } = 
     async salvarRascunho(_id, rascunho) {
       salvos.push(structuredClone(rascunho));
     },
+    async registrarLembreteOpcionais() {},
   };
   const interpretador: InterpretadorMensagem = {
     async conversar() {

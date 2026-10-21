@@ -30,11 +30,12 @@ export type Operacao =
   | { tipo: 'EDITAR_ITEM'; itemId: string; dados: DadosItemOperacao }
   | { tipo: 'PAUSAR_ITEM' | 'REATIVAR_ITEM' | 'REMOVER_ITEM' | 'DESFAZER_ITEM'; itemId: string }
   | { tipo: 'ANEXAR_FOTO'; ref?: string; itemId?: string }
+  | { tipo: 'ANEXAR_FOTO_LOJA'; destino: 'LOGO' | 'CAPA' }
   | { tipo: 'NOVA_CATEGORIA'; nome: string }
   | { tipo: 'RENOMEAR_CATEGORIA'; categoriaId: string; novoNome: string }
   | { tipo: 'REMOVER_CATEGORIA'; categoriaId: string }
   /** Endereço e taxa fixa não entram aqui: endereço só por DEFINIR_ENDERECO. */
-  | { tipo: 'ATUALIZAR_LOJA'; dados: Omit<DadosLoja, 'endereco' | 'enderecoVerificado' | 'taxaEntrega'> }
+  | { tipo: 'ATUALIZAR_LOJA'; dados: Omit<DadosLoja, 'endereco' | 'enderecoVerificado' | 'taxaEntrega' | 'logoUrl' | 'capaUrl'> }
   /** Só o que a pessoa disse; o código completa pelo CEP e busca no mapa. */
   | { tipo: 'DEFINIR_ENDERECO'; dados: ConsultaEndereco }
   /** Resposta da pessoa ao "é aqui?" do endereço encontrado. */
@@ -51,6 +52,8 @@ export interface EntradaConversa {
   /** Partes do endereço já informadas e endereço esperando confirmação. */
   endereco: Pick<Contexto, 'consultaEndereco' | 'enderecoPendente'>;
   snapshot: SnapshotCardapio;
+  /** Dados obrigatórios que faltam para a loja entrar no ar, com a pergunta sugerida ("Horário de funcionamento: Quais dias…?"). */
+  cadastroPendente?: string[];
 }
 
 export interface RespostaConversa {
