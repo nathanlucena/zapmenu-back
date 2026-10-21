@@ -3,7 +3,7 @@ import { criarMercadoPagoClientFake } from '../__mocks__/mercado-pago.client.fak
 import { criarPaymentsRepositoryFake } from '../__mocks__/payments.repository.fake.js';
 import { criarOrdersRepositoryFake } from '../../orders/__mocks__/orders.repository.fake.js';
 import { criarPedido } from '../../orders/application/criar-pedido.js';
-import { confirmarRecebimentoCliente } from '../../orders/application/confirmar-recebimento-cliente.js';
+import { levarAoPagamento } from '../../orders/__mocks__/levar-ao-pagamento.js';
 import type { Pedido } from '../../orders/domain/pedido.js';
 import { criarGeradorCobranca } from '../application/gerar-cobranca.js';
 import { aplicarStatusPagamento } from '../application/aplicar-status-pagamento.js';
@@ -21,7 +21,7 @@ async function cenario(opcoes: OpcoesPagamentoSimulado) {
     { empreendedorId: 'emp-1', itens: [{ itemCardapioId: 'i1', quantidade: 1, precoUnitario: 10 }] },
     20,
   );
-  const pedido = await confirmarRecebimentoCliente(ordersRepo, criado.codigoCurto, '5511999998888');
+  const pedido = await levarAoPagamento(ordersRepo, criado.codigoCurto, '5511999998888');
   const gerador = comPagamentoSimulado(criarGeradorCobranca({ gatewayPix, paymentsRepo }), deps, opcoes);
   await gerador.gerarCobranca(pedido);
 

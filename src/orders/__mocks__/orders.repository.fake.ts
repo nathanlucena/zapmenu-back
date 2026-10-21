@@ -1,6 +1,6 @@
 import { DomainError } from '../../shared/errors/domain-error.js';
 import type { OrdersRepository } from '../application/ports/orders.repository.js';
-import type { Pedido } from '../domain/pedido.js';
+import { estaExpirado, type Pedido } from '../domain/pedido.js';
 
 let proximoId = 1;
 
@@ -56,6 +56,10 @@ export function criarOrdersRepositoryFake(): OrdersRepository {
       return Array.from(pedidos.values()).find((pedido) => pedido.codigoCurto === codigoCurto) ?? null;
     },
 
+    async buscarPorEnquete(enqueteAceiteId: string) {
+      return Array.from(pedidos.values()).find((pedido) => pedido.enqueteAceiteId === enqueteAceiteId) ?? null;
+    },
+
     async atualizar(id: string, alteracoes) {
       const pedido = pedidos.get(id);
       if (!pedido) {
@@ -67,9 +71,7 @@ export function criarOrdersRepositoryFake(): OrdersRepository {
     },
 
     async listarExpirados(agora: Date) {
-      return Array.from(pedidos.values()).filter(
-        (pedido) => pedido.status === 'AGUARDANDO_CONFIRMACAO' && agora > pedido.expiraEm,
-      );
+      return Array.from(pedidos.values()).filter((pedido) => estaExpirado(pedido, agora));
     },
   };
 }

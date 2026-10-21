@@ -5,7 +5,7 @@ import { criarPaymentsRepositoryFake } from '../../payments/__mocks__/payments.r
 import { criarOrdersRepositoryFake } from '../../orders/__mocks__/orders.repository.fake.js';
 import { criarIdempotencyRepositoryFake } from '../../shared/idempotency/__mocks__/idempotency.repository.fake.js';
 import { criarPedido } from '../../orders/application/criar-pedido.js';
-import { confirmarRecebimentoCliente } from '../../orders/application/confirmar-recebimento-cliente.js';
+import { levarAoPagamento } from '../../orders/__mocks__/levar-ao-pagamento.js';
 import { criarGeradorCobranca } from '../../payments/application/gerar-cobranca.js';
 import { type PaymentsServiceDeps } from '../../payments/application/dependencias.js';
 import { buildApp } from '../app.js';
@@ -23,7 +23,7 @@ describe('POST /v1/webhooks/mercado-pago', () => {
       { empreendedorId: 'emp-1', itens: [{ itemCardapioId: 'i1', quantidade: 1, precoUnitario: 25 }] },
       20,
     );
-    const pedido = await confirmarRecebimentoCliente(ordersRepo, criado.codigoCurto, '5511999998888');
+    const pedido = await levarAoPagamento(ordersRepo, criado.codigoCurto, '5511999998888');
     const gerador = criarGeradorCobranca({ gatewayPix, paymentsRepo });
     await gerador.gerarCobranca(pedido);
     const pagamento = await paymentsRepo.buscarPorPedidoId(pedido.id);

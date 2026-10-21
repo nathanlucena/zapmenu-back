@@ -5,10 +5,11 @@ export interface OrdersRepository {
   criar(pedido: Omit<Pedido, 'id'>): Promise<Pedido>;
   buscarPorId(id: string): Promise<Pedido | null>;
   buscarPorCodigo(codigoCurto: string): Promise<Pedido | null>;
+  buscarPorEnquete(enqueteAceiteId: string): Promise<Pedido | null>;
   buscarResumoPublico(codigoCurto: string): Promise<ResumoPedidoPublico | null>;
   atualizar(
     id: string,
-    alteracoes: Partial<Pick<Pedido, 'status' | 'telefoneCliente' | 'confirmadoEm'>>,
+    alteracoes: Partial<Pick<Pedido, 'status' | 'telefoneCliente' | 'confirmadoEm' | 'expiraEm' | 'enqueteAceiteId'>>,
   ): Promise<Pedido>;
   listarExpirados(agora: Date): Promise<Pedido[]>;
 }

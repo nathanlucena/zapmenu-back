@@ -15,6 +15,24 @@ export interface OrdersInboundRouterDeps {
   ordersRepo: OrdersRepository;
   idempotency: IdempotencyRepository;
   geradorCobranca: GeradorCobranca;
+  /** Manda o pedido para a loja aceitar ou recusar (resumo + enquete pela gestão). */
+  pedirAceite: (pedido: Pedido) => Promise<void>;
+  /** Quanto tempo a loja tem para responder. */
+  prazoAceiteMs?: number;
+}
+
+/** Gera (ou reaproveita) o PIX do pedido e manda para o cliente: copia e cola + QR code. */
+export async function enviarPix(
+  whatsapp: WhatsAppClient,
+  geradorCobranca: GeradorCobranca,
+  pedido: Pedido,
+  telefone: string,
+): Promise<void> {
+  const cobranca = await geradorCobranca.gerarCobranca(pedido);
+  await whatsapp.sendText(telefone, `Pix copia e cola:\n${cobranca.copiaCola}`);
+  if (cobranca.qrCodeBase64) {
+    await whatsapp.sendImage(telefone, cobranca.qrCodeBase64, 'QR Code do Pix');
+  }
 }
 
 async function tratarMensagem(mensagem: MensagemRecebida, deps: OrdersInboundRouterDeps): Promise<void> {
@@ -29,8 +47,15 @@ async function tratarMensagem(mensagem: MensagemRecebida, deps: OrdersInboundRou
   }
 
   let pedido: Pedido;
+  let repetido: boolean;
   try {
-    pedido = await confirmarRecebimentoCliente(deps.ordersRepo, codigoCurto, mensagem.telefone);
+    ({ pedido, repetido } = await confirmarRecebimentoCliente(
+      deps.ordersRepo,
+      codigoCurto,
+      mensagem.telefone,
+      new Date(),
+      deps.prazoAceiteMs,
+    ));
   } catch (erro) {
     if (erro instanceof DomainError) {
       logger.info({ telefone: mensagem.telefone, codigoCurto, motivo: erro.message }, '🧾 pedido não pôde ser confirmado');
@@ -40,12 +65,25 @@ async function tratarMensagem(mensagem: MensagemRecebida, deps: OrdersInboundRou
     throw erro;
   }
 
-  logger.info({ telefone: mensagem.telefone, codigoCurto, valor: pedido.valorTotal }, '🧾 pedido confirmado, gerando PIX');
-  const cobranca = await deps.geradorCobranca.gerarCobranca(pedido);
-  await deps.whatsapp.sendText(mensagem.telefone, `Pix copia e cola:\n${cobranca.copiaCola}`);
-  if (cobranca.qrCodeBase64) {
-    await deps.whatsapp.sendImage(mensagem.telefone, cobranca.qrCodeBase64, 'QR Code do Pix');
+  if (pedido.status === 'AGUARDANDO_PAGAMENTO') {
+    logger.info({ telefone: mensagem.telefone, codigoCurto }, '🧾 código repetido, reenviando o PIX');
+    await enviarPix(deps.whatsapp, deps.geradorCobranca, pedido, mensagem.telefone);
+    return;
   }
+  if (repetido) {
+    await deps.whatsapp.sendText(
+      mensagem.telefone,
+      `Seu pedido ${codigoCurto} ainda está com a loja. Assim que ela aceitar, o PIX chega aqui.`,
+    );
+    return;
+  }
+
+  logger.info({ telefone: mensagem.telefone, codigoCurto, valor: pedido.valorTotal }, '🧾 pedido recebido, pedindo aceite da loja');
+  await deps.whatsapp.sendText(
+    mensagem.telefone,
+    `Recebemos seu pedido ${codigoCurto} ✅\nAgora é só aguardar a loja aceitar — o PIX para pagamento chega aqui em seguida.`,
+  );
+  await deps.pedirAceite(pedido);
 }
 
 export function registrarOrdersInboundRouter(deps: OrdersInboundRouterDeps): void {

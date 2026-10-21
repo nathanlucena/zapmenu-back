@@ -2,13 +2,24 @@ import { Prisma, type PrismaClient } from '@prisma/client';
 import type { OrdersRepository } from '../application/ports/orders.repository.js';
 import { empreendedorPorIdentificador } from '../../shared/db/identificador-loja.js';
 import { DomainError } from '../../shared/errors/domain-error.js';
-import type { EnderecoEntrega, ItemPedidoInput, Pedido, ResumoPedidoPublico, StatusPedido } from '../domain/pedido.js';
+import {
+  STATUS_COM_PRAZO,
+  type EnderecoEntrega,
+  type ItemPedidoInput,
+  type Pedido,
+  type ResumoPedidoPublico,
+  type StatusPedido,
+} from '../domain/pedido.js';
 
-type PedidoComItens = Prisma.PedidoGetPayload<{ include: { itens: true } }>;
+/** Itens com o nome do cardápio, para as mensagens à loja. */
+const COM_ITENS = { itens: { include: { itemCardapio: { select: { nome: true } } } } } satisfies Prisma.PedidoInclude;
+
+type PedidoComItens = Prisma.PedidoGetPayload<{ include: typeof COM_ITENS }>;
 
 function paraPedido(pedido: PedidoComItens): Pedido {
   const itens: ItemPedidoInput[] = pedido.itens.map((item) => ({
     itemCardapioId: item.itemCardapioId,
+    nome: item.itemCardapio.nome,
     quantidade: item.quantidade,
     precoUnitario: Number(item.precoUnitario),
     variacaoEscolhida: (item.variacaoEscolhida as Record<string, unknown> | null) ?? undefined,
@@ -31,6 +42,7 @@ function paraPedido(pedido: PedidoComItens): Pedido {
     expiraEm: pedido.expiraEm,
     criadoEm: pedido.criadoEm,
     confirmadoEm: pedido.confirmadoEm ?? undefined,
+    enqueteAceiteId: pedido.enqueteAceiteId ?? undefined,
   };
 }
 
@@ -76,7 +88,7 @@ export function criarOrdersRepositoryPrisma(prisma: PrismaClient): OrdersReposit
             })),
           },
         },
-        include: { itens: true },
+        include: COM_ITENS,
       });
 
       return paraPedido(pedido);
@@ -114,24 +126,29 @@ export function criarOrdersRepositoryPrisma(prisma: PrismaClient): OrdersReposit
     },
 
     async buscarPorId(id: string) {
-      const pedido = await prisma.pedido.findUnique({ where: { id }, include: { itens: true } });
+      const pedido = await prisma.pedido.findUnique({ where: { id }, include: COM_ITENS });
       return pedido ? paraPedido(pedido) : null;
     },
 
     async buscarPorCodigo(codigoCurto: string) {
-      const pedido = await prisma.pedido.findUnique({ where: { codigoCurto }, include: { itens: true } });
+      const pedido = await prisma.pedido.findUnique({ where: { codigoCurto }, include: COM_ITENS });
+      return pedido ? paraPedido(pedido) : null;
+    },
+
+    async buscarPorEnquete(enqueteAceiteId: string) {
+      const pedido = await prisma.pedido.findUnique({ where: { enqueteAceiteId }, include: COM_ITENS });
       return pedido ? paraPedido(pedido) : null;
     },
 
     async atualizar(id: string, alteracoes) {
-      const pedido = await prisma.pedido.update({ where: { id }, data: alteracoes, include: { itens: true } });
+      const pedido = await prisma.pedido.update({ where: { id }, data: alteracoes, include: COM_ITENS });
       return paraPedido(pedido);
     },
 
     async listarExpirados(agora: Date) {
       const pedidos = await prisma.pedido.findMany({
-        where: { status: 'AGUARDANDO_CONFIRMACAO', expiraEm: { lt: agora } },
-        include: { itens: true },
+        where: { status: { in: STATUS_COM_PRAZO }, expiraEm: { lt: agora } },
+        include: COM_ITENS,
       });
       return pedidos.map(paraPedido);
     },

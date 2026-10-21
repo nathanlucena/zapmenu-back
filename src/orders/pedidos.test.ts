@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { criarOrdersRepositoryFake } from './__mocks__/orders.repository.fake.js';
-import { calcularValorTotal, estaExpirado, extrairCodigoPedido, podeTransicionar, validarCarrinho } from './domain/pedido.js';
+import {
+  calcularValorTotal,
+  estaExpirado,
+  extrairCodigoPedido,
+  extrairDecisaoPedido,
+  podeTransicionar,
+  validarCarrinho,
+} from './domain/pedido.js';
 import { confirmarPagamento } from './application/confirmar-pagamento.js';
 import { confirmarRecebimentoCliente } from './application/confirmar-recebimento-cliente.js';
 import { criarPedido } from './application/criar-pedido.js';
+import { levarAoPagamento } from './__mocks__/levar-ao-pagamento.js';
 import { expirarPedidosPendentes } from './application/expirar-pedidos-pendentes.js';
 import type { CarrinhoInput } from './domain/pedido.js';
 
@@ -41,8 +49,11 @@ describe('validarCarrinho', () => {
 });
 
 describe('podeTransicionar', () => {
-  it('permite AGUARDANDO_CONFIRMACAO -> AGUARDANDO_PAGAMENTO', () => {
-    expect(podeTransicionar('AGUARDANDO_CONFIRMACAO', 'AGUARDANDO_PAGAMENTO')).toBe(true);
+  it('o pedido passa pela loja antes do pagamento', () => {
+    expect(podeTransicionar('AGUARDANDO_CONFIRMACAO', 'AGUARDANDO_ACEITE')).toBe(true);
+    expect(podeTransicionar('AGUARDANDO_CONFIRMACAO', 'AGUARDANDO_PAGAMENTO')).toBe(false);
+    expect(podeTransicionar('AGUARDANDO_ACEITE', 'AGUARDANDO_PAGAMENTO')).toBe(true);
+    expect(podeTransicionar('AGUARDANDO_ACEITE', 'RECUSADO')).toBe(true);
   });
 
   it('não permite transição a partir de estado terminal PAGO', () => {
@@ -51,6 +62,18 @@ describe('podeTransicionar', () => {
 
   it('não permite pular de AGUARDANDO_CONFIRMACAO direto para PAGO', () => {
     expect(podeTransicionar('AGUARDANDO_CONFIRMACAO', 'PAGO')).toBe(false);
+  });
+});
+
+describe('extrairDecisaoPedido', () => {
+  it('lê a resposta da loja em texto', () => {
+    expect(extrairDecisaoPedido('aceitar ped-7kq2')).toEqual({ decisao: 'ACEITAR', codigoCurto: 'PED-7KQ2' });
+    expect(extrairDecisaoPedido('Recuso o PED-7KQ2, acabou a massa')).toEqual({ decisao: 'RECUSAR', codigoCurto: 'PED-7KQ2' });
+  });
+
+  it('não confunde a mensagem do cliente com uma decisão', () => {
+    expect(extrairDecisaoPedido('Olá! Quero confirmar o pedido PED-7KQ2')).toBeNull();
+    expect(extrairDecisaoPedido('aceitar')).toBeNull();
   });
 });
 
@@ -100,19 +123,22 @@ describe('criarPedido', () => {
 });
 
 describe('confirmarRecebimentoCliente', () => {
-  it('transiciona pedido para AGUARDANDO_PAGAMENTO e associa telefone do cliente', async () => {
+  it('entrega o pedido para a loja aceitar, com novo prazo, e associa o telefone do cliente', async () => {
     const repositorio = criarOrdersRepositoryFake();
     const criado = await criarPedido(repositorio, carrinhoValido(), 20, new Date('2026-01-01T10:00:00Z'));
 
-    const confirmado = await confirmarRecebimentoCliente(
+    const { pedido, repetido } = await confirmarRecebimentoCliente(
       repositorio,
       criado.codigoCurto,
       '5511999998888',
       new Date('2026-01-01T10:05:00Z'),
+      15 * 60_000,
     );
 
-    expect(confirmado.status).toBe('AGUARDANDO_PAGAMENTO');
-    expect(confirmado.telefoneCliente).toBe('5511999998888');
+    expect(repetido).toBe(false);
+    expect(pedido.status).toBe('AGUARDANDO_ACEITE');
+    expect(pedido.telefoneCliente).toBe('5511999998888');
+    expect(pedido.expiraEm).toEqual(new Date('2026-01-01T10:20:00Z'));
   });
 
   it('lança DomainError se o pedido não existe', async () => {
@@ -136,7 +162,7 @@ describe('confirmarRecebimentoCliente', () => {
     ).rejects.toThrow('expirou');
   });
 
-  it('devolve o pedido sem mudança quando ele já aguarda pagamento (para reenviar o PIX)', async () => {
+  it('devolve o pedido sem mudança quando o cliente manda o código de novo', async () => {
     const repositorio = criarOrdersRepositoryFake();
     const criado = await criarPedido(repositorio, carrinhoValido(), 20, new Date('2026-01-01T10:00:00Z'));
     await confirmarRecebimentoCliente(repositorio, criado.codigoCurto, '5511999998888', new Date('2026-01-01T10:05:00Z'));
@@ -145,11 +171,22 @@ describe('confirmarRecebimentoCliente', () => {
       repositorio,
       criado.codigoCurto,
       '5511900001111',
-      new Date('2026-01-01T10:30:00Z'),
+      new Date('2026-01-01T10:06:00Z'),
     );
 
-    expect(denovo.status).toBe('AGUARDANDO_PAGAMENTO');
-    expect(denovo.telefoneCliente).toBe('5511999998888');
+    expect(denovo.repetido).toBe(true);
+    expect(denovo.pedido.status).toBe('AGUARDANDO_ACEITE');
+    expect(denovo.pedido.telefoneCliente).toBe('5511999998888');
+  });
+
+  it('expira se a loja não responde dentro do prazo', async () => {
+    const repositorio = criarOrdersRepositoryFake();
+    const criado = await criarPedido(repositorio, carrinhoValido(), 20, new Date('2026-01-01T10:00:00Z'));
+    await confirmarRecebimentoCliente(repositorio, criado.codigoCurto, '5511999998888', new Date('2026-01-01T10:05:00Z'), 60_000);
+
+    const expirados = await expirarPedidosPendentes(repositorio, new Date('2026-01-01T10:07:00Z'));
+
+    expect(expirados.map((p) => p.codigoCurto)).toEqual([criado.codigoCurto]);
   });
 
   it('explica sem código técnico quando o pedido já foi pago', async () => {
@@ -168,12 +205,7 @@ describe('confirmarPagamento', () => {
   it('marca pedido como PAGO a partir de AGUARDANDO_PAGAMENTO', async () => {
     const repositorio = criarOrdersRepositoryFake();
     const criado = await criarPedido(repositorio, carrinhoValido(), 20, new Date('2026-01-01T10:00:00Z'));
-    await confirmarRecebimentoCliente(
-      repositorio,
-      criado.codigoCurto,
-      '5511999998888',
-      new Date('2026-01-01T10:05:00Z'),
-    );
+    await levarAoPagamento(repositorio, criado.codigoCurto, '5511999998888', new Date('2026-01-01T10:05:00Z'));
 
     const pago = await confirmarPagamento(repositorio, criado.id, { status: 'AGUARDANDO_PAGAMENTO' });
 

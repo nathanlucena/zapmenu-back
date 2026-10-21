@@ -4,7 +4,7 @@ import { criarPaymentsRepositoryFake } from './__mocks__/payments.repository.fak
 import { criarOrdersRepositoryFake } from '../orders/__mocks__/orders.repository.fake.js';
 import { criarIdempotencyRepositoryFake } from '../shared/idempotency/__mocks__/idempotency.repository.fake.js';
 import { criarPedido } from '../orders/application/criar-pedido.js';
-import { confirmarRecebimentoCliente } from '../orders/application/confirmar-recebimento-cliente.js';
+import { levarAoPagamento } from '../orders/__mocks__/levar-ao-pagamento.js';
 import type { OrdersRepository } from '../orders/application/ports/orders.repository.js';
 import type { IdempotencyRepository } from '../shared/idempotency/idempotency.repository.js';
 import type { PaymentsRepository } from './application/ports/payments.repository.js';
@@ -37,7 +37,7 @@ async function criarPedidoConfirmado(ordersRepo: OrdersRepository): Promise<Pedi
     20,
     agora,
   );
-  return confirmarRecebimentoCliente(ordersRepo, criado.codigoCurto, '5511999998888', agora);
+  return levarAoPagamento(ordersRepo, criado.codigoCurto, '5511999998888', agora);
 }
 
 describe('criarGeradorCobranca', () => {

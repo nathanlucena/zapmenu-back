@@ -8,7 +8,7 @@ function mensagem(corpo: string): MensagemRecebida {
 }
 
 describe('dividirMensagens', () => {
-  it('manda o código do pedido para pedidos e o resto para a gestão', async () => {
+  it('manda o código do cliente para pedidos e o resto, inclusive a resposta da loja, para a gestão', async () => {
     const fake = criarWhatsAppClientFake();
     const { gestao, pedidos } = dividirMensagens(fake.client);
     const recebidas: string[] = [];
@@ -21,8 +21,13 @@ describe('dividirMensagens', () => {
 
     await fake.emitirMensagem(mensagem('entrou pizza calabresa 39,90'));
     await fake.emitirMensagem(mensagem('Olá! Quero confirmar o pedido ped-7kq2'));
+    await fake.emitirMensagem(mensagem('aceitar PED-7KQ2'));
 
-    expect(recebidas).toEqual(['gestão: entrou pizza calabresa 39,90', 'pedidos: Olá! Quero confirmar o pedido ped-7kq2']);
+    expect(recebidas).toEqual([
+      'gestão: entrou pizza calabresa 39,90',
+      'pedidos: Olá! Quero confirmar o pedido ped-7kq2',
+      'gestão: aceitar PED-7KQ2',
+    ]);
   });
 
   it('os dois lados enviam pelo mesmo número', async () => {
@@ -33,5 +38,17 @@ describe('dividirMensagens', () => {
     await pedidos.sendImage('5511988887777', 'data:image/png;base64,AAA', 'QR');
 
     expect(fake.mensagensEnviadas.map((m) => m.tipo)).toEqual(['texto', 'imagem']);
+  });
+
+  it('votos de enquete só chegam na gestão', async () => {
+    const fake = criarWhatsAppClientFake();
+    const { gestao, pedidos } = dividirMensagens(fake.client);
+    const votos: string[] = [];
+    gestao.onPollVote(() => void votos.push('gestão'));
+    pedidos.onPollVote(() => void votos.push('pedidos'));
+
+    await fake.emitirVoto({ id: 'v1', telefone: '5511988887777', enqueteId: 'e1', opcoes: ['Aceitar'] });
+
+    expect(votos).toEqual(['gestão']);
   });
 });

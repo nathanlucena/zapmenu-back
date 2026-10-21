@@ -12,6 +12,9 @@ export function identificarBot(client: WhatsAppClient, rotulo: string): WhatsApp
     sendText: (telefone, texto) => client.sendText(telefone, `${rotulo}\n${texto}`),
     sendImage: (telefone, imagem, legenda) =>
       client.sendImage(telefone, imagem, legenda ? `${rotulo}\n${legenda}` : rotulo),
+    // A enquete vem logo depois de um texto já identificado; o nome dela fica limpo.
+    sendPoll: (telefone, pergunta, opcoes) => client.sendPoll(telefone, pergunta, opcoes),
     onMessage: (manipulador) => client.onMessage(manipulador),
+    onPollVote: (manipulador) => client.onPollVote(manipulador),
   };
 }

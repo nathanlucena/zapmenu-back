@@ -14,6 +14,7 @@ import { logger as loggerRaiz } from '../../shared/logger/logger.js';
 import { telefoneDoChatId } from '../../shared/telefone/telefone.js';
 import type { WhatsAppClient } from '../whatsapp-client.interface.js';
 import { criarBaileysClient, type BaileysClientOptions } from './baileys-client.js';
+import type { EnquetesStore } from './enquete.js';
 
 export interface SessaoWhatsAppConfig {
   sessionName: string;
@@ -22,6 +23,8 @@ export interface SessaoWhatsAppConfig {
   numerosPermitidos?: string[];
   /** Nível do log interno do Baileys. */
   logLevelBaileys?: string;
+  /** Onde guardar as enquetes enviadas, para ler os votos mesmo depois de reiniciar. */
+  enquetes?: EnquetesStore;
 }
 
 const BACKOFF_INICIAL_MS = 2_000;
@@ -96,7 +99,7 @@ export async function iniciarSessaoWhatsApp(
     backoffAtualMs = BACKOFF_INICIAL_MS;
     const telefoneConectado = telefoneDoChatId(jidNormalizedUser(socket.user?.id));
 
-    const options: BaileysClientOptions = { sessao: config.sessionName };
+    const options: BaileysClientOptions = { sessao: config.sessionName, enquetes: config.enquetes };
     if (config.modoAutoteste) {
       const numerosPermitidos = config.numerosPermitidos ?? [];
       options.autoteste = { telefoneProprio: telefoneConectado, numerosPermitidos };

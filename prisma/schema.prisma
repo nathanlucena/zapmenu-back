@@ -120,9 +120,11 @@ model Variacao {
 
 enum StatusPedido {
   AGUARDANDO_CONFIRMACAO
+  AGUARDANDO_ACEITE
   AGUARDANDO_PAGAMENTO
   PAGO
   EXPIRADO
+  RECUSADO
   CANCELADO
 }
 
@@ -145,6 +147,8 @@ model Pedido {
   expiraEm        DateTime
   criadoEm        DateTime         @default(now())
   confirmadoEm    DateTime?
+  /// Id da mensagem da enquete de aceitar/recusar enviada à loja.
+  enqueteAceiteId String?          @unique
 
   itens     ItemPedido[]
   pagamento Pagamento?
@@ -166,7 +170,9 @@ model ItemPedido {
   itemCardapio      ItemCardapio @relation(fields: [itemCardapioId], references: [id])
   quantidade        Int
   variacaoEscolhida Json?
-  /** Pedido do cliente para este item, ex.: "bem assada". */
+  /**
+   * Pedido do cliente para este item, ex.: "bem assada".
+   */
   observacao        String?
   precoUnitario     Decimal      @db.Decimal(10, 2)
 
@@ -216,4 +222,16 @@ model EventoProcessado {
   processadoEm DateTime @default(now())
 
   @@unique([origem, chaveExterna])
+}
+
+/// Enquetes enviadas pelo WhatsApp. O voto chega criptografado e só é lido com o segredo da enquete.
+model EnqueteWhatsApp {
+  /// Id da mensagem da enquete no WhatsApp.
+  id         String   @id
+  /// messageSecret da enquete, em base64.
+  segredo    String
+  /// JID de quem criou a enquete (a própria conta do bot), usado na decifração.
+  criadorJid String
+  opcoes     Json
+  criadoEm   DateTime @default(now())
 }

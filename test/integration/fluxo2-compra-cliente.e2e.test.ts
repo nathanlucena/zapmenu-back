@@ -13,9 +13,12 @@ import { extrairCodigoPedido } from '../../src/orders/domain/pedido.js';
 import { criarWhatsAppClientFake } from '../../src/whatsapp/__mocks__/whatsapp-client.fake.js';
 import { registrarOrdersInboundRouter } from '../../src/whatsapp/orders-session/orders-inbound.router.js';
 import type { Pedido } from '../../src/orders/domain/pedido.js';
+import { pedirAceiteDaLoja } from '../../src/orders/application/pedir-aceite-da-loja.js';
+import type { GestaoDeps } from '../../src/menu/gestao/gestao.service.js';
+import { registrarMenuInboundRouter } from '../../src/whatsapp/menu-session/menu-inbound.router.js';
 
 describe('Fluxo 2 — cliente compra e paga via WhatsApp (e2e in-process)', () => {
-  it('carrinho -> confirmação no WhatsApp -> cobrança PIX -> webhook aprova -> pedido pago e empreendedor notificado', async () => {
+  it('carrinho -> código no WhatsApp -> loja aceita -> cobrança PIX -> webhook aprova -> pedido pago e empreendedor notificado', async () => {
     const ordersRepo = criarOrdersRepositoryFake();
     const gatewayPix = criarMercadoPagoClientFake();
     const paymentsRepo = criarPaymentsRepositoryFake();
@@ -63,11 +66,32 @@ describe('Fluxo 2 — cliente compra e paga via WhatsApp (e2e in-process)', () =
     expect(extrairCodigoPedido(linkGerado)).toBe(pedido.codigoCurto);
 
     const whatsapp = criarWhatsAppClientFake();
+    const loja = criarWhatsAppClientFake();
+    const contatos = { telefoneDe: async () => '5511900000001' };
+    const geradorCobranca = criarGeradorCobranca(paymentsDeps);
     registrarOrdersInboundRouter({
       whatsapp: whatsapp.client,
       ordersRepo,
       idempotency: criarIdempotencyRepositoryFake(),
-      geradorCobranca: criarGeradorCobranca(paymentsDeps),
+      geradorCobranca,
+      pedirAceite: (p) =>
+        pedirAceiteDaLoja(
+          {
+            ordersRepo,
+            contatos,
+            mensageiro: {
+              enviarTexto: (telefone, texto) => loja.client.sendText(telefone, texto),
+              enviarEnquete: (telefone, pergunta, opcoes) => loja.client.sendPoll(telefone, pergunta, opcoes),
+            },
+          },
+          p,
+        ),
+    });
+    registrarMenuInboundRouter({
+      ...({} as GestaoDeps),
+      whatsapp: loja.client,
+      idempotency: criarIdempotencyRepositoryFake(),
+      decisoes: { ordersRepo, contatos, geradorCobranca, clientePedidos: () => whatsapp.client },
     });
 
     await whatsapp.emitirMensagem({
@@ -77,14 +101,20 @@ describe('Fluxo 2 — cliente compra e paga via WhatsApp (e2e in-process)', () =
       timestamp: new Date(),
     });
 
-    // 3. Backend gerou a cobrança PIX e respondeu com copia-e-cola + QR code.
-    expect(whatsapp.mensagensEnviadas[0]?.conteudo).toContain('Pix copia e cola');
-    expect(whatsapp.mensagensEnviadas[1]).toMatchObject({ tipo: 'imagem' });
+    // 3. A loja recebe o resumo e a enquete; sem aceite, nada de PIX.
+    expect(whatsapp.mensagensEnviadas[0]?.conteudo).toContain('aguardar a loja aceitar');
+    const enquete = loja.mensagensEnviadas.find((m) => m.tipo === 'enquete');
+    expect(await paymentsRepo.buscarPorPedidoId(pedido.id)).toBeNull();
+
+    // 4. A loja vota em Aceitar; o backend gera a cobrança e manda copia-e-cola + QR code ao cliente.
+    await loja.emitirVoto({ id: 'voto-1', telefone: '5511900000001', enqueteId: enquete!.enqueteId!, opcoes: ['Aceitar'] });
+    expect(whatsapp.mensagensEnviadas.map((m) => m.conteudo)).toContainEqual(expect.stringContaining('Pix copia e cola'));
+    expect(whatsapp.mensagensEnviadas.at(-1)).toMatchObject({ tipo: 'imagem' });
 
     const pagamento = await paymentsRepo.buscarPorPedidoId(pedido.id);
     expect(pagamento?.status).toBe('PENDENTE');
 
-    // 4. Mercado Pago avisa via webhook que o PIX foi aprovado.
+    // 5. Mercado Pago avisa via webhook que o PIX foi aprovado.
     gatewayPix.definirStatusConsulta(pagamento!.idTransacaoExterno, 'processed');
     const respostaWebhook = await app.inject({
       method: 'POST',
@@ -94,13 +124,13 @@ describe('Fluxo 2 — cliente compra e paga via WhatsApp (e2e in-process)', () =
     });
     expect(respostaWebhook.statusCode).toBe(200);
 
-    // 5. Pedido confirmado como pago e empreendedor notificado.
+    // 6. Pedido confirmado como pago e empreendedor notificado.
     const pedidoFinal = await ordersRepo.buscarPorId(pedido.id);
     expect(pedidoFinal?.status).toBe('PAGO');
     expect(notificacoesAoEmpreendedor).toHaveLength(1);
     expect(notificacoesAoEmpreendedor[0]?.id).toBe(pedido.id);
 
-    // 6. Reenvio do mesmo evento de webhook não duplica a notificação (idempotência).
+    // 7. Reenvio do mesmo evento de webhook não duplica a notificação (idempotência).
     await app.inject({
       method: 'POST',
       url: '/v1/webhooks/mercado-pago',

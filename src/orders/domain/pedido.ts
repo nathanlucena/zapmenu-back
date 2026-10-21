@@ -1,16 +1,20 @@
 export type StatusPedido =
   | 'AGUARDANDO_CONFIRMACAO'
+  | 'AGUARDANDO_ACEITE'
   | 'AGUARDANDO_PAGAMENTO'
   | 'PAGO'
   | 'EXPIRADO'
+  | 'RECUSADO'
   | 'CANCELADO';
 
 /** Como cada status aparece para pessoas (mensagens e logs), nunca o código técnico. */
 export const ROTULO_STATUS_PEDIDO: Record<StatusPedido, string> = {
   AGUARDANDO_CONFIRMACAO: 'Aguardando envio no WhatsApp',
+  AGUARDANDO_ACEITE: 'Aguardando a loja aceitar',
   AGUARDANDO_PAGAMENTO: 'Aguardando pagamento',
   PAGO: 'Pago',
   EXPIRADO: 'Expirado',
+  RECUSADO: 'Recusado pela loja',
   CANCELADO: 'Cancelado',
 };
 
@@ -43,6 +47,8 @@ export interface DetalhesPedido {
 
 export interface ItemPedidoInput {
   itemCardapioId: string;
+  /** Nome do item no cardápio; só vem na leitura do pedido, para mensagens. */
+  nome?: string;
   quantidade: number;
   precoUnitario: number;
   variacaoEscolhida?: Record<string, unknown>;
@@ -66,6 +72,8 @@ export interface Pedido extends DetalhesPedido {
   expiraEm: Date;
   criadoEm: Date;
   confirmadoEm?: Date;
+  /** Enquete de aceitar/recusar enviada à loja (id da mensagem no WhatsApp). */
+  enqueteAceiteId?: string;
 }
 
 /** O que o app do cliente vê de um pedido: sem telefone, endereço do cliente nem ids internos. */
@@ -89,10 +97,12 @@ export interface ResumoPedidoPublico {
 }
 
 const TRANSICOES_PERMITIDAS: Record<StatusPedido, StatusPedido[]> = {
-  AGUARDANDO_CONFIRMACAO: ['AGUARDANDO_PAGAMENTO', 'EXPIRADO', 'CANCELADO'],
+  AGUARDANDO_CONFIRMACAO: ['AGUARDANDO_ACEITE', 'EXPIRADO', 'CANCELADO'],
+  AGUARDANDO_ACEITE: ['AGUARDANDO_PAGAMENTO', 'RECUSADO', 'EXPIRADO', 'CANCELADO'],
   AGUARDANDO_PAGAMENTO: ['PAGO', 'EXPIRADO', 'CANCELADO'],
   PAGO: [],
   EXPIRADO: [],
+  RECUSADO: [],
   CANCELADO: [],
 };
 
@@ -105,6 +115,22 @@ const REGEX_CODIGO_PEDIDO = /PED-[A-Z0-9]{4}/i;
 export function extrairCodigoPedido(texto: string): string | null {
   const match = texto.match(REGEX_CODIGO_PEDIDO);
   return match ? match[0].toUpperCase() : null;
+}
+
+export type DecisaoPedido = 'ACEITAR' | 'RECUSAR';
+
+const REGEX_DECISAO = /^\s*(aceitar|aceito|aceita|recusar|recuso|recusa)\b.*?(PED-[A-Z0-9]{4})/i;
+
+/** Resposta da loja em texto ("aceitar PED-7KQ2" / "recusar PED-7KQ2"), alternativa à enquete. */
+export function extrairDecisaoPedido(texto: string): { decisao: DecisaoPedido; codigoCurto: string } | null {
+  const match = REGEX_DECISAO.exec(texto);
+  if (!match) {
+    return null;
+  }
+  return {
+    decisao: match[1]!.toLowerCase().startsWith('aceit') ? 'ACEITAR' : 'RECUSAR',
+    codigoCurto: match[2]!.toUpperCase(),
+  };
 }
 
 export function calcularValorTotal(itens: ItemPedidoInput[]): number {
@@ -129,6 +155,9 @@ export function validarCarrinho(carrinho: CarrinhoInput): string[] {
   return erros;
 }
 
+/** Status que vencem em `expiraEm`: o cliente não mandou o código ou a loja não respondeu. */
+export const STATUS_COM_PRAZO: StatusPedido[] = ['AGUARDANDO_CONFIRMACAO', 'AGUARDANDO_ACEITE'];
+
 export function estaExpirado(pedido: Pick<Pedido, 'status' | 'expiraEm'>, agora: Date): boolean {
-  return pedido.status === 'AGUARDANDO_CONFIRMACAO' && agora > pedido.expiraEm;
+  return STATUS_COM_PRAZO.includes(pedido.status) && agora > pedido.expiraEm;
 }

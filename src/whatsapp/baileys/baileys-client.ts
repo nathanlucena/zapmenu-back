@@ -1,15 +1,24 @@
+import { randomBytes } from 'node:crypto';
 import {
   downloadMediaMessage,
   isLidUser,
   isPnUser,
   jidNormalizedUser,
+  normalizeMessageContent,
+  type proto,
   type WAMessage,
   type WAMessageKey,
   type WASocket,
 } from 'baileys';
 import { logger as loggerRaiz, trecho } from '../../shared/logger/logger.js';
 import { chaveTelefone, telefoneDoChatId } from '../../shared/telefone/telefone.js';
-import type { ManipuladorMensagem, MensagemRecebida, WhatsAppClient } from '../whatsapp-client.interface.js';
+import type {
+  ManipuladorMensagem,
+  ManipuladorVoto,
+  MensagemRecebida,
+  WhatsAppClient,
+} from '../whatsapp-client.interface.js';
+import { criarEnquetesEmMemoria, lerVoto, type EnquetesStore } from './enquete.js';
 import {
   conteudoDaMensagem,
   ehRespostaDoBot,
@@ -30,6 +39,8 @@ export interface BaileysClientOptions {
   /** Nome da sessão, para identificar nos logs de qual número veio o evento. */
   sessao?: string;
   autoteste?: ModoAutoteste;
+  /** Onde guardar as enquetes enviadas; sem isso, ficam só em memória (voto depois de reiniciar se perde). */
+  enquetes?: EnquetesStore;
 }
 
 function ehConversaIndividual(jid: string): boolean {
@@ -53,6 +64,7 @@ function imagemParaEnvio(imagemUrlOuBase64: string): Buffer | { url: string } {
  */
 export function criarBaileysClient(socket: WASocket, options: BaileysClientOptions = {}): WhatsAppClient {
   const { autoteste } = options;
+  const enquetes = options.enquetes ?? criarEnquetesEmMemoria();
   const logger = loggerRaiz.child({ sessao: options.sessao });
   const chavesPermitidas = new Set(
     autoteste ? [autoteste.telefoneProprio, ...autoteste.numerosPermitidos].map(chaveTelefone) : [],
@@ -175,6 +187,57 @@ export function criarBaileysClient(socket: WASocket, options: BaileysClientOptio
     return paraDataUri(buffer, mensagem.message?.imageMessage?.mimetype);
   }
 
+  /** Telefone de quem votou, ou undefined quando o voto deve ser ignorado (mesmas regras das mensagens). */
+  async function telefoneDoVoto(chave: WAMessageKey): Promise<string | undefined> {
+    if (chave.fromMe) {
+      return autoteste && ehChatProprio(chave) ? autoteste.telefoneProprio : undefined;
+    }
+    if (!ehConversaIndividual(chave.remoteJid ?? '')) {
+      return undefined;
+    }
+    const telefone = await telefoneDoChat(chave);
+    return !autoteste || chavesPermitidas.has(chaveTelefone(telefone)) ? telefone : undefined;
+  }
+
+  async function tratarVoto(
+    mensagem: WAMessage,
+    atualizacao: proto.Message.IPollUpdateMessage,
+    manipulador: ManipuladorVoto,
+  ): Promise<void> {
+    const chave = mensagem.key;
+    const enqueteId = atualizacao.pollCreationMessageKey?.id;
+    const enquete = enqueteId ? await enquetes.buscar(enqueteId) : null;
+    if (!enquete || !atualizacao.vote || !chave.id) {
+      logger.info({ enqueteId }, '🗳️ voto em enquete desconhecida, ignorado');
+      return;
+    }
+
+    const telefone = await telefoneDoVoto(chave);
+    if (!telefone) {
+      logger.info({ chat: chave.remoteJid }, '🗳️ voto ignorado (remetente fora das regras)');
+      return;
+    }
+
+    const proprios = [...idsProprios()];
+    const votantes = chave.fromMe
+      ? proprios
+      : [chave.participantAlt, chave.remoteJidAlt, chave.participant, chave.remoteJid]
+          .filter((jid): jid is string => Boolean(jid))
+          .map(jidNormalizedUser);
+    const opcoes = lerVoto(enquete, atualizacao.vote, [enquete.criadorJid, ...proprios], votantes);
+    if (!opcoes) {
+      logger.warn({ enqueteId, telefone }, '🗳️ não foi possível decifrar o voto da enquete');
+      return;
+    }
+
+    logger.info({ telefone, enqueteId, opcoes }, '🗳️ VOTO RECEBIDO');
+    try {
+      await manipulador({ id: chave.id, telefone, enqueteId: enquete.id, opcoes });
+    } catch (erro) {
+      logger.error({ err: erro, enqueteId }, '💥 erro ao processar voto');
+    }
+  }
+
   return {
     async sendText(telefone, texto) {
       if (!destinoPermitido(telefone)) {
@@ -249,6 +312,44 @@ export function criarBaileysClient(socket: WASocket, options: BaileysClientOptio
           tratar(mensagem).catch((erro: unknown) => {
             logger.error({ err: erro, mensagemId: mensagem.key.id }, '💥 erro ao avaliar mensagem');
           });
+        }
+      });
+    },
+    async sendPoll(telefone, pergunta, opcoes) {
+      if (!destinoPermitido(telefone)) {
+        return undefined;
+      }
+      // O segredo é nosso: sem ele (e sem guardar), o voto que chega não pode ser lido.
+      const segredo = randomBytes(32);
+      const enviada = await socket.sendMessage(await jidDeDestino(telefone), {
+        poll: { name: pergunta, values: opcoes, selectableCount: 1, messageSecret: segredo },
+      });
+      const id = enviada?.key.id;
+      if (!id) {
+        return undefined;
+      }
+      await enquetes.guardar({
+        id,
+        segredo: segredo.toString('base64'),
+        criadorJid: jidNormalizedUser(socket.user?.id),
+        opcoes,
+      });
+      logger.info({ para: telefone, pergunta: trecho(pergunta), opcoes }, '🤖 BOT ENVIOU ENQUETE');
+      return id;
+    },
+
+    onPollVote(manipulador) {
+      socket.ev.on('messages.upsert', ({ messages, type }) => {
+        if (type !== 'notify') {
+          return;
+        }
+        for (const mensagem of messages) {
+          const atualizacao = normalizeMessageContent(mensagem.message)?.pollUpdateMessage;
+          if (atualizacao) {
+            tratarVoto(mensagem, atualizacao, manipulador).catch((erro: unknown) => {
+              logger.error({ err: erro, mensagemId: mensagem.key.id }, '💥 erro ao avaliar voto');
+            });
+          }
         }
       });
     },

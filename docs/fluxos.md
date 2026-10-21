@@ -153,10 +153,14 @@ sequenceDiagram
     API-->>App: 201 { pedido }
     App-->>C: botão wa.me com o código
     C->>WPP: "… PED-7KQ2 …"
-    WPP->>DB: confirma: AGUARDANDO_PAGAMENTO + telefoneCliente
+    WPP->>DB: AGUARDANDO_ACEITE + telefoneCliente, expiraEm = agora + 15 min
+    WPP-->>C: "Recebemos seu pedido… aguardar a loja aceitar"
+    WPP-->>Dono: (pela sessão de gestão) resumo do pedido + enquete [Aceitar | Recusar]
+    Dono->>WPP: vota "Aceitar" (ou escreve "aceitar PED-7KQ2")
+    WPP->>DB: AGUARDANDO_PAGAMENTO
     WPP->>MP: cria cobrança PIX (X-Idempotency-Key = pedido.id)
     WPP->>DB: Pagamento PENDENTE (copia e cola + QR)
-    WPP-->>C: "Pix copia e cola: …" + imagem do QR
+    WPP-->>C: "A loja aceitou…" + "Pix copia e cola: …" + imagem do QR
     C->>MP: paga o PIX
     alt webhook
         MP->>API: POST /v1/webhooks/mercado-pago
@@ -172,9 +176,10 @@ sequenceDiagram
 
 1. **Cardápio.** `GET /v1/menu/:telefone` devolve a loja, as seções (categorias na ordem de criação, "Outros" por último, sem seções vazias) e só os itens ativos e não removidos.
 2. **Pedido.** `POST /v1/orders` valida o carrinho com zod, confere se cada item ainda está no cardápio e **recalcula o preço no servidor** (`calcularPrecoUnitario`: preço base + adicional da opção escolhida em cada variação; toda variação é obrigatória). O `precoUnitario` enviado pelo cliente é ignorado. Gera um código `PED-` + 4 caracteres (alfabeto sem `I`, `O`, `0`, `1`; até 5 tentativas para achar um livre).
-3. **Confirmação no WhatsApp.** O router de pedidos procura `PED-XXXX` em qualquer posição da mensagem (sem diferenciar maiúsculas). Se achar e o pedido estiver em `AGUARDANDO_CONFIRMACAO` e dentro do prazo, passa para `AGUARDANDO_PAGAMENTO` e grava o telefone do cliente.
-4. **Cobrança PIX.** `criarGeradorCobranca` cria a cobrança no Mercado Pago só se o pedido ainda não tiver pagamento; envia o copia e cola e, se houver, a imagem do QR.
-5. **Pagamento.** Webhook ou polling levam ao mesmo `aplicarStatusPagamento`: atualiza o `Pagamento`; se `APROVADO`, marca o pedido como `PAGO` e avisa o dono.
+3. **Código no WhatsApp.** O router de pedidos procura `PED-XXXX` em qualquer posição da mensagem (sem diferenciar maiúsculas). Se achar e o pedido estiver em `AGUARDANDO_CONFIRMACAO` e dentro do prazo, passa para `AGUARDANDO_ACEITE`, grava o telefone do cliente e dá à loja `PEDIDO_ACEITE_MINUTOS` (padrão 15) para responder.
+4. **Aceite da loja.** `pedirAceiteDaLoja` manda ao dono, pela sessão de gestão, o resumo (itens com variações e observações, cliente, entrega ou retirada, total) e uma enquete **Aceitar / Recusar**; o id da enquete fica em `Pedido.enqueteAceiteId`. O voto chega cifrado: a enquete é enviada com um segredo nosso, guardado em `EnqueteWhatsApp`, e `whatsapp/baileys/enquete.ts` decifra o voto (tentando o JID de telefone e o LID). Se a enquete não aparecer, o dono pode escrever `aceitar PED-XXXX` / `recusar PED-XXXX`. Só o dono da loja do pedido decide, só enquanto o pedido aguarda o aceite, e só a primeira decisão vale (`decidirPedido`).
+5. **Cobrança PIX.** No aceite, `criarGeradorCobranca` cria a cobrança no Mercado Pago só se o pedido ainda não tiver pagamento; o cliente recebe o copia e cola e, se houver, a imagem do QR. Na recusa o pedido vira `RECUSADO` e o cliente é avisado.
+6. **Pagamento.** Webhook ou polling levam ao mesmo `aplicarStatusPagamento`: atualiza o `Pagamento`; se `APROVADO`, marca o pedido como `PAGO` e avisa o dono.
 
 ### Respostas do número de pedidos
 
@@ -183,10 +188,12 @@ sequenceDiagram
 | Mensagem sem código | "Não encontrei o código do pedido na mensagem. Use o link enviado pelo cardápio." |
 | Código inexistente | "Não encontrei o pedido PED-XXXX. Confira o código ou faça um novo pedido pelo cardápio." |
 | Prazo vencido ou expirado | "O pedido PED-XXXX expirou. Faça um novo pedido pelo cardápio." |
+| Já com a loja (código mandado de novo) | "Seu pedido PED-XXXX ainda está com a loja. Assim que ela aceitar, o PIX chega aqui." |
 | Já aguardando pagamento (código mandado de novo) | Reenvia o mesmo PIX |
+| Recusado pela loja | "A loja não pôde aceitar o pedido PED-XXXX. Se quiser, faça um novo pedido pelo cardápio." |
 | Já pago | "O pedido PED-XXXX já foi pago ✅" |
 | Cancelado | "O pedido PED-XXXX foi cancelado pela loja." |
-| Sucesso | "Pix copia e cola:\n…" + imagem "QR Code do Pix" |
+| Sucesso | "Recebemos seu pedido PED-XXXX ✅ Agora é só aguardar a loja aceitar…"; depois do aceite, "A loja aceitou seu pedido…" + "Pix copia e cola:\n…" + imagem "QR Code do Pix" |
 
 ---
 
@@ -195,20 +202,20 @@ sequenceDiagram
 ### Pedido (`StatusPedido`)
 
 ```
-AGUARDANDO_CONFIRMACAO ──cliente manda o código──▶ AGUARDANDO_PAGAMENTO ──PIX aprovado──▶ PAGO
-        │                                                  │
-        ├──prazo vence (job)──▶ EXPIRADO                   └──(nenhum caminho hoje)──▶ EXPIRADO / CANCELADO
-        └──(nenhum caminho hoje)──▶ CANCELADO
+AGUARDANDO_CONFIRMACAO ──código──▶ AGUARDANDO_ACEITE ──loja aceita──▶ AGUARDANDO_PAGAMENTO ──PIX aprovado──▶ PAGO
+        │                               │    └──loja recusa──▶ RECUSADO
+        └──prazo vence (job)──▶ EXPIRADO ◀──prazo vence (job)
 ```
 
 | De | Para | Quem dispara | Onde |
 |---|---|---|---|
-| `AGUARDANDO_CONFIRMACAO` | `AGUARDANDO_PAGAMENTO` | Cliente manda o código no número de pedidos | `confirmarRecebimentoCliente` |
-| `AGUARDANDO_CONFIRMACAO` | `EXPIRADO` | Job de expiração, depois de `expiraEm` | `expirarPedidosPendentes` |
+| `AGUARDANDO_CONFIRMACAO` | `AGUARDANDO_ACEITE` | Cliente manda o código no número de pedidos | `confirmarRecebimentoCliente` |
+| `AGUARDANDO_ACEITE` | `AGUARDANDO_PAGAMENTO` / `RECUSADO` | Loja vota na enquete ou responde em texto | `decidirPedido` |
+| `AGUARDANDO_CONFIRMACAO`, `AGUARDANDO_ACEITE` | `EXPIRADO` | Job de expiração, depois de `expiraEm` | `expirarPedidosPendentes` |
 | `AGUARDANDO_PAGAMENTO` | `PAGO` | Pagamento aprovado (webhook ou polling) | `confirmarPagamento` |
-| `PAGO`, `EXPIRADO`, `CANCELADO` | — | Estados finais | `TRANSICOES_PERMITIDAS` |
+| `PAGO`, `EXPIRADO`, `RECUSADO`, `CANCELADO` | — | Estados finais | `TRANSICOES_PERMITIDAS` |
 
-- O prazo (`PEDIDO_TTL_MINUTOS`, padrão 20) vale **só** para `AGUARDANDO_CONFIRMACAO`. A confirmação confere o prazo na hora (`estaExpirado`), então um pedido vencido é recusado mesmo que o job ainda não tenha rodado.
+- O prazo (`PEDIDO_TTL_MINUTOS`, padrão 20) vale para `AGUARDANDO_CONFIRMACAO`; ao receber o código, `expiraEm` passa a ser o prazo da loja (`PEDIDO_ACEITE_MINUTOS`). Quando a loja não responde a tempo o pedido expira, mas o cliente não é avisado pelo WhatsApp (a tela do pedido mostra). A confirmação confere o prazo na hora (`estaExpirado`), então um pedido vencido é recusado mesmo que o job ainda não tenha rodado.
 - As transições `AGUARDANDO_PAGAMENTO → EXPIRADO` e `→ CANCELADO` são permitidas no código, mas nada as dispara (lacunas L5 e L6).
 
 ### Pagamento (`StatusPagamento`)
@@ -229,7 +236,7 @@ Os dois são `setInterval` dentro do mesmo processo (`main.ts`). Erros são loga
 
 | Job | Intervalo | O que faz |
 |---|---|---|
-| Expiração de pedidos (`orders/infra/order-expiration.job.ts`) | `PEDIDO_TTL_MINUTOS` (padrão 20 min) | Marca como `EXPIRADO` os pedidos em `AGUARDANDO_CONFIRMACAO` com `expiraEm` no passado |
+| Expiração de pedidos (`orders/infra/order-expiration.job.ts`) | `PEDIDO_TTL_MINUTOS` (padrão 20 min) | Marca como `EXPIRADO` os pedidos em `AGUARDANDO_CONFIRMACAO` ou `AGUARDANDO_ACEITE` com `expiraEm` no passado |
 | Polling de pagamentos (`payments/infra/payment-status-poller.job.ts`) | `PAGAMENTO_POLLING_INTERVALO_SEGUNDOS` (padrão 60 s) | Consulta no Mercado Pago cada pagamento `PENDENTE` criado há mais que esse mesmo intervalo e aplica o status |
 
 Observações:
@@ -251,7 +258,7 @@ Cada número é uma sessão Baileys (`session-manager.ts`): uma conexão direta 
 | Mídia | Imagens baixadas como data URI base64; o texto da mensagem passa a ser a legenda |
 | Envio | O número é consultado no WhatsApp antes do primeiro envio, porque celulares antigos existem lá sem o 9º dígito; a resposta fica em cache |
 | Ordem por telefone | A sessão de gestão processa uma mensagem por vez por telefone (fila), para uma rodada não apagar o estado gravado pela outra |
-| Número único | Se `WPP_MENU_PHONE_NUMBER` e `WPP_ORDERS_PHONE_NUMBER` forem o mesmo, sobe só a sessão de gestão; mensagens com `PED-XXXX` vão para o router de pedidos e as outras para o de gestão (`numero-unico/dividir-mensagens.ts`) |
+| Número único | Se `WPP_MENU_PHONE_NUMBER` e `WPP_ORDERS_PHONE_NUMBER` forem o mesmo, sobe só a sessão de gestão; mensagens do cliente com `PED-XXXX` vão para o router de pedidos; as outras, inclusive `aceitar/recusar PED-XXXX` e os votos da enquete, vão para o de gestão (`numero-unico/dividir-mensagens.ts`) |
 | Aviso de pedido pago | Enviado pela sessão de **gestão** (é ela que fala com os donos); se ela não estiver conectada, o aviso é perdido e só fica no log |
 
 ### Modo autoteste (`WPP_MODO_AUTOTESTE=true`)
@@ -262,7 +269,7 @@ Para testar com um único celular:
 - As respostas do bot levam um caractere invisível no começo, para o bot não reprocessar a própria resposta no chat consigo mesmo.
 - Usa `onAnyMessage` (o `onMessage` normal descarta mensagens da própria conta).
 - Cada mensagem do bot começa com uma linha dizendo quem fala: `🧑‍🍳 *Gestão*` ou `🛍️ *Pedidos*` (`whatsapp/identificacao/identificar-bot.ts`). Fora do autoteste as mensagens saem sem essa linha.
-- O PIX é dado como pago `PAGAMENTO_SIMULADO_SEGUNDOS` (padrão 30; 0 desliga) depois de gerado, pelo mesmo caminho do webhook: pagamento aprovado, pedido `PAGO` e aviso ao empreendedor. Não faz nada se o pedido já foi pago, expirou ou foi cancelado (`payments/infra/pagamento-simulado.ts`).
+- O PIX é dado como pago `PAGAMENTO_SIMULADO_SEGUNDOS` (padrão 30; 0 desliga) depois de gerado, ou seja, depois do aceite da loja, pelo mesmo caminho do webhook: pagamento aprovado, pedido `PAGO` e aviso ao empreendedor. Não faz nada se o pedido já foi pago, expirou ou foi cancelado (`payments/infra/pagamento-simulado.ts`).
 
 ---
 
@@ -388,7 +395,7 @@ Problemas e ausências encontrados no código, por impacto. Os marcados com **(f
 | L4 | Taxa de entrega fora do `valorTotal`; pedido mínimo e horário da loja não validados **(front B4, B9)** | Alto. PIX diferente do total esperado; pedidos fora do horário | Calcular com `calcularEntrega` e validar no servidor |
 | L5 | `AGUARDANDO_PAGAMENTO` nunca expira; polling sem idade máxima | Médio. Pedidos presos para sempre e consultas infinitas ao Mercado Pago | Prazo para o PIX e limite de idade no polling |
 | L6 | `CANCELADO` nunca é atribuído; pagamento `REJEITADO` não muda o pedido | Médio | Definir o que acontece em recusa e estorno |
-| L7 | Aviso de pedido pago traz só código e valor | Alto. O dono não sabe o que preparar nem para quem | Incluir itens, variações, modalidade e telefone do cliente |
+| L7 | Aviso de pedido pago traz só código e valor | **Parcial**: o resumo completo (itens, variações, observações, entrega) chega no pedido de aceite, antes do pagamento; o aviso de pago continua curto | Telefone do cliente no resumo |
 | L8 | Aviso de pedido pago se perde se a sessão de gestão estiver desconectada | Médio | Guardar e reenviar ao reconectar |
 | L9 | Não existe `GET` de pedido **(front B1)** | Alto para o front (acompanhamento) | `GET /v1/orders/:codigoCurto` |
 | ~~L10~~ | ~~Respostas do número de pedidos mostram o status técnico~~ | **Resolvida**: mensagem por status (`ROTULO_STATUS_PEDIDO` no domínio) e PIX reenviado quando o pedido já aguarda pagamento | — |

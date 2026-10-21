@@ -17,6 +17,8 @@ import { iniciarJobPollingPagamentos } from './payments/infra/payment-status-pol
 import { criarPaymentsRepositoryPrisma } from './payments/infra/payments.repository.prisma.js';
 import { criarGeradorCobranca } from './payments/application/gerar-cobranca.js';
 import { comPagamentoSimulado } from './payments/infra/pagamento-simulado.js';
+import { pedirAceiteDaLoja } from './orders/application/pedir-aceite-da-loja.js';
+import { criarEnquetesRepositoryPrisma } from './whatsapp/baileys/enquetes.repository.prisma.js';
 import type { PaymentsServiceDeps } from './payments/application/dependencias.js';
 import { getPrismaClient } from './shared/db/prisma-client.js';
 import { criarIdempotencyRepositoryPrisma } from './shared/idempotency/idempotency.repository.prisma.js';
@@ -71,19 +73,23 @@ async function main(): Promise<void> {
   // A sessão de gestão é quem fala com os empreendedores, então é por ela que
   // o "novo pedido pago" é notificado — atualizada a cada (re)conexão da sessão.
   let menuWhatsAppClient: WhatsAppClient | undefined;
+  // Quem fala com os clientes: usado quando a loja aceita ou recusa pela gestão.
+  let pedidosWhatsAppClient: WhatsAppClient | undefined;
 
-  const avisoPedidoPago = {
-    contatos: criarContatoEmpreendedoresPrisma(prisma),
-    mensageiro: {
-      async enviarTexto(telefone: string, texto: string) {
-        if (!menuWhatsAppClient) {
-          logger.warn('sessão de gestão indisponível, não foi possível notificar empreendedor');
-          return;
-        }
-        await menuWhatsAppClient.sendText(telefone, texto);
-      },
+  const contatos = criarContatoEmpreendedoresPrisma(prisma);
+  const mensageiroLoja = {
+    async enviarTexto(telefone: string, texto: string) {
+      if (!menuWhatsAppClient) {
+        logger.warn('sessão de gestão indisponível, não foi possível notificar empreendedor');
+        return;
+      }
+      await menuWhatsAppClient.sendText(telefone, texto);
+    },
+    async enviarEnquete(telefone: string, pergunta: string, opcoes: string[]) {
+      return menuWhatsAppClient?.sendPoll(telefone, pergunta, opcoes);
     },
   };
+  const avisoPedidoPago = { contatos, mensageiro: mensageiroLoja };
   const notificarEmpreendedor = (pedido: Pedido) => avisarPedidoPago(avisoPedidoPago, pedido);
 
   const paymentsDeps: PaymentsServiceDeps = {
@@ -93,6 +99,12 @@ async function main(): Promise<void> {
     idempotency,
     notificarEmpreendedor,
   };
+
+  const geradorCobranca = comPagamentoSimulado(criarGeradorCobranca(paymentsDeps), paymentsDeps, {
+    modoAutoteste: env.WPP_MODO_AUTOTESTE,
+    segundos: env.PAGAMENTO_SIMULADO_SEGUNDOS,
+  });
+  const enquetes = criarEnquetesRepositoryPrisma(prisma);
 
   // No autoteste cada mensagem diz qual bot está falando (gestão ou pedidos).
   const comRotulo = (client: WhatsAppClient, rotulo: string) =>
@@ -109,17 +121,19 @@ async function main(): Promise<void> {
       interpretador,
       endereco,
       cadastro: cadastroEmpreendedores,
+      decisoes: { ordersRepo, contatos, geradorCobranca, clientePedidos: () => pedidosWhatsAppClient },
     });
   };
   const registrarPedidos = (conexao: WhatsAppClient) => {
+    const client = comRotulo(conexao, ROTULO_PEDIDOS);
+    pedidosWhatsAppClient = client;
     registrarOrdersInboundRouter({
-      whatsapp: comRotulo(conexao, ROTULO_PEDIDOS),
+      whatsapp: client,
       ordersRepo,
       idempotency,
-      geradorCobranca: comPagamentoSimulado(criarGeradorCobranca(paymentsDeps), paymentsDeps, {
-        modoAutoteste: env.WPP_MODO_AUTOTESTE,
-        segundos: env.PAGAMENTO_SIMULADO_SEGUNDOS,
-      }),
+      geradorCobranca,
+      pedirAceite: (pedido) => pedirAceiteDaLoja({ ordersRepo, contatos, mensageiro: mensageiroLoja }, pedido),
+      prazoAceiteMs: env.PEDIDO_ACEITE_MINUTOS * 60_000,
     });
   };
   const sessao = (sessionName: string, tokenStorePath: string) => ({
@@ -128,6 +142,7 @@ async function main(): Promise<void> {
     modoAutoteste: env.WPP_MODO_AUTOTESTE,
     logLevelBaileys: env.WPP_LOG_LEVEL,
     numerosPermitidos: env.WPP_NUMEROS_PERMITIDOS,
+    enquetes,
   });
 
   const numeroUnico =

@@ -2,12 +2,15 @@ import { processarMensagemGestao, type GestaoDeps } from '../../menu/gestao/gest
 import type { IdempotencyRepository } from '../../shared/idempotency/idempotency.repository.js';
 import { logger } from '../../shared/logger/logger.js';
 import type { WhatsAppClient } from '../whatsapp-client.interface.js';
+import { registrarVotosDeAceite, tratarDecisaoEmTexto, type DecisaoPedidoDeps } from './decisao-pedido.js';
 
 const ORIGEM_IDEMPOTENCIA = 'whatsapp_menu';
 
 export interface MenuInboundRouterDeps extends GestaoDeps {
   whatsapp: WhatsAppClient;
   idempotency: IdempotencyRepository;
+  /** Aceite e recusa de pedidos pela loja (enquete ou "aceitar PED-XXXX"). Sem isso, só a conversa de gestão. */
+  decisoes?: Omit<DecisaoPedidoDeps, 'idempotency'>;
 }
 
 /**
@@ -33,10 +36,19 @@ function criarFilaPorTelefone() {
 
 export function registrarMenuInboundRouter(deps: MenuInboundRouterDeps): void {
   const enfileirar = criarFilaPorTelefone();
+  const decisoes = deps.decisoes && { ...deps.decisoes, idempotency: deps.idempotency };
+  if (decisoes) {
+    registrarVotosDeAceite(decisoes, deps.whatsapp);
+  }
 
   deps.whatsapp.onMessage((mensagem) => enfileirar(mensagem.telefone, async () => {
     if (await deps.idempotency.jaProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id)) {
       logger.info({ mensagemId: mensagem.id }, 'mensagem de gestão já processada (reentrega), ignorando');
+      return;
+    }
+
+    if (decisoes && (await tratarDecisaoEmTexto(decisoes, deps.whatsapp, mensagem))) {
+      await deps.idempotency.marcarProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id);
       return;
     }
 
