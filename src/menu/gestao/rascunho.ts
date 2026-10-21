@@ -9,7 +9,7 @@ import type {
 } from '../conversation/conversation-state.types.js';
 import { DIAS_SEMANA, rascunhoVazio } from '../conversation/conversation-state.types.js';
 import { mesclarConsulta } from '../endereco/endereco.service.js';
-import { gerarSlug, normalizarCor, problemaNoSlug } from '../vitrine.js';
+import { corDaPaleta, gerarSlug, listaDaPaleta, nomeDaCor, problemaNoSlug } from '../vitrine.js';
 import { faixasComTaxaDecrescente, formatarKm, validarFaixas } from '../entrega.js';
 import type { SnapshotCardapio } from './gestao.repository.js';
 import type { DadosItemOperacao, Operacao } from './interpretador.js';
@@ -173,11 +173,13 @@ export function aplicarOperacoes(aplicacao: AplicacaoOperacoes, operacoes: Opera
           dados.slug = problema ? undefined : slug;
         }
         if (dados.corDestaque !== undefined) {
-          const cor = normalizarCor(dados.corDestaque);
-          if (!cor) {
-            avisos.add(`⚠️ Não entendi a cor "${dados.corDestaque}". Pode mandar o nome da cor ou o código, tipo #E53935?`);
+          const escolha = corDaPaleta(dados.corDestaque);
+          if (!escolha) {
+            avisos.add(`⚠️ Não entendi a cor "${dados.corDestaque}". Escolha uma destas: ${listaDaPaleta()}.`);
+          } else if (escolha.aproximada) {
+            avisos.add(`🎨 Usei o *${escolha.cor.nome}*, a cor da nossa paleta mais parecida com ${dados.corDestaque}.`);
           }
-          dados.corDestaque = cor ?? undefined;
+          dados.corDestaque = escolha?.cor.hex;
         }
         if (dados.faixasEntrega !== undefined) {
           const validacao = validarFaixas(dados.faixasEntrega);
@@ -428,7 +430,7 @@ function descreverLoja(loja: DadosLoja, atual: DadosLoja): string[] {
   if (loja.pedidoMinimo !== undefined) linhas.push(`🧾 Pedido mínimo: *${formatarPreco(loja.pedidoMinimo)}*`);
   if (loja.horarios !== undefined) linhas.push(`🕒 Horários: ${formatarHorarios(loja.horarios)}`);
   if (loja.slug !== undefined) linhas.push(`🔗 Link do cardápio: ${atual.slug ? `${atual.slug} → ` : ''}*${loja.slug}*`);
-  if (loja.corDestaque !== undefined) linhas.push(`🎨 Cor de destaque: *${loja.corDestaque}*`);
+  if (loja.corDestaque !== undefined) linhas.push(`🎨 Cor da loja: *${nomeDaCor(loja.corDestaque)}*`);
   return linhas;
 }
 

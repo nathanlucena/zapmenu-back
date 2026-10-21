@@ -163,16 +163,17 @@ describe('Fluxo 1 — dono cadastra o cardápio pelo WhatsApp (e2e in-process)',
 
     ia.responder({ operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { slug: 'Bolos da Dona', corDestaque: '#e53935' } }] });
     const anotado = (await enviar('meu link é bolos da dona e a cor vermelha')).join('\n');
-    ia.responder({ operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { slug: '12345', corDestaque: 'vermelho' } }] });
+    ia.responder({ operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { slug: '12345', corDestaque: 'bonita' } }] });
     const recusado = (await enviar('muda o link para 12345')).join('\n');
     ia.responder({ operacoes: [], finalizou: true });
     const resumo = (await enviar('pronto')).join('\n');
 
     expect(anotado).not.toContain('⚠️');
+    expect(anotado).toContain('Usei o *Vermelho*, a cor da nossa paleta mais parecida com #e53935');
     expect(recusado).toContain('precisa ter pelo menos uma letra');
-    expect(recusado).toContain('Não entendi a cor "vermelho"');
+    expect(recusado).toContain('Não entendi a cor "bonita". Escolha uma destas: 1. Vermelho');
     expect(resumo).toContain('🔗 Link do cardápio: *bolos-da-dona*');
-    expect(resumo).toContain('🎨 Cor de destaque: *#E53935*');
+    expect(resumo).toContain('🎨 Cor da loja: *Vermelho*');
   });
 
   it('volta para a conversa sem o link quando ele já é de outra loja', async () => {

@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { logger } from '../../shared/logger/logger.js';
 import { z } from 'zod';
 import { DIAS_SEMANA, type DadosLoja, type Variacao } from '../conversation/conversation-state.types.js';
+import { listaDaPaleta } from '../vitrine.js';
 import type {
   DadosItemOperacao,
   EntradaConversa,
@@ -49,7 +50,7 @@ OPERAÇÕES (cada uma é um objeto com "tipo"):
 - {"tipo": "nova_categoria", "nome": "Bebidas"}
 - {"tipo": "renomear_categoria", "categoria_id": "...", "novo_nome": "..."}
 - {"tipo": "remover_categoria", "categoria_id": "..."} — os itens dela ficam sem categoria.
-- {"tipo": "atualizar_loja", "nome": "...", "descricao": "...", "aceita_retirada": true, "faz_entrega": true, "faixas_entrega": [...], "pedido_minimo": 30, "horarios": [...], "link": "pizzaria-do-ze", "cor_destaque": "#E53935"} — só os campos que mudam. Endereço NÃO vai aqui.
+- {"tipo": "atualizar_loja", "nome": "...", "descricao": "...", "aceita_retirada": true, "faz_entrega": true, "faixas_entrega": [...], "pedido_minimo": 30, "horarios": [...], "link": "pizzaria-do-ze", "cor_destaque": "laranja"} — só os campos que mudam. Endereço NÃO vai aqui.
 - {"tipo": "definir_endereco", "cep": "50050000", "numero": "123", "complemento": "loja 2"} — endereço da loja. Também aceita "rua", "bairro", "cidade", "uf" e "sem_numero": true.
 - {"tipo": "confirmar_endereco"} / {"tipo": "recusar_endereco"} — resposta da pessoa quando endereco_pendente existe ("é aí mesmo" / "não é aí").
 - {"tipo": "descartar_tudo"} — a pessoa quer jogar fora todas as alterações anotadas.
@@ -61,7 +62,7 @@ FORMATOS
 - faixas_entrega: lista COMPLETA (substitui a anterior), uma faixa por distância: [{"ate_km": 1, "taxa": 0}, {"ate_km": 3, "taxa": 5}]. "grátis", "de graça", "sem taxa" → taxa 0. "500 metros" → ate_km 0.5. A maior distância é o limite de entrega.
 - horarios: lista COMPLETA da semana (substitui a anterior), um objeto por dia aberto: [{"dia": "seg", "abre": "18:00", "fecha": "23:00"}]. Dias: dom, seg, ter, qua, qui, sex, sab. Dias fechados não aparecem.
 - link: endereço curto do cardápio, só letras minúsculas, números e hífens ("Pizzaria do Zé" → "pizzaria-do-ze"). Só quando a pessoa pedir para mudar o link.
-- cor_destaque: cor hex "#RRGGBB". Converta nomes de cor ("vermelho" → "#E53935", "verde" → "#43A047", "azul" → "#1E88E5", "laranja" → "#FB8C00", "roxo" → "#8E24AA", "preto" → "#212121").
+- cor_destaque: a cor da loja (botões, destaques e a faixa da capa quando não há foto). Só existem estas cores: ${listaDaPaleta()}. Mande o nome da cor como a pessoa disse ("laranja", "3"), ou o código hex se ela mandar um; o sistema escolhe a cor mais parecida da lista. Se a pessoa não souber qual escolher ou perguntar as opções, mostre a lista numerada e sugira uma que combine com o tipo de loja, sem mandar cor_destaque até ela escolher.
 - item_id e categoria_id: SOMENTE ids que existem em cardapio. A pessoa pode citar um item pelo nome ou pelo número da lista.
 
 FOTOS
