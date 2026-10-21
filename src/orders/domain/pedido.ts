@@ -13,8 +13,9 @@ export const ROTULO_STATUS_PEDIDO: Record<StatusPedido, string> = {
   AGUARDANDO_CONFIRMACAO: 'Aguardando envio no WhatsApp',
   AGUARDANDO_ACEITE: 'Aguardando a loja aceitar',
   AGUARDANDO_PAGAMENTO: 'Aguardando pagamento',
-  PAGO: 'Pago',
-  CONFIRMADO: 'Confirmado, pagamento na entrega',
+  // Pago (PIX) e confirmado (pagamento na entrega) são os dois "a loja está preparando".
+  PAGO: 'Pago, em preparo',
+  CONFIRMADO: 'Confirmado, em preparo (pagamento na entrega)',
   EXPIRADO: 'Expirado',
   RECUSADO: 'Recusado pela loja',
   CANCELADO: 'Cancelado',

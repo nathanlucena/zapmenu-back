@@ -4,7 +4,7 @@ import { aplicarStatusPagamento } from '../application/aplicar-status-pagamento.
 import type { PaymentsServiceDeps } from '../application/dependencias.js';
 import type { GeradorCobranca } from '../application/gerar-cobranca.js';
 
-type DepsSimulacao = Pick<PaymentsServiceDeps, 'paymentsRepo' | 'ordersRepo' | 'notificarEmpreendedor'>;
+type DepsSimulacao = Pick<PaymentsServiceDeps, 'paymentsRepo' | 'ordersRepo' | 'notificarEmpreendedor' | 'avisarCliente'>;
 
 export interface OpcoesPagamentoSimulado {
   modoAutoteste: boolean;

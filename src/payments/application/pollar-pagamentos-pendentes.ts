@@ -3,7 +3,7 @@ import { aplicarStatusPagamento } from './aplicar-status-pagamento.js';
 import type { PaymentsServiceDeps } from './dependencias.js';
 
 export async function pollarPagamentosPendentes(
-  deps: Pick<PaymentsServiceDeps, 'gatewayPix' | 'paymentsRepo' | 'ordersRepo' | 'notificarEmpreendedor'>,
+  deps: Pick<PaymentsServiceDeps, 'gatewayPix' | 'paymentsRepo' | 'ordersRepo' | 'notificarEmpreendedor' | 'avisarCliente'>,
   limiteIdade: Date,
   agora: Date = new Date(),
 ): Promise<void> {

@@ -5,7 +5,7 @@ import type { PaymentsServiceDeps } from './dependencias.js';
 
 /** Grava o novo status e, se aprovado, marca o pedido como pago e avisa a loja. */
 export async function aplicarStatusPagamento(
-  deps: Pick<PaymentsServiceDeps, 'paymentsRepo' | 'ordersRepo' | 'notificarEmpreendedor'>,
+  deps: Pick<PaymentsServiceDeps, 'paymentsRepo' | 'ordersRepo' | 'notificarEmpreendedor' | 'avisarCliente'>,
   pagamento: Pagamento,
   novoStatus: StatusPagamento,
   agora: Date,
@@ -31,4 +31,5 @@ export async function aplicarStatusPagamento(
 
   const pedidoPago = await confirmarPagamento(deps.ordersRepo, pedido.id, pedido, agora);
   await deps.notificarEmpreendedor(pedidoPago);
+  await deps.avisarCliente?.(pedidoPago);
 }

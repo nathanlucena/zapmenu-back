@@ -121,6 +121,20 @@ describe('processarNotificacaoPagamento', () => {
     expect(notificacoes[0]?.id).toBe(pedido.id);
   });
 
+  it('avisa o cliente que o pagamento entrou e a loja está preparando', async () => {
+    const avisados: string[] = [];
+    deps.avisarCliente = async (p) => void avisados.push(p.codigoCurto);
+    const pedido = await criarPedidoConfirmado(ordersRepo);
+    await criarGeradorCobranca(deps).gerarCobranca(pedido);
+    const pagamento = await paymentsRepo.buscarPorPedidoId(pedido.id);
+    gateway.definirStatusConsulta(pagamento!.idTransacaoExterno, 'processed');
+
+    await processarNotificacaoPagamento(deps, { eventoId: 'evt-1', idTransacaoExterno: pagamento!.idTransacaoExterno });
+    await processarNotificacaoPagamento(deps, { eventoId: 'evt-2', idTransacaoExterno: pagamento!.idTransacaoExterno });
+
+    expect(avisados).toEqual([pedido.codigoCurto]);
+  });
+
   it('ignora reenvio do mesmo evento de webhook (idempotência)', async () => {
     const pedido = await criarPedidoConfirmado(ordersRepo);
     const gerador = criarGeradorCobranca(deps);

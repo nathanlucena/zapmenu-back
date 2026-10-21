@@ -10,4 +10,6 @@ export interface PaymentsServiceDeps {
   ordersRepo: OrdersRepository;
   idempotency: IdempotencyRepository;
   notificarEmpreendedor: (pedido: Pedido) => Promise<void>;
+  /** Avisa o cliente que o pagamento entrou e a loja está preparando. Opcional: sem a sessão de pedidos, só a loja é avisada. */
+  avisarCliente?: (pedido: Pedido) => Promise<void>;
 }

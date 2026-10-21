@@ -3,7 +3,7 @@ import { pollarPagamentosPendentes } from '../application/pollar-pagamentos-pend
 import { type PaymentsServiceDeps } from '../application/dependencias.js';
 
 export async function executarCicloPolling(
-  deps: Pick<PaymentsServiceDeps, 'gatewayPix' | 'paymentsRepo' | 'ordersRepo' | 'notificarEmpreendedor'>,
+  deps: Pick<PaymentsServiceDeps, 'gatewayPix' | 'paymentsRepo' | 'ordersRepo' | 'notificarEmpreendedor' | 'avisarCliente'>,
   idadeMinimaSegundos: number,
 ): Promise<void> {
   const limiteIdade = new Date(Date.now() - idadeMinimaSegundos * 1000);
@@ -11,7 +11,7 @@ export async function executarCicloPolling(
 }
 
 export function iniciarJobPollingPagamentos(
-  deps: Pick<PaymentsServiceDeps, 'gatewayPix' | 'paymentsRepo' | 'ordersRepo' | 'notificarEmpreendedor'>,
+  deps: Pick<PaymentsServiceDeps, 'gatewayPix' | 'paymentsRepo' | 'ordersRepo' | 'notificarEmpreendedor' | 'avisarCliente'>,
   intervaloMs: number,
   idadeMinimaSegundos: number,
 ): NodeJS.Timeout {

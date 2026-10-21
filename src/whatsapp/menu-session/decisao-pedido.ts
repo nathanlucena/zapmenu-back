@@ -31,7 +31,7 @@ async function avisarCliente(deps: DecisaoPedidoDeps, pedido: Pedido, decisao: D
   if (decisao === 'ACEITAR' && pedido.status === 'CONFIRMADO') {
     await cliente.sendText(
       pedido.telefoneCliente,
-      `A loja aceitou seu pedido ${pedido.codigoCurto}! 🎉\nPagamento: ${descreverPagamento(pedido)} — R$ ${pedido.valorTotal.toFixed(2)}.`,
+      `A loja aceitou seu pedido ${pedido.codigoCurto}! 🎉 Ela já está preparando.\nPagamento: ${descreverPagamento(pedido)} — R$ ${pedido.valorTotal.toFixed(2)}.`,
     );
   } else if (decisao === 'ACEITAR') {
     await cliente.sendText(pedido.telefoneCliente, `A loja aceitou seu pedido ${pedido.codigoCurto}! 🎉 Pague com o PIX abaixo:`);
