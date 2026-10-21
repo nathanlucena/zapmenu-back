@@ -169,7 +169,7 @@ sequenceDiagram
         Note over API,MP: job consulta pagamentos PENDENTE a cada 60 s
     end
     API->>DB: Pagamento APROVADO, Pedido PAGO
-    API-->>Dono: (pela sessão de gestão) "Novo pedido pago! PED-7KQ2 — R$ 112.00"
+    API-->>Dono: (pela sessão de gestão) "✅ Pedido pago! PED-7KQ2" + itens, entrega, total e telefone do cliente (wa.me)
 ```
 
 ### Passo a passo
@@ -406,7 +406,7 @@ Problemas e ausências encontrados no código, por impacto. Os marcados com **(f
 | L4 | Taxa de entrega fora do `valorTotal`; pedido mínimo e horário da loja não validados **(front B4, B9)** | Alto. PIX diferente do total esperado; pedidos fora do horário | Calcular com `calcularEntrega` e validar no servidor |
 | L5 | `AGUARDANDO_PAGAMENTO` nunca expira; polling sem idade máxima | Médio. Pedidos presos para sempre e consultas infinitas ao Mercado Pago | Prazo para o PIX e limite de idade no polling |
 | L6 | `CANCELADO` nunca é atribuído; pagamento `REJEITADO` não muda o pedido | Médio | Definir o que acontece em recusa e estorno |
-| L7 | Aviso de pedido pago traz só código e valor | **Parcial**: o resumo completo (itens, variações, observações, entrega) chega no pedido de aceite, antes do pagamento; o aviso de pago continua curto | Telefone do cliente no resumo |
+| ~~L7~~ | ~~Aviso de pedido pago traz só código e valor~~ | **Resolvida**: o aviso de pago traz itens, entrega, total, forma de pagamento e o telefone do cliente em link `wa.me` (`resumo-do-pedido.ts`); no pagamento na entrega, o telefone vai na confirmação do aceite. O telefone nunca aparece no app nem na API pública | — |
 | L8 | Aviso de pedido pago se perde se a sessão de gestão estiver desconectada | Médio | Guardar e reenviar ao reconectar |
 | ~~L9~~ | ~~Não existe `GET` de pedido~~ | **Resolvida**: `GET /v1/orders/:codigoCurto` (seção 8), com o PIX para copiar | — |
 | ~~L10~~ | ~~Respostas do número de pedidos mostram o status técnico~~ | **Resolvida**: mensagem por status (`ROTULO_STATUS_PEDIDO` no domínio) e PIX reenviado quando o pedido já aguarda pagamento | — |

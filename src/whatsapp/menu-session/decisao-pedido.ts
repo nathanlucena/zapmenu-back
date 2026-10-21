@@ -1,5 +1,6 @@
 import { decidirPedido } from '../../orders/application/decidir-pedido.js';
 import { OPCAO_ACEITAR, OPCAO_RECUSAR } from '../../orders/application/pedir-aceite-da-loja.js';
+import { linhaDoCliente } from '../../orders/application/resumo-do-pedido.js';
 import type { ContatoEmpreendedores } from '../../orders/application/ports/avisos-empreendedor.js';
 import type { OrdersRepository } from '../../orders/application/ports/orders.repository.js';
 import { descreverPagamento, extrairDecisaoPedido, type DecisaoPedido, type Pedido } from '../../orders/domain/pedido.js';
@@ -69,7 +70,8 @@ async function aplicarDecisao(
   if (decisao === 'RECUSAR') {
     resultado = `Pedido ${pedido.codigoCurto} recusado. ${clienteAvisado ? 'O cliente foi avisado.' : 'Não consegui avisar o cliente agora.'}`;
   } else if (decidido.status === 'CONFIRMADO') {
-    resultado = `Pedido ${pedido.codigoCurto} aceito ✅ Pagamento: ${descreverPagamento(decidido)}. ${clienteAvisado ? 'O cliente foi avisado.' : 'Não consegui avisar o cliente agora.'}`;
+    const cliente = linhaDoCliente(decidido);
+    resultado = `Pedido ${pedido.codigoCurto} aceito ✅ Pagamento: ${descreverPagamento(decidido)}. ${clienteAvisado ? 'O cliente foi avisado.' : 'Não consegui avisar o cliente agora.'}${cliente ? `\n${cliente}` : ''}`;
   } else {
     resultado = `Pedido ${pedido.codigoCurto} aceito ✅ ${clienteAvisado ? 'O PIX foi enviado ao cliente.' : 'Não consegui enviar o PIX ao cliente agora.'}`;
   }

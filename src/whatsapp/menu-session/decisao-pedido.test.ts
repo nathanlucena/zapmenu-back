@@ -143,5 +143,6 @@ describe('loja aceita ou recusa o pedido antes do PIX', () => {
     expect(pixGerados).toEqual([]);
     expect(cliente.mensagensEnviadas.at(-1)?.conteudo).toContain('Pagamento: Dinheiro na entrega (troco para R$ 100.00) — R$ 47.00');
     expect(loja.mensagensEnviadas.at(-1)?.conteudo).toContain('aceito ✅ Pagamento: Dinheiro na entrega');
+    expect(loja.mensagensEnviadas.at(-1)?.conteudo).toContain(`📞 wa.me/${TELEFONE_CLIENTE}`);
   });
 });

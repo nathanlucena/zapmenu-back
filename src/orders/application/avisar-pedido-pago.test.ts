@@ -8,7 +8,10 @@ const pedidoPago: Pedido = {
   empreendedorId: 'emp-1',
   status: 'PAGO',
   valorTotal: 112,
-  itens: [],
+  itens: [
+    { itemCardapioId: 'i1', nome: 'Calabresa', quantidade: 2, precoUnitario: 49, variacaoEscolhida: { Tamanho: 'G' }, observacao: 'bem assada' },
+    { itemCardapioId: 'i2', nome: 'Coca 2L', quantidade: 1, precoUnitario: 14 },
+  ],
   expiraEm: new Date('2026-10-17T12:20:00Z'),
   criadoEm: new Date('2026-10-17T12:00:00Z'),
 };
@@ -24,13 +27,27 @@ function criarMensageiroFake() {
 }
 
 describe('avisarPedidoPago', () => {
-  it('manda o código e o valor para o telefone do empreendedor', async () => {
+  it('manda os itens, a retirada e o total para o telefone do empreendedor', async () => {
     const mensageiro = criarMensageiroFake();
     const contatos = { telefoneDe: async (id: string) => (id === 'emp-1' ? '5581999990000' : null) };
 
     await avisarPedidoPago({ contatos, mensageiro }, pedidoPago);
 
-    expect(mensageiro.enviadas).toEqual([{ telefone: '5581999990000', texto: 'Novo pedido pago! PED-7KQ2 — R$ 112.00' }]);
+    expect(mensageiro.enviadas).toEqual([
+      {
+        telefone: '5581999990000',
+        texto: [
+          '✅ Pedido pago! PED-7KQ2 — R$ 112.00',
+          '',
+          '2x Calabresa (Tamanho: G) — R$ 98.00',
+          '   📝 bem assada',
+          '1x Coca 2L — R$ 14.00',
+          '',
+          '🏪 Retirada na loja',
+          '💰 Total: R$ 112.00 — PIX',
+        ].join('\n'),
+      },
+    ]);
   });
 
   it('não envia nada quando o empreendedor não existe', async () => {
@@ -41,7 +58,7 @@ describe('avisarPedidoPago', () => {
     expect(mensageiro.enviadas).toHaveLength(0);
   });
 
-  it('inclui cliente, entrega e observação quando o pedido traz', async () => {
+  it('inclui o cliente com o telefone em link do WhatsApp, a entrega e a observação', async () => {
     const mensageiro = criarMensageiroFake();
     const contatos = { telefoneDe: async () => '5581999990000' };
 
@@ -52,6 +69,7 @@ describe('avisarPedidoPago', () => {
         modalidade: 'ENTREGA',
         taxaEntrega: 5,
         nomeCliente: 'Ana',
+        telefoneCliente: '5581988887777',
         observacao: 'Tocar o interfone 201',
         entrega: {
           enderecoFormatado: 'Rua da Aurora, 123 - Boa Vista, Recife - PE (apto 201)',
@@ -63,13 +81,9 @@ describe('avisarPedidoPago', () => {
       },
     );
 
-    expect(mensageiro.enviadas[0]?.texto).toBe(
-      [
-        'Novo pedido pago! PED-7KQ2 — R$ 112.00',
-        '👤 Ana',
-        '🛵 Entrega em Rua da Aurora, 123 - Boa Vista, Recife - PE (apto 201) (taxa R$ 5.00)',
-        '📝 Tocar o interfone 201',
-      ].join('\n'),
-    );
+    const texto = mensageiro.enviadas[0]?.texto ?? '';
+    expect(texto.split('\n')[1]).toBe('👤 Ana · 📞 wa.me/5581988887777');
+    expect(texto).toContain('🛵 Entrega em Rua da Aurora, 123 - Boa Vista, Recife - PE (apto 201) (taxa R$ 5.00)');
+    expect(texto).toContain('📝 Tocar o interfone 201');
   });
 });
