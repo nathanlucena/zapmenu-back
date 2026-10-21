@@ -52,9 +52,19 @@ function paraDataUri(buffer: Buffer, mimetype: string | null | undefined): strin
   return `data:${mimetype ?? 'image/jpeg'};base64,${buffer.toString('base64')}`;
 }
 
+/**
+ * Data URI, URL http(s) ou base64 puro (o QR do PIX vem assim do Mercado
+ * Pago). Sem esse último caso, o base64 seria tratado como URL e o envio falharia.
+ */
 function imagemParaEnvio(imagemUrlOuBase64: string): Buffer | { url: string } {
   const dataUri = /^data:[^;]+;base64,(.*)$/s.exec(imagemUrlOuBase64);
-  return dataUri ? Buffer.from(dataUri[1] ?? '', 'base64') : { url: imagemUrlOuBase64 };
+  if (dataUri) {
+    return Buffer.from(dataUri[1] ?? '', 'base64');
+  }
+  if (/^https?:\/\//i.test(imagemUrlOuBase64)) {
+    return { url: imagemUrlOuBase64 };
+  }
+  return Buffer.from(imagemUrlOuBase64.replace(/\s/g, ''), 'base64');
 }
 
 /**

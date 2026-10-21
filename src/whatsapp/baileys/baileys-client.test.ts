@@ -138,6 +138,23 @@ describe('criarBaileysClient', () => {
     });
   });
 
+  it('envia o QR do PIX em base64 puro (como vem do Mercado Pago) como buffer, e URL http como URL', async () => {
+    const fake = criarSocketFake();
+    const client = criarBaileysClient(fake.socket);
+
+    await client.sendImage('5511911112222@s.whatsapp.net', 'QUJD', 'QR do PIX');
+    await client.sendImage('5511911112222@s.whatsapp.net', 'https://exemplo.com/qr.png');
+
+    expect(fake.sendMessage).toHaveBeenNthCalledWith(1, '5511911112222@s.whatsapp.net', {
+      image: Buffer.from('ABC'),
+      caption: 'QR do PIX',
+    });
+    expect(fake.sendMessage).toHaveBeenNthCalledWith(2, '5511911112222@s.whatsapp.net', {
+      image: { url: 'https://exemplo.com/qr.png' },
+      caption: '',
+    });
+  });
+
   describe('modo autoteste', () => {
     const autoteste = { telefoneProprio: CONTA, numerosPermitidos: ['5511922223333'] };
 
