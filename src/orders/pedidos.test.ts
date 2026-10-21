@@ -119,7 +119,7 @@ describe('confirmarRecebimentoCliente', () => {
     const repositorio = criarOrdersRepositoryFake();
     await expect(
       confirmarRecebimentoCliente(repositorio, 'PED-ZZZZ', '5511999998888'),
-    ).rejects.toThrow('não encontrado');
+    ).rejects.toThrow('Não encontrei o pedido PED-ZZZZ');
   });
 
   it('lança DomainError se o pedido já expirou', async () => {
@@ -134,6 +134,33 @@ describe('confirmarRecebimentoCliente', () => {
         new Date('2026-01-01T10:30:00Z'),
       ),
     ).rejects.toThrow('expirou');
+  });
+
+  it('devolve o pedido sem mudança quando ele já aguarda pagamento (para reenviar o PIX)', async () => {
+    const repositorio = criarOrdersRepositoryFake();
+    const criado = await criarPedido(repositorio, carrinhoValido(), 20, new Date('2026-01-01T10:00:00Z'));
+    await confirmarRecebimentoCliente(repositorio, criado.codigoCurto, '5511999998888', new Date('2026-01-01T10:05:00Z'));
+
+    const denovo = await confirmarRecebimentoCliente(
+      repositorio,
+      criado.codigoCurto,
+      '5511900001111',
+      new Date('2026-01-01T10:30:00Z'),
+    );
+
+    expect(denovo.status).toBe('AGUARDANDO_PAGAMENTO');
+    expect(denovo.telefoneCliente).toBe('5511999998888');
+  });
+
+  it('explica sem código técnico quando o pedido já foi pago', async () => {
+    const repositorio = criarOrdersRepositoryFake();
+    const criado = await criarPedido(repositorio, carrinhoValido(), 20, new Date('2026-01-01T10:00:00Z'));
+    await repositorio.atualizar(criado.id, { status: 'PAGO' });
+
+    const erro = confirmarRecebimentoCliente(repositorio, criado.codigoCurto, '5511999998888');
+
+    await expect(erro).rejects.toThrow(`O pedido ${criado.codigoCurto} já foi pago`);
+    await expect(erro).rejects.not.toThrow('PAGO');
   });
 });
 

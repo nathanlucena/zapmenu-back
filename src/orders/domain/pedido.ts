@@ -5,6 +5,15 @@ export type StatusPedido =
   | 'EXPIRADO'
   | 'CANCELADO';
 
+/** Como cada status aparece para pessoas (mensagens e logs), nunca o código técnico. */
+export const ROTULO_STATUS_PEDIDO: Record<StatusPedido, string> = {
+  AGUARDANDO_CONFIRMACAO: 'Aguardando envio no WhatsApp',
+  AGUARDANDO_PAGAMENTO: 'Aguardando pagamento',
+  PAGO: 'Pago',
+  EXPIRADO: 'Expirado',
+  CANCELADO: 'Cancelado',
+};
+
 export type ModalidadePedido = 'RETIRADA' | 'ENTREGA';
 
 /** Endereço de entrega já localizado no mapa (cópia: não muda se o cliente mudar de endereço depois). */

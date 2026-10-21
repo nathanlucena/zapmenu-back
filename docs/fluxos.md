@@ -181,9 +181,11 @@ sequenceDiagram
 | Situação | Resposta ao cliente |
 |---|---|
 | Mensagem sem código | "Não encontrei o código do pedido na mensagem. Use o link enviado pelo cardápio." |
-| Código inexistente | "Pedido PED-XXXX não encontrado." |
-| Prazo vencido | "Pedido PED-XXXX expirou." |
-| Pedido já confirmado, pago, expirado ou cancelado | "Pedido PED-XXXX está em status AGUARDANDO_PAGAMENTO e não pode ser confirmado." (texto técnico, ver lacuna L10) |
+| Código inexistente | "Não encontrei o pedido PED-XXXX. Confira o código ou faça um novo pedido pelo cardápio." |
+| Prazo vencido ou expirado | "O pedido PED-XXXX expirou. Faça um novo pedido pelo cardápio." |
+| Já aguardando pagamento (código mandado de novo) | Reenvia o mesmo PIX |
+| Já pago | "O pedido PED-XXXX já foi pago ✅" |
+| Cancelado | "O pedido PED-XXXX foi cancelado pela loja." |
 | Sucesso | "Pix copia e cola:\n…" + imagem "QR Code do Pix" |
 
 ---
@@ -389,7 +391,7 @@ Problemas e ausências encontrados no código, por impacto. Os marcados com **(f
 | L7 | Aviso de pedido pago traz só código e valor | Alto. O dono não sabe o que preparar nem para quem | Incluir itens, variações, modalidade e telefone do cliente |
 | L8 | Aviso de pedido pago se perde se a sessão de gestão estiver desconectada | Médio | Guardar e reenviar ao reconectar |
 | L9 | Não existe `GET` de pedido **(front B1)** | Alto para o front (acompanhamento) | `GET /v1/orders/:codigoCurto` |
-| L10 | Respostas do número de pedidos mostram o status técnico ("está em status AGUARDANDO_PAGAMENTO…") | Baixo | Mensagens por status, e reenviar o PIX quando já está aguardando pagamento |
+| ~~L10~~ | ~~Respostas do número de pedidos mostram o status técnico~~ | **Resolvida**: mensagem por status (`ROTULO_STATUS_PEDIDO` no domínio) e PIX reenviado quando o pedido já aguarda pagamento | — |
 | L11 | Qualquer número que escrever na gestão vira empreendedor | **Parcial (Sprint 1)**: com `GESTAO_TELEFONES_PERMITIDOS` preenchida, só esses números entram. Vazia, continua aberto | Cadastro de verdade (convite ou painel) depois do piloto |
 | L12 | Fotos em base64 no banco **(front B8)** | Médio. Cardápio público pesado | Storage de arquivos e URL pública |
 | L13 | URL do cardápio usa o telefone do dono **(front B6)** | Médio. Expõe o número pessoal | `Loja.slug` |

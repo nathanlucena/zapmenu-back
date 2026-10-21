@@ -53,6 +53,26 @@ describe('orders-inbound.router', () => {
     expect(atualizado?.telefoneCliente).toBe('5511988887777');
   });
 
+  it('reenvia o mesmo PIX quando o cliente manda o código de novo', async () => {
+    const pedido = await criarPedido(
+      ordersRepo,
+      { empreendedorId: 'emp-1', itens: [{ itemCardapioId: 'i1', quantidade: 1, precoUnitario: 25 }] },
+      20,
+    );
+    registrarOrdersInboundRouter({
+      whatsapp: whatsapp.client,
+      ordersRepo,
+      idempotency: criarIdempotencyRepositoryFake(),
+      geradorCobranca: geradorCobrancaFake(),
+    });
+
+    await whatsapp.emitirMensagem(mensagem({ id: 'msg-1', corpo: pedido.codigoCurto }));
+    await whatsapp.emitirMensagem(mensagem({ id: 'msg-2', corpo: pedido.codigoCurto }));
+
+    const pix = whatsapp.mensagensEnviadas.filter((m) => m.conteudo.includes('00020126...pix'));
+    expect(pix).toHaveLength(2);
+  });
+
   it('responde com erro amigável quando o código não existe', async () => {
     registrarOrdersInboundRouter({
       whatsapp: whatsapp.client,
@@ -63,7 +83,7 @@ describe('orders-inbound.router', () => {
 
     await whatsapp.emitirMensagem(mensagem({ corpo: 'Confirmar pedido PED-ZZZZ' }));
 
-    expect(whatsapp.mensagensEnviadas[0]?.conteudo).toContain('não encontrado');
+    expect(whatsapp.mensagensEnviadas[0]?.conteudo).toContain('Não encontrei o pedido PED-ZZZZ');
   });
 
   it('pede o código quando a mensagem não contém um', async () => {
