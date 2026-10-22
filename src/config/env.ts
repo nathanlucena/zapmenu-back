@@ -52,6 +52,9 @@ const envSchema = z.object({
   // Converte o endereço da loja em coordenada (entrega por distância). Sem chave,
   // o cadastro de endereço avisa que está indisponível.
   GOOGLE_MAPS_API_KEY: z.string().optional(),
+  // Consultas ao Google Geocoding por dia antes de o app recusar (300 x 31 dias fica abaixo das
+  // 10 mil grátis por mês). Respostas repetidas saem do cache e não contam. 0 = sem limite interno.
+  GOOGLE_GEOCODING_LIMITE_DIARIO: z.coerce.number().int().min(0).default(300),
 
   MERCADO_PAGO_ACCESS_TOKEN: z.string().min(1),
   MERCADO_PAGO_WEBHOOK_SECRET: z.string().min(1),

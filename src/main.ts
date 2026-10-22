@@ -1,6 +1,7 @@
 import { getEnv } from './config/index.js';
 import { buildApp } from './http/app.js';
 import { criarConversationRepositoryPrisma } from './menu/conversation/conversation.repository.prisma.js';
+import { comCacheELimite } from './menu/endereco/geocodificador-economico.js';
 import { criarGoogleGeocodingClient } from './menu/endereco/google-geocoding.client.js';
 import { criarViaCepClient } from './menu/endereco/viacep.client.js';
 import { criarCadastroPorLista } from './menu/gestao/cadastro-empreendedores.js';
@@ -63,7 +64,12 @@ async function main(): Promise<void> {
   }
 
   const endereco = env.GOOGLE_MAPS_API_KEY
-    ? { consultaCep: criarViaCepClient(), geocodificador: criarGoogleGeocodingClient(env.GOOGLE_MAPS_API_KEY) }
+    ? {
+        consultaCep: criarViaCepClient(),
+        geocodificador: comCacheELimite(criarGoogleGeocodingClient(env.GOOGLE_MAPS_API_KEY), {
+          limiteDiario: env.GOOGLE_GEOCODING_LIMITE_DIARIO,
+        }),
+      }
     : undefined;
   if (!endereco) {
     logger.warn('GOOGLE_MAPS_API_KEY não definida: o cadastro de endereço (entrega por distância) fica indisponível');
