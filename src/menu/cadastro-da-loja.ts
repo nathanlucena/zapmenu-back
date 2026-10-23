@@ -18,6 +18,7 @@ export interface LojaParaCadastro {
   /** Só na loja (varejo): entra nos opcionais. */
   segmento?: 'COMIDA' | 'VAREJO' | 'SERVICOS';
   politicaTroca?: string;
+  instagram?: string;
 }
 
 export interface ItemDoCadastro {
@@ -76,6 +77,7 @@ export function opcionaisDaLoja(loja: LojaParaCadastro): ItemDoCadastro[] {
     { rotulo: 'Foto de capa', ok: Boolean(loja.temCapa), comoPedir: 'mande uma foto dizendo que é a capa' },
     { rotulo: 'Cor da loja', ok: Boolean(loja.corDestaque), comoPedir: 'escolha uma cor da paleta' },
     { rotulo: 'Pedido mínimo', ok: loja.pedidoMinimo !== undefined, comoPedir: 'diga o valor mínimo de um pedido' },
+    { rotulo: 'Instagram', ok: Boolean(loja.instagram), comoPedir: 'mande o @ da loja no Instagram' },
     ...(loja.segmento === 'VAREJO'
       ? [
           {

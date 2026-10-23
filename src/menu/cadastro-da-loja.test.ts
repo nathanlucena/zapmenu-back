@@ -45,8 +45,8 @@ describe('cadastro da loja', () => {
     );
   });
 
-  it('opcionais: descrição, logo, capa, cor e pedido mínimo', () => {
+  it('opcionais: descrição, logo, capa, cor, pedido mínimo e Instagram', () => {
     const faltando = opcionaisDaLoja({ ...completa, corDestaque: '#C2410C' }).filter((item) => !item.ok);
-    expect(faltando.map((item) => item.rotulo)).toEqual(['Descrição da loja', 'Logo', 'Foto de capa', 'Pedido mínimo']);
+    expect(faltando.map((item) => item.rotulo)).toEqual(['Descrição da loja', 'Logo', 'Foto de capa', 'Pedido mínimo', 'Instagram']);
   });
 });

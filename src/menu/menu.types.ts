@@ -78,6 +78,8 @@ export interface LojaPublica {
   logoUrl?: string;
   /** Hex "#RRGGBB". */
   corDestaque?: string;
+  /** Perfil do Instagram, sem o @. */
+  instagram?: string;
   /** Fuso dos horários, ex.: "America/Sao_Paulo". */
   fuso: string;
   /** Trocas e devoluções, em texto livre (varejo). */

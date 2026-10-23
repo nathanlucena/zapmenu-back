@@ -33,6 +33,7 @@ function lojaSalva(dados: Partial<Loja> = {}): Loja {
     capaUrl: null,
     logoUrl: null,
     corDestaque: null,
+    instagram: null,
     lembreteOpcionaisEm: null,
     naoLembrarOpcionais: false,
     fuso: 'America/Sao_Paulo',

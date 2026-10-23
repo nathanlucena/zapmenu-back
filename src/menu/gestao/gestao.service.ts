@@ -595,6 +595,7 @@ function lojaParaCadastro(snapshot: SnapshotCardapio, rascunho?: DadosLoja): Loj
     pedidoMinimo: loja.pedidoMinimo,
     segmento: snapshot.segmento,
     politicaTroca: loja.politicaTroca,
+    instagram: loja.instagram,
   };
 }
 

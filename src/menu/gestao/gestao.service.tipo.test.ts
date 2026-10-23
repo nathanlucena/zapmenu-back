@@ -311,3 +311,28 @@ describe('gestão: política de troca pela conversa', () => {
     expect(saida.operacoes[0]).toMatchObject({ dados: { politicaTroca: 'Troca em 7 dias.' } });
   });
 });
+
+describe('gestão: Instagram da loja (opcional)', () => {
+  it('normaliza o @, entra no resumo e é salvo', async () => {
+    const cenario = criarCenario(false, 'COMIDA', [
+      { resposta: 'Anotei!', operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { instagram: 'https://instagram.com/PizzariaDoZe/' } }], operacoesMalformadas: [], finalizou: true, mostrarCardapio: false },
+    ]);
+
+    const resumo = textos(await cenario.enviar('nosso insta é instagram.com/PizzariaDoZe, é isso'));
+    await cenario.enviar('sim');
+
+    expect(resumo).toContain('📸 Instagram: *@pizzariadoze*');
+    expect(cenario.gestaoRepo.salvos.at(-1)?.rascunho.loja?.instagram).toBe('pizzariadoze');
+  });
+
+  it('perfil inválido vira aviso e não é anotado', async () => {
+    const cenario = criarCenario(false, 'VAREJO', [
+      { resposta: 'Anotei!', operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { instagram: 'moda da ana' } }], operacoesMalformadas: [], finalizou: false, mostrarCardapio: false },
+    ]);
+
+    const texto = textos(await cenario.enviar('o insta é moda da ana'));
+
+    expect(texto).toContain('Não reconheci "moda da ana" como perfil do Instagram');
+    expect(cenario.conversa().contexto.rascunho.loja?.instagram).toBeUndefined();
+  });
+});

@@ -10,7 +10,7 @@ import type {
 } from '../conversation/conversation-state.types.js';
 import { DIAS_SEMANA, rascunhoVazio } from '../conversation/conversation-state.types.js';
 import { mesclarConsulta } from '../endereco/endereco.service.js';
-import { corDaPaleta, gerarSlug, listaDaPaleta, nomeDaCor, problemaNoSlug } from '../vitrine.js';
+import { corDaPaleta, gerarSlug, listaDaPaleta, nomeDaCor, normalizarInstagram, problemaNoSlug } from '../vitrine.js';
 import { faixasComTaxaDecrescente, formatarKm, validarFaixas } from '../entrega.js';
 import type { SegmentoLoja } from '../menu.types.js';
 import type { SnapshotCardapio } from './gestao.repository.js';
@@ -233,6 +233,13 @@ export function aplicarOperacoes(aplicacao: AplicacaoOperacoes, operacoes: Opera
             avisos.add(`🎨 Usei o *${escolha.cor.nome}*, a cor da nossa paleta mais parecida com ${dados.corDestaque}.`);
           }
           dados.corDestaque = escolha?.cor.hex;
+        }
+        if (dados.instagram !== undefined) {
+          const perfil = normalizarInstagram(dados.instagram);
+          if (!perfil) {
+            avisos.add(`⚠️ Não reconheci "${dados.instagram}" como perfil do Instagram. Mande o @ da loja (ex.: _@modadaana_).`);
+          }
+          dados.instagram = perfil ?? undefined;
         }
         if (dados.faixasEntrega !== undefined) {
           const validacao = validarFaixas(dados.faixasEntrega);
@@ -533,6 +540,7 @@ function descreverLoja(loja: DadosLoja, atual: DadosLoja): string[] {
   if (loja.horarios !== undefined) linhas.push(`🕒 Horários: ${formatarHorarios(loja.horarios)}`);
   if (loja.slug !== undefined) linhas.push(`🔗 Link do cardápio: ${atual.slug ? `${atual.slug} → ` : ''}*${loja.slug}*`);
   if (loja.corDestaque !== undefined) linhas.push(`🎨 Cor da loja: *${nomeDaCor(loja.corDestaque)}*`);
+  if (loja.instagram !== undefined) linhas.push(`📸 Instagram: *@${loja.instagram}*`);
   if (loja.logoUrl !== undefined) linhas.push('🖼️ Logo nova 📷');
   if (loja.capaUrl !== undefined) linhas.push('🖼️ Foto de capa nova 📷');
   if (loja.aceitaPagamentoNaEntrega !== undefined) {

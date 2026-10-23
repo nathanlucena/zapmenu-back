@@ -92,6 +92,8 @@ model Loja {
   logoUrl                  String?
   /// Hex "#RRGGBB".
   corDestaque              String?
+  /// Perfil do Instagram, sem o @ (ex.: "modadaana"). Opcional.
+  instagram                String?
   /// Último lembrete dos dados opcionais (descrição, logo, capa…) mandado na gestão.
   lembreteOpcionaisEm      DateTime?
   /// A loja pediu para não lembrar mais dos opcionais.

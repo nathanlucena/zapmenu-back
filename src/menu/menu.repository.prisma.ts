@@ -89,6 +89,7 @@ export function paraLojaPublica(loja: Loja): LojaPublica {
     capaUrl: loja.capaUrl ?? undefined,
     logoUrl: loja.logoUrl ?? undefined,
     corDestaque: loja.corDestaque ?? undefined,
+    instagram: loja.instagram ?? undefined,
     fuso: loja.fuso,
     politicaTroca: loja.segmento === 'VAREJO' ? (loja.politicaTroca ?? undefined) : undefined,
     envio: freteDaLoja(loja),

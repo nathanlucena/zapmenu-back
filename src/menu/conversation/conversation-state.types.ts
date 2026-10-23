@@ -79,6 +79,8 @@ export interface DadosLoja {
   slug?: string;
   /** Hex "#RRGGBB". */
   corDestaque?: string;
+  /** Perfil do Instagram, sem o @. */
+  instagram?: string;
   /** Foto do logo (data URI), vinda de uma foto mandada na conversa. */
   logoUrl?: string;
   /** Foto de capa (data URI), vinda de uma foto mandada na conversa. */
