@@ -10,6 +10,7 @@ import { enderecoVerificadoDaLoja } from './gestao/gestao.repository.prisma.js';
 import type { CardapioPublico, HorarioLoja, ItemCardapio, ItemDraft, LojaPublica, VariacaoOpcao } from './menu.types.js';
 import { cadastroCompleto, type LojaParaCadastro } from './cadastro-da-loja.js';
 import { fotosDoItem } from './fotos-do-produto.js';
+import { freteConfigurado, type FreteFixo } from '../orders/domain/envio.js';
 
 /** Os dados da loja salva que contam para o cadastro obrigatório. */
 function lojaParaCadastro(loja: {
@@ -17,6 +18,7 @@ function lojaParaCadastro(loja: {
   slug: string | null;
   aceitaRetirada: boolean;
   fazEntrega: boolean;
+  aceitaEnvio: boolean;
   latitude: unknown;
   longitude: unknown;
   faixasEntrega: unknown;
@@ -27,10 +29,23 @@ function lojaParaCadastro(loja: {
     slug: loja.slug ?? undefined,
     aceitaRetirada: loja.aceitaRetirada,
     fazEntrega: loja.fazEntrega,
+    aceitaEnvio: loja.aceitaEnvio,
     enderecoConfirmado: loja.latitude !== null && loja.longitude !== null,
     faixasEntrega: Array.isArray(loja.faixasEntrega) ? loja.faixasEntrega : [],
     horarios: Array.isArray(loja.horarios) ? loja.horarios : [],
   };
+}
+
+/** Frete fixo configurado, ou undefined se a loja não envia (ou não pôs valor nenhum). */
+function freteDaLoja(loja: Pick<Loja, 'aceitaEnvio' | 'freteEnvio' | 'fretePorUf'>): FreteFixo | undefined {
+  if (!loja.aceitaEnvio) {
+    return undefined;
+  }
+  const frete: FreteFixo = {
+    padrao: loja.freteEnvio === null ? undefined : Number(loja.freteEnvio),
+    porUf: (loja.fretePorUf ?? {}) as Record<string, number>,
+  };
+  return freteConfigurado(frete) ? frete : undefined;
 }
 
 /** A loja salva como o app do cliente vê. */
@@ -57,6 +72,7 @@ export function paraLojaPublica(loja: Loja): LojaPublica {
     corDestaque: loja.corDestaque ?? undefined,
     fuso: loja.fuso,
     politicaTroca: loja.politicaTroca ?? undefined,
+    envio: freteDaLoja(loja),
   };
 }
 
@@ -203,6 +219,7 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
         horarios: loja.horarios as unknown as HorarioFuncionamento[],
         fuso: loja.fuso,
         segmento: loja.segmento,
+        envio: freteDaLoja(loja),
       };
       return regras;
     },

@@ -33,7 +33,10 @@ export function linhasDoPedido(pedido: Pedido): string[] {
     linhas.push(`⚠️ Pago, mas ${descreverFaltas(pedido, pedido.faltaEstoque)}. Combine com o cliente (troca ou devolução).`);
   }
   linhas.push('');
-  if (pedido.modalidade === 'ENTREGA' && pedido.entrega) {
+  if (pedido.modalidade === 'ENVIO' && pedido.entrega) {
+    const frete = pedido.taxaEntrega ? ` (frete ${reais(pedido.taxaEntrega)})` : '';
+    linhas.push(`📦 Enviar pelos Correios para ${pedido.entrega.enderecoFormatado}${frete}`);
+  } else if (pedido.modalidade === 'ENTREGA' && pedido.entrega) {
     const taxa = pedido.taxaEntrega ? ` (taxa ${reais(pedido.taxaEntrega)})` : '';
     linhas.push(`🛵 Entrega em ${pedido.entrega.enderecoFormatado}${taxa}`);
   } else {

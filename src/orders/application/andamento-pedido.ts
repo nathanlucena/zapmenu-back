@@ -20,9 +20,14 @@ export const OPCAO_SEPARADO = 'Separado';
 
 /** Opções da enquete de andamento, na ordem em que a loja usa: primeiro a caminho, depois concluído. */
 export function opcoesDeAndamento(pedido: Pick<Pedido, 'modalidade'>): { aCaminho: string; concluido: string } {
-  return pedido.modalidade === 'ENTREGA'
-    ? { aCaminho: 'Saiu para entrega', concluido: 'Entregue' }
-    : { aCaminho: 'Pronto para retirar', concluido: 'Retirado' };
+  switch (pedido.modalidade) {
+    case 'ENTREGA':
+      return { aCaminho: 'Saiu para entrega', concluido: 'Entregue' };
+    case 'ENVIO':
+      return { aCaminho: 'Enviado', concluido: 'Entregue' };
+    default:
+      return { aCaminho: 'Pronto para retirar', concluido: 'Retirado' };
+  }
 }
 
 export function andamentoDaOpcao(pedido: Pick<Pedido, 'modalidade'>, opcao: string): AndamentoPedido | undefined {
@@ -105,7 +110,7 @@ export async function atualizarAndamento(
       : `ainda não foi pago ou aceito (${ROTULO_STATUS_PEDIDO[pedido.status].toLowerCase()})`;
     throw new DomainError(`O pedido ${pedido.codigoCurto} ${motivo}.`, 'TRANSICAO_INVALIDA', 'CONFLITO');
   }
-  if (proximo === 'ENVIADO' && pedido.modalidade !== 'ENTREGA') {
+  if (proximo === 'ENVIADO' && (pedido.modalidade ?? 'RETIRADA') === 'RETIRADA') {
     throw new DomainError(
       `O pedido ${pedido.codigoCurto} é para retirar na loja, não para enviar.`,
       'TRANSICAO_INVALIDA',

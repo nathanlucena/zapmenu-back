@@ -84,6 +84,12 @@ export interface DadosLoja {
   /** Foto de capa (data URI), vinda de uma foto mandada na conversa. */
   capaUrl?: string;
   aceitaPagamentoNaEntrega?: boolean;
+  /** Envia pelos Correios com frete fixo (varejo). */
+  aceitaEnvio?: boolean;
+  /** Frete para qualquer UF sem valor próprio. */
+  freteEnvio?: number;
+  /** Exceções por UF: { "PE": 12 }. Substitui a lista anterior inteira. */
+  fretePorUf?: Record<string, number>;
 }
 
 /** Item que ainda não existe no cardápio; `ref` é o apelido usado pela IA (ex.: "n1"). */

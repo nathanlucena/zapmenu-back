@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { criarOrdersRepositoryFake } from '../__mocks__/orders.repository.fake.js';
-import { extrairAndamentoPedido } from '../domain/pedido.js';
+import { extrairAndamentoPedido, statusACaminho } from '../domain/pedido.js';
 import {
   andamentoDaOpcao,
   atualizarAndamento,
+  opcoesDeAndamento,
   concluirPedidosAntigos,
   pedirAndamentoDaLoja,
 } from './andamento-pedido.js';
@@ -130,6 +131,12 @@ describe('enquete de andamento por segmento', () => {
   it('varejo ganha "Separado" antes de sair', async () => {
     expect(await opcoesDaEnquete('VAREJO')).toEqual(['Separado', 'Saiu para entrega', 'Entregue']);
     expect(andamentoDaOpcao({ modalidade: 'ENTREGA' }, 'Separado')).toBe('SEPARADO');
+  });
+
+  it('envio pelos Correios: "Enviado" leva o pedido para ENVIADO', async () => {
+    expect(opcoesDeAndamento({ modalidade: 'ENVIO' })).toEqual({ aCaminho: 'Enviado', concluido: 'Entregue' });
+    expect(andamentoDaOpcao({ modalidade: 'ENVIO' }, 'Enviado')).toBe('A_CAMINHO');
+    expect(statusACaminho('ENVIO')).toBe('ENVIADO');
   });
 
   it('comida continua com as duas opções de sempre', async () => {

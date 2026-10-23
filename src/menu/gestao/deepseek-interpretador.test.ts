@@ -57,6 +57,19 @@ describe('interpretarRespostaDaIA', () => {
     expect(saida.operacoesMalformadas).toHaveLength(3);
   });
 
+  it('entende o frete do envio pelos Correios', () => {
+    const saida = interpretarRespostaDaIA(
+      JSON.stringify({
+        operacoes: [{ tipo: 'atualizar_loja', aceita_envio: true, frete_envio: '25,00', frete_por_uf: { pe: 12, PB: '15' } }],
+      }),
+    );
+
+    expect(saida.operacoes[0]).toMatchObject({
+      tipo: 'ATUALIZAR_LOJA',
+      dados: { aceitaEnvio: true, freteEnvio: 25, fretePorUf: { PE: 12, PB: 15 } },
+    });
+  });
+
   it('preenche os campos ausentes com valores neutros', () => {
     const saida = interpretarRespostaDaIA('{}');
 

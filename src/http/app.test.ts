@@ -229,7 +229,7 @@ describe('POST /v1/orders', () => {
         campos: {
           empreendedorId: 'é obrigatório',
           'itens.0.quantidade': 'deve ser maior que 0',
-          modalidade: 'deve ser um destes: RETIRADA, ENTREGA',
+          modalidade: 'deve ser um destes: RETIRADA, ENTREGA, ENVIO',
           'endereco.uf': expect.stringContaining('2'),
         },
       },

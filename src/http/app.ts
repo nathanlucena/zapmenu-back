@@ -52,6 +52,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         cardapioDePrecos: criarCardapioDePrecos(deps.menuRepo),
         lojaParaPedidos: criarLojaParaPedidos(deps.menuRepo),
         localizador: deps.endereco && criarLocalizadorEntrega(deps.endereco),
+        consultaCep: deps.endereco?.consultaCep,
         pedidoTtlMinutos: deps.pedidoTtlMinutos,
       });
       if (deps.previas) {

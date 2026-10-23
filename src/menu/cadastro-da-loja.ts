@@ -4,6 +4,8 @@ export interface LojaParaCadastro {
   slug?: string;
   aceitaRetirada?: boolean;
   fazEntrega?: boolean;
+  /** Envio pelos Correios (varejo) também conta como forma de entregar. */
+  aceitaEnvio?: boolean;
   /** Endereço confirmado (CEP + número → mapa → "sim"). */
   enderecoConfirmado: boolean;
   faixasEntrega?: unknown[];
@@ -38,7 +40,7 @@ export function obrigatoriosDaLoja(loja: LojaParaCadastro | null | undefined): I
     },
     {
       rotulo: 'Como entrega (retirada, entrega ou os dois)',
-      ok: l.aceitaRetirada === true || l.fazEntrega === true,
+      ok: l.aceitaRetirada === true || l.fazEntrega === true || l.aceitaEnvio === true,
       comoPedir: 'Você faz entrega, só retirada no local ou os dois?',
     },
     {

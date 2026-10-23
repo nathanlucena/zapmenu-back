@@ -82,6 +82,8 @@ export interface LojaPublica {
   fuso: string;
   /** Trocas e devoluções, em texto livre (varejo). */
   politicaTroca?: string;
+  /** Envio pelos Correios com frete fixo; ausente quando a loja não envia. */
+  envio?: { padrao?: number; porUf: Record<string, number> };
 }
 
 /** Uma seção do cardápio; `id` null é o grupo "Outros" (itens sem categoria). */

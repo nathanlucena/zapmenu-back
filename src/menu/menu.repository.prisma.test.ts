@@ -37,6 +37,9 @@ function lojaSalva(dados: Partial<Loja> = {}): Loja {
     fuso: 'America/Sao_Paulo',
     politicaTroca: null,
     cepOrigem: null,
+    aceitaEnvio: false,
+    freteEnvio: null,
+    fretePorUf: {},
     atualizadoEm: new Date('2026-10-23T12:00:00Z'),
     ...dados,
   };

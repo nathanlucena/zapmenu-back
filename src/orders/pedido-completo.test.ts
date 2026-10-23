@@ -222,3 +222,48 @@ describe('regras da loja', () => {
     expect(resposta.json().codigo).toBe('LOJA_FECHADA');
   });
 });
+
+describe('pedido com envio pelos Correios', () => {
+  async function montarComEnvio(envio: RegrasDaLoja['envio']) {
+    return montar({ envio });
+  }
+
+  it('soma o frete fixo da UF no total e guarda o endereço do CEP', async () => {
+    const { pedir, endereco } = await montarComEnvio({ padrao: 25, porUf: { PE: 12 } });
+
+    const resposta = await pedir({ modalidade: 'ENVIO', endereco: ENDERECO_CLIENTE });
+
+    expect(resposta.statusCode).toBe(201);
+    expect(resposta.json().pedido).toMatchObject({
+      modalidade: 'ENVIO',
+      taxaEntrega: 12,
+      valorTotal: 52,
+      entrega: { uf: 'PE', cidade: 'Recife', enderecoFormatado: 'Rua da Aurora, 123 - apto 201 - Boa Vista, Recife - PE, 50050-000' },
+    });
+    expect(endereco.buscasGeo).toEqual([]);
+  });
+
+  it('cotação do envio mostra o frete antes do pedido', async () => {
+    const { app } = await montarComEnvio({ padrao: 25, porUf: {} });
+
+    const resposta = await app.inject({
+      method: 'POST',
+      url: '/v1/envio/cotacao',
+      payload: { empreendedorId: 'emp-1', endereco: ENDERECO_CLIENTE },
+    });
+
+    expect(resposta.json()).toEqual({
+      envio: { enderecoFormatado: 'Rua da Aurora, 123 - apto 201 - Boa Vista, Recife - PE, 50050-000', uf: 'PE', frete: 25 },
+    });
+  });
+
+  it('envio só com PIX e só em loja que envia', async () => {
+    const { pedir } = await montarComEnvio({ padrao: 25, porUf: {} });
+    const semEnvio = await montar();
+
+    expect((await pedir({ modalidade: 'ENVIO', endereco: ENDERECO_CLIENTE, formaPagamento: 'DINHEIRO' })).json().erro).toBe(
+      'No envio pelos Correios o pagamento é só por PIX.',
+    );
+    expect((await semEnvio.pedir({ modalidade: 'ENVIO', endereco: ENDERECO_CLIENTE })).json().codigo).toBe('ENVIO_INDISPONIVEL');
+  });
+});

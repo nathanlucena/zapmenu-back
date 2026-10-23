@@ -416,6 +416,7 @@ function lojaParaCadastro(snapshot: SnapshotCardapio, rascunho?: DadosLoja): Loj
     slug: loja.slug,
     aceitaRetirada: loja.aceitaRetirada,
     fazEntrega: loja.fazEntrega,
+    aceitaEnvio: loja.aceitaEnvio,
     enderecoConfirmado: Boolean(loja.enderecoVerificado),
     faixasEntrega: loja.faixasEntrega,
     horarios: loja.horarios,

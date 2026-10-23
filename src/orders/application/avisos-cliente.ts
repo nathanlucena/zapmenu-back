@@ -17,7 +17,9 @@ export function mensagemAndamento(
     : '';
   switch (pedido.status) {
     case 'SEPARADO':
-      return `Seu pedido ${pedido.codigoCurto} foi separado 📦 Avisamos quando ${pedido.modalidade === 'ENTREGA' ? 'sair' : 'estiver pronto para retirar'}.`;
+      return `Seu pedido ${pedido.codigoCurto} foi separado 📦 Avisamos quando ${
+        pedido.modalidade === 'ENTREGA' ? 'sair' : pedido.modalidade === 'ENVIO' ? 'for enviado' : 'estiver pronto para retirar'
+      }.`;
     case 'ENVIADO': {
       const por = !pedido.transportadora
         ? ''

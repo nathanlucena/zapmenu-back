@@ -450,6 +450,12 @@ function descreverLoja(loja: DadosLoja, atual: DadosLoja): string[] {
   if (loja.aceitaPagamentoNaEntrega !== undefined) {
     linhas.push(`💵 Pagamento na entrega (dinheiro ou cartão): *${simNao(loja.aceitaPagamentoNaEntrega)}*`);
   }
+  if (loja.aceitaEnvio !== undefined) linhas.push(`📦 Envia pelos Correios: *${simNao(loja.aceitaEnvio)}*`);
+  if (loja.freteEnvio !== undefined) linhas.push(`📦 Frete para o Brasil: *${formatarPreco(loja.freteEnvio)}*`);
+  if (loja.fretePorUf !== undefined) {
+    const porUf = Object.entries(loja.fretePorUf).map(([uf, frete]) => `${uf} ${formatarPreco(frete)}`);
+    linhas.push(`📦 Frete por estado: *${porUf.length ? porUf.join(' · ') : 'nenhum'}*`);
+  }
   return linhas;
 }
 

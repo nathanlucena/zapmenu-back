@@ -51,13 +51,13 @@ OPERAÇÕES (cada uma é um objeto com "tipo"):
 - {"tipo": "nova_categoria", "nome": "Bebidas"}
 - {"tipo": "renomear_categoria", "categoria_id": "...", "novo_nome": "..."}
 - {"tipo": "remover_categoria", "categoria_id": "..."} — os itens dela ficam sem categoria.
-- {"tipo": "atualizar_loja", "nome": "...", "descricao": "...", "aceita_retirada": true, "faz_entrega": true, "faixas_entrega": [...], "pedido_minimo": 30, "horarios": [...], "link": "pizzaria-do-ze", "cor_destaque": "laranja", "aceita_pagamento_na_entrega": true} — só os campos que mudam. Endereço NÃO vai aqui. aceita_pagamento_na_entrega: se o cliente pode pagar em dinheiro ou cartão na entrega/no balcão, além do PIX ("não aceito dinheiro", "só PIX" → false).
+- {"tipo": "atualizar_loja", "nome": "...", "descricao": "...", "aceita_retirada": true, "faz_entrega": true, "faixas_entrega": [...], "pedido_minimo": 30, "horarios": [...], "link": "pizzaria-do-ze", "cor_destaque": "laranja", "aceita_pagamento_na_entrega": true, "aceita_envio": true, "frete_envio": 25, "frete_por_uf": {"PE": 12}} — só os campos que mudam. Endereço NÃO vai aqui. aceita_pagamento_na_entrega: se o cliente pode pagar em dinheiro ou cartão na entrega/no balcão, além do PIX ("não aceito dinheiro", "só PIX" → false). aceita_envio: se envia pelos Correios para outras cidades; frete_envio: frete fixo para o Brasil todo; frete_por_uf: só os estados com valor diferente ("envio pra todo o Brasil por 25, aqui em PE é 12" → aceita_envio true, frete_envio 25, frete_por_uf {"PE": 12}; "só envio pra PE e PB por 15" → frete_por_uf {"PE": 15, "PB": 15}, sem frete_envio).
 - {"tipo": "definir_endereco", "cep": "50050000", "numero": "123", "complemento": "loja 2"} — endereço da loja. Também aceita "rua", "bairro", "cidade", "uf" e "sem_numero": true.
 - {"tipo": "confirmar_endereco"} / {"tipo": "recusar_endereco"} — resposta da pessoa quando endereco_pendente existe ("é aí mesmo" / "não é aí").
 - {"tipo": "descartar_tudo"} — a pessoa quer jogar fora todas as alterações anotadas.
 
 FORMATOS
-- preco, pedido_minimo, taxa (das faixas) e preco_adicional: número em reais com ponto decimal ("39,90" → 39.9; "42 reais" → 42).
+- preco, pedido_minimo, taxa (das faixas), frete_envio, os valores de frete_por_uf e preco_adicional: número em reais com ponto decimal ("39,90" → 39.9; "42 reais" → 42).
 - nome: nome do produto com iniciais maiúsculas, sem verbos ("coloca uma pizza calabresa" → "Pizza Calabresa"). descricao: detalhes (ingredientes, tamanho), sem o preço.
 - variacoes: lista COMPLETA de variações do item (substitui as anteriores): [{"nome": "Tamanho", "opcoes": [{"nome": "P", "preco_adicional": 0}, {"nome": "G", "preco_adicional": 15}]}]. O preço do item é o da opção mais barata; preco_adicional é a diferença.
 - faixas_entrega: lista COMPLETA (substitui a anterior), uma faixa por distância: [{"ate_km": 1, "taxa": 0}, {"ate_km": 3, "taxa": 5}]. "grátis", "de graça", "sem taxa" → taxa 0. "500 metros" → ate_km 0.5. A maior distância é o limite de entrega.
@@ -137,6 +137,14 @@ const faixasEntrega = z
   .array(z.object({ ate_km: numeroLivre, taxa: numeroLivre }))
   .nullish()
   .transform((valor) => valor?.map((faixa) => ({ ateKm: faixa.ate_km, taxa: faixa.taxa })));
+
+/** { "pe": "12,50" } → { PE: 12.5 }; UF com 2 letras. */
+const fretePorUf = z
+  .record(z.string().trim().regex(/^[a-z]{2}$/i), numeroLivre.pipe(z.number().nonnegative()))
+  .nullish()
+  .transform((valor) =>
+    valor ? Object.fromEntries(Object.entries(valor).map(([uf, frete]) => [uf.toUpperCase(), frete])) : undefined,
+  );
 
 /** CEP e número podem vir como número no json. */
 const textoOuNumero = z
@@ -287,6 +295,9 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
       link: texto,
       cor_destaque: texto,
       aceita_pagamento_na_entrega: booleano,
+      aceita_envio: booleano,
+      frete_envio: numero,
+      frete_por_uf: fretePorUf,
     })
     .transform((op): Operacao => ({
       tipo: 'ATUALIZAR_LOJA',
@@ -301,6 +312,9 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
         slug: op.link,
         corDestaque: op.cor_destaque,
         aceitaPagamentoNaEntrega: op.aceita_pagamento_na_entrega,
+        aceitaEnvio: op.aceita_envio,
+        freteEnvio: op.frete_envio,
+        fretePorUf: op.frete_por_uf,
       },
     })),
   z

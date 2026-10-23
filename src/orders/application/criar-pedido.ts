@@ -12,8 +12,14 @@ import {
   type Pedido,
 } from '../domain/pedido.js';
 import { cotarEntrega } from './cotar-entrega.js';
+import { cotarEnvio } from './cotar-envio.js';
 import type { CardapioDePrecos, ItemCarrinho } from './ports/cardapio-de-precos.js';
-import type { EnderecoDigitado, LocalizadorEndereco, LojaParaPedidos } from './ports/loja-para-pedidos.js';
+import type {
+  ConsultaCepParaEnvio,
+  EnderecoDigitado,
+  LocalizadorEndereco,
+  LojaParaPedidos,
+} from './ports/loja-para-pedidos.js';
 import type { OrdersRepository } from './ports/orders.repository.js';
 
 async function gerarCodigoUnico(repositorio: OrdersRepository): Promise<string> {
@@ -63,6 +69,8 @@ export interface CriarPedidoDoCarrinhoDeps {
   lojaParaPedidos: LojaParaPedidos;
   /** Sem ele (ex.: sem chave do Google), a loja só aceita retirada. */
   localizador?: LocalizadorEndereco;
+  /** Sem ele, não há envio pelos Correios. */
+  consultaCep?: ConsultaCepParaEnvio;
   pedidoTtlMinutos: number;
 }
 
@@ -70,7 +78,7 @@ export interface CarrinhoDoApp {
   empreendedorId: string;
   itens: ItemCarrinho[];
   modalidade: ModalidadePedido;
-  /** Obrigatório na entrega. */
+  /** Obrigatório na entrega e no envio. */
   endereco?: EnderecoDigitado;
   nomeCliente?: string;
   observacao?: string;
@@ -116,6 +124,9 @@ export async function criarPedidoDoCarrinho(
   if (pagaNaEntrega(formaPagamento) && !regras.aceitaPagamentoNaEntrega) {
     throw new DomainError('Esta loja só aceita pagamento por PIX.', 'PAGAMENTO_NA_ENTREGA_INDISPONIVEL');
   }
+  if (pagaNaEntrega(formaPagamento) && carrinho.modalidade === 'ENVIO') {
+    throw new DomainError('No envio pelos Correios o pagamento é só por PIX.', 'PAGAMENTO_NA_ENTREGA_INDISPONIVEL');
+  }
 
   const detalhes: DetalhesPedido = {
     modalidade: carrinho.modalidade,
@@ -132,9 +143,15 @@ export async function criarPedidoDoCarrinho(
     if (!carrinho.endereco) {
       throw new DomainError('Informe o endereço de entrega.', 'ENDERECO_INVALIDO');
     }
-    const cotacao = await cotarEntrega(regras, deps.localizador, carrinho.endereco);
-    detalhes.taxaEntrega = cotacao.taxa;
-    detalhes.entrega = cotacao.endereco;
+    if (carrinho.modalidade === 'ENVIO') {
+      const cotacao = await cotarEnvio(regras, deps.consultaCep, carrinho.endereco);
+      detalhes.taxaEntrega = cotacao.frete;
+      detalhes.entrega = cotacao.endereco;
+    } else {
+      const cotacao = await cotarEntrega(regras, deps.localizador, carrinho.endereco);
+      detalhes.taxaEntrega = cotacao.taxa;
+      detalhes.entrega = cotacao.endereco;
+    }
   }
 
   const total = arredondar(subtotal + (detalhes.taxaEntrega ?? 0));

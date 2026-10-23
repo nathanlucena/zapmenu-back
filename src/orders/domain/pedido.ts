@@ -31,7 +31,8 @@ export const ROTULO_STATUS_PEDIDO: Record<StatusPedido, string> = {
   CANCELADO: 'Cancelado',
 };
 
-export type ModalidadePedido = 'RETIRADA' | 'ENTREGA';
+/** ENVIO: pelos Correios/transportadora, com frete fixo (varejo). */
+export type ModalidadePedido = 'RETIRADA' | 'ENTREGA' | 'ENVIO';
 
 /** PIX antes; dinheiro ou cartão na maquininha, na entrega ou no balcão. */
 export type FormaPagamento = 'PIX' | 'DINHEIRO' | 'CARTAO';
@@ -42,7 +43,7 @@ export function pagaNaEntrega(forma: FormaPagamento | undefined): boolean {
 
 /** "Dinheiro na entrega (troco para R$ 100.00)", "Cartão no balcão", "PIX". */
 export function descreverPagamento(pedido: Pick<DetalhesPedido, 'formaPagamento' | 'trocoPara' | 'modalidade'>): string {
-  const onde = pedido.modalidade === 'ENTREGA' ? 'na entrega' : 'no balcão';
+  const onde = pedido.modalidade === 'RETIRADA' ? 'no balcão' : 'na entrega';
   switch (pedido.formaPagamento) {
     case 'DINHEIRO':
       return `Dinheiro ${onde}${pedido.trocoPara ? ` (troco para R$ ${pedido.trocoPara.toFixed(2)})` : ' (sem troco)'}`;
@@ -68,14 +69,17 @@ export interface EnderecoEntrega {
   distanciaKm: number;
 }
 
+/** Endereço de envio pelos Correios: vem do CEP, sem mapa nem distância. */
+export type EnderecoEnvio = Omit<EnderecoEntrega, 'latitude' | 'longitude' | 'distanciaKm'>;
+
 /** O que o cliente informou além dos itens. Pedidos antigos não têm esses campos. */
 export interface DetalhesPedido {
   modalidade?: ModalidadePedido;
   nomeCliente?: string;
   observacao?: string;
-  /** Já somada no valorTotal. */
+  /** Taxa de entrega ou frete do envio. Já somada no valorTotal. */
   taxaEntrega?: number;
-  entrega?: EnderecoEntrega;
+  entrega?: EnderecoEntrega | EnderecoEnvio;
   /** Ausente = PIX (pedidos antigos). */
   formaPagamento?: FormaPagamento;
   /** Só no dinheiro: quanto o cliente vai entregar. */
@@ -321,9 +325,16 @@ export function extrairAndamentoPedido(
   };
 }
 
-/** Saiu para entrega ou pronto para retirar, conforme a modalidade. */
+/** Saiu para entrega, enviado ou pronto para retirar, conforme a modalidade. */
 export function statusACaminho(modalidade: ModalidadePedido | undefined): StatusPedido {
-  return modalidade === 'ENTREGA' ? 'SAIU_PARA_ENTREGA' : 'PRONTO_PARA_RETIRADA';
+  switch (modalidade) {
+    case 'ENTREGA':
+      return 'SAIU_PARA_ENTREGA';
+    case 'ENVIO':
+      return 'ENVIADO';
+    default:
+      return 'PRONTO_PARA_RETIRADA';
+  }
 }
 
 /** Status que vencem em `expiraEm`: o cliente não mandou o código ou a loja não respondeu. */

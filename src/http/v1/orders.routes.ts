@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { consultarPedido } from '../../orders/application/consultar-pedido.js';
 import { cotarEntrega } from '../../orders/application/cotar-entrega.js';
+import { cotarEnvio } from '../../orders/application/cotar-envio.js';
 import { criarPedidoDoCarrinho, type CriarPedidoDoCarrinhoDeps } from '../../orders/application/criar-pedido.js';
 import { DomainError } from '../../shared/errors/domain-error.js';
 import { detalhesDaValidacao } from '../validacao/mensagens-zod.js';
@@ -38,7 +39,7 @@ const carrinhoInputSchema = z
       )
       .min(1),
     // Padrão RETIRADA: o app antigo não manda a modalidade.
-    modalidade: z.enum(['RETIRADA', 'ENTREGA']).default('RETIRADA'),
+    modalidade: z.enum(['RETIRADA', 'ENTREGA', 'ENVIO']).default('RETIRADA'),
     endereco: enderecoSchema.optional(),
     nomeCliente: texto(80).optional(),
     observacao: texto(280).optional(),
@@ -99,6 +100,24 @@ export function registerOrdersRoutes(app: FastifyInstance, deps: CriarPedidoDoCa
         avisos: cotacao.avisos,
       },
     };
+  });
+
+  /** Frete fixo do envio pelos Correios, para o app mostrar o total antes de criar o pedido. */
+  app.post('/envio/cotacao', async (request, reply) => {
+    const parseResult = cotacaoInputSchema.safeParse(request.body);
+    if (!parseResult.success) {
+      return reply
+        .status(400)
+        .send({ erro: 'Endereço inválido.', codigo: 'ENDERECO_INVALIDO', detalhes: detalhesDaValidacao(parseResult.error) });
+    }
+
+    const { empreendedorId, endereco } = parseResult.data;
+    const regras = await deps.lojaParaPedidos.regrasDe(empreendedorId);
+    if (!regras) {
+      throw new DomainError('Loja não encontrada.', 'LOJA_NAO_ENCONTRADA', 'NAO_ENCONTRADO');
+    }
+    const cotacao = await cotarEnvio(regras, deps.consultaCep, endereco);
+    return { envio: { enderecoFormatado: cotacao.endereco.enderecoFormatado, uf: cotacao.endereco.uf, frete: cotacao.frete } };
   });
 
   app.get('/orders/:codigoCurto', async (request) => {

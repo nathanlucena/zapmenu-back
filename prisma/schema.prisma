@@ -100,6 +100,12 @@ model Loja {
   politicaTroca            String?
   /// CEP de onde saem as encomendas, para cotar frete. Só uso interno.
   cepOrigem                String?
+  /// Envia pelos Correios/transportadora, com frete fixo (varejo).
+  aceitaEnvio              Boolean      @default(false)
+  /// Frete fixo para qualquer UF sem valor próprio em fretePorUf. Sem ele, só envia para as UFs listadas.
+  freteEnvio               Decimal?     @db.Decimal(10, 2)
+  /// Exceções por UF: { "PE": 12, "SP": 30 }.
+  fretePorUf               Json         @default("{}")
   atualizadoEm             DateTime     @updatedAt
 }
 
@@ -242,6 +248,8 @@ model Pedido {
 enum ModalidadePedido {
   RETIRADA
   ENTREGA
+  /// Pelos Correios/transportadora, com frete fixo; sem raio de km.
+  ENVIO
 }
 
 model ItemPedido {

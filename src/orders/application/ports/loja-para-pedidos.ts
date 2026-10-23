@@ -1,4 +1,5 @@
 import type { HorarioFuncionamento } from '../../domain/horario-loja.js';
+import type { FreteFixo } from '../../domain/envio.js';
 import type { EnderecoEntrega } from '../../domain/pedido.js';
 
 export interface FaixaTaxaEntrega {
@@ -20,6 +21,8 @@ export interface RegrasDaLoja {
   pedidoMinimo?: number;
   horarios: HorarioFuncionamento[];
   fuso?: string;
+  /** Envio pelos Correios com frete fixo. Ausente = não envia (lojas antigas). */
+  envio?: FreteFixo;
   /** Ramo da loja; muda as etapas oferecidas à loja (varejo tem "Separado"). */
   segmento?: 'COMIDA' | 'VAREJO' | 'SERVICOS';
 }
@@ -50,6 +53,20 @@ export type ResultadoLocalizacao =
   | { tipo: 'INVALIDO'; motivo: string }
   | { tipo: 'NAO_ENCONTRADO' }
   | { tipo: 'INDISPONIVEL' };
+
+/** Dados do CEP (ViaCEP), para o envio: só precisa da UF e da rua, sem mapa. */
+export interface DadosDoCep {
+  cep: string;
+  logradouro?: string;
+  bairro?: string;
+  cidade?: string;
+  uf?: string;
+}
+
+export interface ConsultaCepParaEnvio {
+  /** null = CEP não existe. Lança erro se o serviço falhar. */
+  buscarCep(cep: string): Promise<DadosDoCep | null>;
+}
 
 /** Transforma o endereço digitado numa coordenada (ViaCEP + mapa). */
 export interface LocalizadorEndereco {
