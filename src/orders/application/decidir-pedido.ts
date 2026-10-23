@@ -52,6 +52,8 @@ export async function decidirPedido(
   if (decisao === 'RECUSAR') {
     return deps.ordersRepo.atualizar(pedido.id, { status: 'RECUSADO' });
   }
+  // TODO(varejo): no CONFIRMADO (pagamento na entrega) o pedido também vira venda:
+  // dar baixa no estoque dos SKUs aqui, como no PAGO de confirmar-pagamento.ts.
   return pagaNaEntrega(pedido.formaPagamento)
     ? deps.ordersRepo.atualizar(pedido.id, { status: 'CONFIRMADO', confirmadoEm: agora })
     : deps.ordersRepo.atualizar(pedido.id, { status: 'AGUARDANDO_PAGAMENTO' });
