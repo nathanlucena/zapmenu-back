@@ -117,6 +117,7 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
               aceitaEnvio: loja.aceitaEnvio,
               freteEnvio: loja.freteEnvio === null ? undefined : Number(loja.freteEnvio),
               fretePorUf: loja.fretePorUf as Record<string, number>,
+              politicaTroca: loja.politicaTroca ?? undefined,
             }
           : {},
         lojaSalva: {
@@ -325,6 +326,7 @@ async function salvarLoja(tx: Tx, empreendedorId: string, loja: DadosLoja): Prom
     aceitaEnvio: loja.aceitaEnvio,
     freteEnvio: loja.freteEnvio,
     fretePorUf: loja.fretePorUf as Prisma.InputJsonValue | undefined,
+    politicaTroca: loja.politicaTroca,
   });
   // O endereço é gravado inteiro (null limpa o que não veio), para não misturar com o anterior.
   const dadosEndereco = endereco && {

@@ -15,6 +15,9 @@ export interface LojaParaCadastro {
   temCapa?: boolean;
   corDestaque?: string;
   pedidoMinimo?: number;
+  /** Só na loja (varejo): entra nos opcionais. */
+  segmento?: 'COMIDA' | 'VAREJO' | 'SERVICOS';
+  politicaTroca?: string;
 }
 
 export interface ItemDoCadastro {
@@ -73,6 +76,15 @@ export function opcionaisDaLoja(loja: LojaParaCadastro): ItemDoCadastro[] {
     { rotulo: 'Foto de capa', ok: Boolean(loja.temCapa), comoPedir: 'mande uma foto dizendo que é a capa' },
     { rotulo: 'Cor da loja', ok: Boolean(loja.corDestaque), comoPedir: 'escolha uma cor da paleta' },
     { rotulo: 'Pedido mínimo', ok: loja.pedidoMinimo !== undefined, comoPedir: 'diga o valor mínimo de um pedido' },
+    ...(loja.segmento === 'VAREJO'
+      ? [
+          {
+            rotulo: 'Política de troca',
+            ok: Boolean(loja.politicaTroca?.trim()),
+            comoPedir: 'diga como funcionam as trocas (ex.: troca em até 7 dias com etiqueta)',
+          },
+        ]
+      : []),
   ];
 }
 

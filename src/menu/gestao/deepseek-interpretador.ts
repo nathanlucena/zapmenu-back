@@ -117,6 +117,7 @@ TIPO DA LOJA: LOJA (produtos: roupas, acessórios…)
 - Fotos: cada produto pode ter várias. Cada anexar_foto ACRESCENTA uma foto à galeria (não troca a anterior). Se a legenda disser a cor da peça na foto ("essa é a azul", "preta"), mande "cor": "Azul" no anexar_foto.
 - NUNCA use variacoes (adicionais com preço) neste tipo. Se a pessoa pedir adicional, explique numa frase que adicionais são do tipo *Cardápio* e que ela pode mandar *mudar tipo da loja*.
 - Envio pelos Correios em atualizar_loja: "aceita_envio": true, "frete_envio": 25 (frete fixo para o Brasil todo), "frete_por_uf": {"PE": 12} (só os estados com valor diferente). "envio pra todo o Brasil por 25, aqui em PE é 12" → aceita_envio true, frete_envio 25, frete_por_uf {"PE": 12}; "só envio pra PE e PB por 15" → frete_por_uf {"PE": 15, "PB": 15}, sem frete_envio.
+- Política de troca em atualizar_loja: "politica_troca": texto curto e claro com o que a pessoa disse ("troco em 7 dias com etiqueta" → "Troca em até 7 dias, com a etiqueta."). Não invente prazo nem regra que ela não disse. Lembre que compra online tem 7 dias de arrependimento (CDC) se ela perguntar.
 
 EXEMPLO
 mensagem: "camiseta básica 59,90, tem P M e G na azul, 4 de cada"
@@ -340,6 +341,7 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
       aceita_envio: booleano,
       frete_envio: numero,
       frete_por_uf: fretePorUf,
+      politica_troca: texto,
     })
     .transform((op): Operacao => ({
       tipo: 'ATUALIZAR_LOJA',
@@ -357,6 +359,7 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
         aceitaEnvio: op.aceita_envio,
         freteEnvio: op.frete_envio,
         fretePorUf: op.frete_por_uf,
+        politicaTroca: op.politica_troca,
       },
     })),
   z

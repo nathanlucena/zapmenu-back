@@ -544,6 +544,7 @@ function descreverLoja(loja: DadosLoja, atual: DadosLoja): string[] {
     const porUf = Object.entries(loja.fretePorUf).map(([uf, frete]) => `${uf} ${formatarPreco(frete)}`);
     linhas.push(`📦 Frete por estado: *${porUf.length ? porUf.join(' · ') : 'nenhum'}*`);
   }
+  if (loja.politicaTroca !== undefined) linhas.push(`🔁 Política de troca: _${loja.politicaTroca}_`);
   return linhas;
 }
 

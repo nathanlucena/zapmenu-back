@@ -6,7 +6,7 @@ import { criarCadastroPorLista } from './cadastro-empreendedores.js';
 import { processarMensagemGestao, type GestaoDeps, type RespostaGestao } from './gestao.service.js';
 import type { EntradaConversa, InterpretadorMensagem, RespostaConversa } from './interpretador.js';
 import { AVISO_SO_DA_LOJA, AVISO_SO_DO_CARDAPIO } from './permissoes-por-tipo.js';
-import { montarEntrada } from './deepseek-interpretador.js';
+import { interpretarRespostaDaIA, montarEntrada } from './deepseek-interpretador.js';
 import { OPCAO_CARDAPIO, OPCAO_LOJA, tipoDaResposta } from './tipo-da-loja.js';
 
 const TELEFONE = '5581999990000';
@@ -273,5 +273,41 @@ describe('gestão: fotos dos produtos da loja', () => {
 
     expect(cenario.entradas).toHaveLength(2);
     expect(cenario.conversa().contexto.rascunho.novosItens.at(-1)?.fotos).toBeUndefined();
+  });
+});
+
+describe('gestão: política de troca pela conversa', () => {
+  const politica = (): RespostaConversa => ({
+    resposta: 'Anotei a política de troca!',
+    operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { politicaTroca: 'Troca em até 7 dias, com a etiqueta.' } }],
+    operacoesMalformadas: [],
+    finalizou: true,
+    mostrarCardapio: false,
+  });
+
+  it('na loja, entra no resumo e é salva', async () => {
+    const cenario = criarCenario(false, 'VAREJO', [politica()]);
+
+    const resumo = textos(await cenario.enviar('troco em 7 dias com etiqueta, é isso'));
+    await cenario.enviar('sim');
+
+    expect(resumo).toContain('🔁 Política de troca: _Troca em até 7 dias, com a etiqueta._');
+    expect(cenario.gestaoRepo.salvos.at(-1)?.rascunho.loja?.politicaTroca).toBe('Troca em até 7 dias, com a etiqueta.');
+  });
+
+  it('no cardápio, é recusada', async () => {
+    const cenario = criarCenario(false, 'COMIDA', [politica()]);
+
+    const texto = textos(await cenario.enviar('troco em 7 dias'));
+
+    expect(texto).toContain(AVISO_SO_DA_LOJA);
+    expect(cenario.conversa().contexto.rascunho.loja).toBeUndefined();
+  });
+
+  it('a IA entende politica_troca', async () => {
+    const saida = interpretarRespostaDaIA(
+      JSON.stringify({ operacoes: [{ tipo: 'atualizar_loja', politica_troca: ' Troca em 7 dias. ' }] }),
+    );
+    expect(saida.operacoes[0]).toMatchObject({ dados: { politicaTroca: 'Troca em 7 dias.' } });
   });
 });

@@ -593,6 +593,8 @@ function lojaParaCadastro(snapshot: SnapshotCardapio, rascunho?: DadosLoja): Loj
     temCapa: snapshot.lojaSalva.temCapa || Boolean(rascunho?.capaUrl),
     corDestaque: loja.corDestaque,
     pedidoMinimo: loja.pedidoMinimo,
+    segmento: snapshot.segmento,
+    politicaTroca: loja.politicaTroca,
   };
 }
 
