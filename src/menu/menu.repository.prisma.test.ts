@@ -35,6 +35,8 @@ function lojaSalva(dados: Partial<Loja> = {}): Loja {
     lembreteOpcionaisEm: null,
     naoLembrarOpcionais: false,
     fuso: 'America/Sao_Paulo',
+    politicaTroca: null,
+    cepOrigem: null,
     atualizadoEm: new Date('2026-10-23T12:00:00Z'),
     ...dados,
   };
@@ -47,5 +49,12 @@ describe('paraLojaPublica', () => {
 
   it('mostra o segmento da loja de varejo', () => {
     expect(paraLojaPublica(lojaSalva({ segmento: 'VAREJO' })).segmento).toBe('VAREJO');
+  });
+
+  it('mostra a política de troca, mas não o CEP de origem', () => {
+    const loja = paraLojaPublica(lojaSalva({ politicaTroca: 'Troca em até 7 dias com etiqueta.', cepOrigem: '50000-000' }));
+
+    expect(loja.politicaTroca).toBe('Troca em até 7 dias com etiqueta.');
+    expect(JSON.stringify(loja)).not.toContain('50000-000');
   });
 });

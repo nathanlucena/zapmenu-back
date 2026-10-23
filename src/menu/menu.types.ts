@@ -58,6 +58,8 @@ export interface LojaPublica {
   corDestaque?: string;
   /** Fuso dos horários, ex.: "America/Sao_Paulo". */
   fuso: string;
+  /** Trocas e devoluções, em texto livre (varejo). */
+  politicaTroca?: string;
 }
 
 /** Uma seção do cardápio; `id` null é o grupo "Outros" (itens sem categoria). */

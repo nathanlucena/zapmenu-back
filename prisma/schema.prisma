@@ -96,6 +96,10 @@ model Loja {
   naoLembrarOpcionais      Boolean      @default(false)
   /// Fuso dos horários de funcionamento.
   fuso                     String       @default("America/Sao_Paulo")
+  /// Texto livre mostrado na vitrine (trocas e devoluções), usado no varejo.
+  politicaTroca            String?
+  /// CEP de onde saem as encomendas, para cotar frete. Só uso interno.
+  cepOrigem                String?
   atualizadoEm             DateTime     @updatedAt
 }
 

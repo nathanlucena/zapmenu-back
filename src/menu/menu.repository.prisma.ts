@@ -55,6 +55,7 @@ export function paraLojaPublica(loja: Loja): LojaPublica {
     logoUrl: loja.logoUrl ?? undefined,
     corDestaque: loja.corDestaque ?? undefined,
     fuso: loja.fuso,
+    politicaTroca: loja.politicaTroca ?? undefined,
   };
 }
 
