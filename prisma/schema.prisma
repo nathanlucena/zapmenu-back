@@ -168,6 +168,8 @@ model Sku {
 
   itensPedido ItemPedido[]
 
+  /// No banco o índice é NULLS NOT DISTINCT (migração 20261023130000, feita à mão):
+  /// dois "M" sem cor também contam como repetidos. Mesmo nome de índice, sem drift.
   @@unique([itemId, tamanho, cor])
 }
 
