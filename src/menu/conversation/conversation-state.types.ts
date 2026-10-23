@@ -94,6 +94,12 @@ export interface DadosLoja {
   politicaTroca?: string;
 }
 
+/** Foto nova da galeria de um produto (loja); `cor` liga a foto à cor da grade. */
+export interface FotoNova {
+  url: string;
+  cor?: string;
+}
+
 /** Uma combinação vendável de um produto da loja (varejo): vira um SKU com estoque. */
 export interface LinhaGrade {
   tamanho?: string;
@@ -115,6 +121,8 @@ export interface NovoItem {
   imagemUrl?: string;
   /** Grade completa de tamanhos/cores com estoque (só loja). */
   grade?: LinhaGrade[];
+  /** Galeria (só loja), na ordem em que as fotos chegaram. */
+  fotos?: FotoNova[];
 }
 
 /** Alterações num item existente; só os campos presentes mudam. */
@@ -129,6 +137,8 @@ export interface EdicaoItem {
   imagemUrl?: string;
   /** Substitui a grade inteira; o que sair dela fica pausado (pedidos antigos apontam para ele). */
   grade?: LinhaGrade[];
+  /** Fotos que entram no fim da galeria (só loja). */
+  fotos?: FotoNova[];
 }
 
 export type AcaoStatus = 'PAUSAR' | 'REATIVAR' | 'REMOVER';
@@ -165,6 +175,8 @@ export interface Contexto {
   /** Endereço encontrado no mapa esperando o "sim" da pessoa para entrar no rascunho. */
   enderecoPendente?: EnderecoPendente;
   proximaRef: number;
+  /** Produto que recebeu a última foto (loja): a próxima foto sem legenda logo em seguida vai para ele. */
+  ultimaFoto?: { ref?: string; itemId?: string; em: string };
   /** "mudar tipo da loja" em andamento: sem `para`, esperando a escolha; com `para`, esperando o sim. */
   trocaDeTipo?: { para?: 'COMIDA' | 'VAREJO' };
   /** ISO; usado para retomar/expirar rascunhos abandonados. */

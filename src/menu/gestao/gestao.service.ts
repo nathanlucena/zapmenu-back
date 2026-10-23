@@ -191,6 +191,9 @@ async function tratar(rodada: Rodada): Promise<void> {
     await continuarTrocaDeTipo(rodada);
     return;
   }
+  if (fotoDaSequencia(rodada)) {
+    return;
+  }
   if (ehOpcaoDaEnquete(texto)) {
     // Voto numa enquete antiga do tipo: sem passar pela IA.
     responder(rodada, `Sua loja está como *${vocabulario(rodada.snapshot.segmento).tipo}*. Para trocar, mande *mudar tipo da loja*.`);
@@ -255,6 +258,39 @@ async function tratar(rodada: Rodada): Promise<void> {
   }
 
   await conversarComIA(rodada);
+}
+
+/** Fotos seguidas sem legenda, até este tempo depois da anterior, vão para o mesmo produto. */
+const JANELA_FOTOS_EM_SEQUENCIA_MS = 3 * 60_000;
+
+/**
+ * Na loja, é comum mandar várias fotos do produto de uma vez: a primeira (com
+ * legenda) a IA liga ao produto; as seguintes, sem legenda e logo depois, vão
+ * para a mesma galeria sem chamar a IA. Devolve true quando tratou a mensagem.
+ */
+function fotoDaSequencia(rodada: Rodada): boolean {
+  const { imagemUrl, texto } = rodada.mensagem;
+  const ultima = rodada.contexto.ultimaFoto;
+  if (rodada.snapshot.segmento !== 'VAREJO' || !imagemUrl || texto.trim() || !ultima) {
+    return false;
+  }
+  if (Date.now() - new Date(ultima.em).getTime() > JANELA_FOTOS_EM_SEQUENCIA_MS) {
+    return false;
+  }
+  const { rascunho } = rodada.contexto;
+  const novo = ultima.ref ? rascunho.novosItens.find((item) => item.ref === ultima.ref) : undefined;
+  const existente = ultima.itemId ? rodada.snapshot.itens.find((item) => item.id === ultima.itemId) : undefined;
+  if (!novo && !existente) {
+    return false;
+  }
+  aplicarOperacoes(
+    { contexto: rodada.contexto, snapshot: rodada.snapshot, fotoAtual: imagemUrl, segmento: 'VAREJO' },
+    [{ tipo: 'ANEXAR_FOTO', ref: novo?.ref, itemId: novo ? undefined : existente?.id }],
+  );
+  const fotos = novo?.fotos?.length ?? rascunho.edicoes.find((edicao) => edicao.itemId === existente?.id)?.fotos?.length ?? 1;
+  rodada.estado = 'CONVERSANDO';
+  falar(rodada, `📷 Mais uma foto de *${novo?.nome ?? existente?.nome ?? 'produto'}* anotada (${fotos} ${fotos === 1 ? 'foto' : 'fotos'}).`);
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -407,7 +443,12 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
   const avisos = [
     ...doTipo.avisos,
     ...aplicarOperacoes(
-      { contexto: rodada.contexto, snapshot: rodada.snapshot, fotoAtual: rodada.mensagem.imagemUrl },
+      {
+        contexto: rodada.contexto,
+        snapshot: rodada.snapshot,
+        fotoAtual: rodada.mensagem.imagemUrl,
+        segmento: rodada.snapshot.segmento,
+      },
       doTipo.operacoes,
     ),
   ];

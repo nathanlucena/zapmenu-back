@@ -6,6 +6,7 @@ import { criarCadastroPorLista } from './cadastro-empreendedores.js';
 import { processarMensagemGestao, type GestaoDeps, type RespostaGestao } from './gestao.service.js';
 import type { EntradaConversa, InterpretadorMensagem, RespostaConversa } from './interpretador.js';
 import { AVISO_SO_DA_LOJA, AVISO_SO_DO_CARDAPIO } from './permissoes-por-tipo.js';
+import { montarEntrada } from './deepseek-interpretador.js';
 import { OPCAO_CARDAPIO, OPCAO_LOJA, tipoDaResposta } from './tipo-da-loja.js';
 
 const TELEFONE = '5581999990000';
@@ -34,7 +35,7 @@ function criarCenario(tipoPendente = true, segmento?: 'COMIDA' | 'VAREJO', rotei
   };
   const deps: GestaoDeps = { conversationRepo, gestaoRepo, interpretador, cadastro: criarCadastroPorLista([]) };
   const enviar = (texto: string) => processarMensagemGestao({ telefone: TELEFONE, texto }, deps);
-  return { gestaoRepo, entradas, enviar, conversa: () => conversa };
+  return { gestaoRepo, entradas, enviar, deps, conversa: () => conversa };
 }
 
 const textos = (respostas: RespostaGestao[]) => respostas.filter((r): r is string => typeof r === 'string').join('\n---\n');
@@ -221,5 +222,56 @@ describe('gestão: mudar tipo da loja', () => {
 
     expect(texto).toContain('Antes de trocar o tipo da loja');
     expect(cenario.conversa().contexto.trocaDeTipo).toBeUndefined();
+  });
+});
+
+describe('gestão: fotos dos produtos da loja', () => {
+  const FOTO_AZUL = 'data:image/jpeg;base64,AZUL';
+  const FOTO_COSTAS = 'data:image/jpeg;base64,COSTAS';
+  const anexar = (cor?: string): RespostaConversa => ({
+    resposta: 'Foto anotada!',
+    operacoes: [
+      { tipo: 'NOVO_ITEM', ref: 'n1', dados: { nome: 'Camiseta', precoBase: 59.9 } },
+      { tipo: 'ANEXAR_FOTO', ref: 'n1', cor },
+    ],
+    operacoesMalformadas: [],
+    finalizou: false,
+    mostrarCardapio: false,
+  });
+
+  it('a legenda com cor liga a foto à cor, e as fotos seguintes sem legenda vão para a mesma galeria sem IA', async () => {
+    const cenario = criarCenario(false, 'VAREJO', [anexar('Azul')]);
+    const enviarFoto = (texto: string, imagemUrl: string) =>
+      processarMensagemGestao({ telefone: TELEFONE, texto, imagemUrl }, cenario.deps);
+
+    await enviarFoto('camiseta 59,90, essa é a azul', FOTO_AZUL);
+    const texto = textos(await enviarFoto('', FOTO_COSTAS));
+
+    expect(cenario.entradas).toHaveLength(1);
+    expect(texto).toContain('Mais uma foto de *Camiseta* anotada (2 fotos)');
+    const [camiseta] = cenario.conversa().contexto.rascunho.novosItens;
+    expect(camiseta?.fotos).toEqual([{ url: FOTO_AZUL, cor: 'Azul' }, { url: FOTO_COSTAS }]);
+    expect(camiseta?.imagemUrl).toBe(FOTO_AZUL);
+  });
+
+  it('a IA nunca recebe as fotos em base64, só quantas são e de que cor', async () => {
+    const cenario = criarCenario(false, 'VAREJO', [anexar('Azul'), anexar()]);
+    await processarMensagemGestao({ telefone: TELEFONE, texto: 'camiseta azul', imagemUrl: FOTO_AZUL }, cenario.deps);
+    await processarMensagemGestao({ telefone: TELEFONE, texto: 'quanto custa?' }, cenario.deps);
+
+    const entrada = JSON.stringify(montarEntrada(cenario.entradas[1]!));
+
+    expect(entrada).not.toContain('base64');
+    expect(entrada).toContain('"fotos":[{"cor":"Azul"}]');
+  });
+
+  it('no cardápio, foto sem legenda continua indo para a IA e troca a foto única', async () => {
+    const cenario = criarCenario(false, 'COMIDA', [anexar(), anexar()]);
+    await processarMensagemGestao({ telefone: TELEFONE, texto: 'pizza', imagemUrl: FOTO_AZUL }, cenario.deps);
+
+    await processarMensagemGestao({ telefone: TELEFONE, texto: '', imagemUrl: FOTO_COSTAS }, cenario.deps);
+
+    expect(cenario.entradas).toHaveLength(2);
+    expect(cenario.conversa().contexto.rascunho.novosItens.at(-1)?.fotos).toBeUndefined();
   });
 });

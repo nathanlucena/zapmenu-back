@@ -12,6 +12,7 @@ import { DIAS_SEMANA, rascunhoVazio } from '../conversation/conversation-state.t
 import { mesclarConsulta } from '../endereco/endereco.service.js';
 import { corDaPaleta, gerarSlug, listaDaPaleta, nomeDaCor, problemaNoSlug } from '../vitrine.js';
 import { faixasComTaxaDecrescente, formatarKm, validarFaixas } from '../entrega.js';
+import type { SegmentoLoja } from '../menu.types.js';
 import type { SnapshotCardapio } from './gestao.repository.js';
 import type { DadosItemOperacao, Operacao } from './interpretador.js';
 
@@ -24,6 +25,8 @@ export interface AplicacaoOperacoes {
   snapshot: SnapshotCardapio;
   /** Foto da mensagem atual, se houver. */
   fotoAtual?: string;
+  /** Na loja, fotos de produto vão para a galeria em vez de trocar a foto única. */
+  segmento?: SegmentoLoja;
 }
 
 /**
@@ -121,15 +124,33 @@ export function aplicarOperacoes(aplicacao: AplicacaoOperacoes, operacoes: Opera
           avisos.add('⚠️ Não recebi nenhuma foto para anexar. Pode mandar de novo?');
           break;
         }
+        const galeria = aplicacao.segmento === 'VAREJO';
+        const nova = { url: foto, ...(operacao.cor && { cor: operacao.cor }) };
         if (operacao.ref && novoItem(operacao.ref)) {
-          novoItem(operacao.ref)!.imagemUrl = foto;
+          const item = novoItem(operacao.ref)!;
+          if (galeria) {
+            item.fotos = [...(item.fotos ?? []), nova];
+            // A primeira foto também é a capa do produto (lista, prévia).
+            item.imagemUrl ??= foto;
+          } else {
+            item.imagemUrl = foto;
+          }
+          contexto.ultimaFoto = { ref: item.ref, em: new Date().toISOString() };
         } else if (operacao.itemId && itemExiste(operacao.itemId)) {
           let edicao = rascunho.edicoes.find((candidata) => candidata.itemId === operacao.itemId);
           if (!edicao) {
             edicao = { itemId: operacao.itemId };
             rascunho.edicoes.push(edicao);
           }
-          edicao.imagemUrl = foto;
+          if (galeria) {
+            edicao.fotos = [...(edicao.fotos ?? []), nova];
+            if (!snapshot.itens.find((item) => item.id === operacao.itemId)?.temFoto) {
+              edicao.imagemUrl ??= foto;
+            }
+          } else {
+            edicao.imagemUrl = foto;
+          }
+          contexto.ultimaFoto = { itemId: operacao.itemId, em: new Date().toISOString() };
         } else {
           avisarItemDesconhecido();
           break;
@@ -426,7 +447,8 @@ export function descreverAlteracoes(rascunho: Rascunho, snapshot: SnapshotCardap
   }
 
   for (const novo of rascunho.novosItens) {
-    const extras = [novo.categoria && `(${novo.categoria})`, novo.imagemUrl ? '📷' : '(sem foto)'].filter(Boolean).join(' ');
+    const fotos = novo.fotos?.length ? `📷 ${novo.fotos.length} ${novo.fotos.length === 1 ? 'foto' : 'fotos'}` : novo.imagemUrl ? '📷' : '(sem foto)';
+    const extras = [novo.categoria && `(${novo.categoria})`, fotos].filter(Boolean).join(' ');
     linhas.push(`➕ *${novo.nome ?? 'sem nome'}* — ${novo.precoBase !== undefined ? formatarPreco(novo.precoBase) : 'sem preço'} ${extras}`);
     if (novo.descricao) {
       linhas.push(`   _${novo.descricao}_`);
@@ -446,7 +468,11 @@ export function descreverAlteracoes(rascunho: Rascunho, snapshot: SnapshotCardap
     }
     if (edicao.descricao !== undefined) mudancas.push(`descrição → _${edicao.descricao}_`);
     if (edicao.categoria !== undefined) mudancas.push(`categoria → *${edicao.categoria ?? 'Outros'}*`);
-    if (edicao.imagemUrl !== undefined) mudancas.push('nova foto 📷');
+    if (edicao.fotos?.length) {
+      mudancas.push(`${edicao.fotos.length} ${edicao.fotos.length === 1 ? 'foto nova' : 'fotos novas'} 📷`);
+    } else if (edicao.imagemUrl !== undefined) {
+      mudancas.push('nova foto 📷');
+    }
     if (edicao.grade !== undefined) mudancas.push(`grade → ${descreverGrade(edicao.grade)}`);
     if (edicao.variacoes !== undefined) mudancas.push('variações:');
     linhas.push(`✏️ *${atual?.nome ?? 'item'}*: ${mudancas.join(' · ') || 'sem mudanças'}`);

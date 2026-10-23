@@ -5,6 +5,7 @@ import type {
   DadosLoja,
   EnderecoVerificado,
   FaixaEntrega,
+  FotoNova,
   Horario,
   LinhaGrade,
   Rascunho,
@@ -187,6 +188,9 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
           if (novo.grade) {
             await sincronizarGrade(tx, criado.id, novo.grade);
           }
+          if (novo.fotos?.length) {
+            await acrescentarFotos(tx, criado.id, novo.fotos);
+          }
         }
 
         for (const edicao of rascunho.edicoes) {
@@ -202,6 +206,9 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
           await atualizarItem(tx, cardapioId, edicao.itemId, dados);
           if (edicao.grade) {
             await sincronizarGrade(tx, edicao.itemId, edicao.grade);
+          }
+          if (edicao.fotos?.length) {
+            await acrescentarFotos(tx, edicao.itemId, edicao.fotos);
           }
           if (edicao.variacoes) {
             await tx.variacao.deleteMany({ where: { itemId: edicao.itemId } });
@@ -243,6 +250,15 @@ async function sincronizarGrade(tx: Tx, itemId: string, grade: LinhaGrade[]): Pr
   if (pausar.length > 0) {
     await tx.sku.updateMany({ where: { id: { in: pausar } }, data: { ativo: false } });
   }
+}
+
+/** Fotos novas entram no fim da galeria, na ordem em que chegaram. */
+async function acrescentarFotos(tx: Tx, itemId: string, fotos: FotoNova[]): Promise<void> {
+  const ultima = await tx.fotoProduto.aggregate({ where: { itemId }, _max: { ordem: true } });
+  const inicio = (ultima._max.ordem ?? -1) + 1;
+  await tx.fotoProduto.createMany({
+    data: fotos.map((foto, indice) => ({ itemId, url: foto.url, cor: foto.cor ?? null, ordem: inicio + indice })),
+  });
 }
 
 function paraVariacaoPrisma(variacao: Variacao) {

@@ -31,7 +31,8 @@ export type Operacao =
   | { tipo: 'DESCARTAR_NOVO_ITEM'; ref: string }
   | { tipo: 'EDITAR_ITEM'; itemId: string; dados: DadosItemOperacao }
   | { tipo: 'PAUSAR_ITEM' | 'REATIVAR_ITEM' | 'REMOVER_ITEM' | 'DESFAZER_ITEM'; itemId: string }
-  | { tipo: 'ANEXAR_FOTO'; ref?: string; itemId?: string }
+  /** Na loja, a foto entra na galeria do produto; `cor` vem da legenda ("essa é a azul"). */
+  | { tipo: 'ANEXAR_FOTO'; ref?: string; itemId?: string; cor?: string }
   /** Loja: grade completa de tamanhos/cores com estoque de um produto (novo pela ref ou existente). */
   | { tipo: 'DEFINIR_GRADE'; ref?: string; itemId?: string; grade: LinhaGrade[] }
   | { tipo: 'ANEXAR_FOTO_LOJA'; destino: 'LOGO' | 'CAPA' }

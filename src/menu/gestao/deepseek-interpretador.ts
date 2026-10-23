@@ -114,6 +114,7 @@ TIPO DA LOJA: LOJA (produtos: roupas, acessórios…)
 - Fale em *catálogo* e *produtos*. Nunca diga cardápio, prato ou lanche. Os ids e operações continuam com os nomes "item" (novo_item, editar_item…).
 - Tamanho e cor com estoque: {"tipo": "definir_grade", "ref": "n1"} (produto novo) ou {"tipo": "definir_grade", "item_id": "..."} (existente), com "grade": [{"tamanho": "P", "cor": "Azul", "estoque": 5}, ...]. É a lista COMPLETA (substitui a anterior). "P, M e G, azul e preto, 5 de cada" → 6 linhas. "preco" só na linha que custa diferente do produto. Produto sem cor ou sem tamanho: deixe o campo de fora.
 - Estoque é número inteiro. Se a pessoa não disser quantas peças tem, PERGUNTE: nunca invente estoque. Para mudar só o estoque ("chegaram mais 3 M azul", "acabou o G preto"), mande a grade completa atual (cardapio.itens[].grade) com o número novo.
+- Fotos: cada produto pode ter várias. Cada anexar_foto ACRESCENTA uma foto à galeria (não troca a anterior). Se a legenda disser a cor da peça na foto ("essa é a azul", "preta"), mande "cor": "Azul" no anexar_foto.
 - NUNCA use variacoes (adicionais com preço) neste tipo. Se a pessoa pedir adicional, explique numa frase que adicionais são do tipo *Cardápio* e que ela pode mandar *mudar tipo da loja*.
 - Envio pelos Correios em atualizar_loja: "aceita_envio": true, "frete_envio": 25 (frete fixo para o Brasil todo), "frete_por_uf": {"PE": 12} (só os estados com valor diferente). "envio pra todo o Brasil por 25, aqui em PE é 12" → aceita_envio true, frete_envio 25, frete_por_uf {"PE": 12}; "só envio pra PE e PB por 15" → frete_por_uf {"PE": 15, "PB": 15}, sem frete_envio.
 
@@ -278,10 +279,11 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
       itemId: op.item_id,
     })),
   ),
-  z.object({ tipo: z.literal('anexar_foto'), ref: texto, item_id: texto }).transform((op): Operacao => ({
+  z.object({ tipo: z.literal('anexar_foto'), ref: texto, item_id: texto, cor: texto }).transform((op): Operacao => ({
     tipo: 'ANEXAR_FOTO',
     ref: op.ref,
     itemId: op.item_id,
+    cor: op.cor,
   })),
   z
     .object({
@@ -436,7 +438,7 @@ function lojaParaIA(loja: DadosLoja | undefined) {
 }
 
 /** Visão do estado para a IA: só ids, nomes e valores — nunca as fotos em base64. */
-function montarEntrada(entrada: EntradaConversa) {
+export function montarEntrada(entrada: EntradaConversa) {
   const { snapshot, rascunho } = entrada;
   const nomeItem = (itemId: string) => snapshot.itens.find((item) => item.id === itemId)?.nome;
 
@@ -447,14 +449,16 @@ function montarEntrada(entrada: EntradaConversa) {
     foto_recebida: entrada.fotoRecebida,
     foto_pendente: entrada.fotoPendente,
     rascunho: {
-      novos_itens: rascunho.novosItens.map(({ imagemUrl, ...item }) => ({
+      novos_itens: rascunho.novosItens.map(({ imagemUrl, fotos, ...item }) => ({
         ...item,
         tem_foto: Boolean(imagemUrl),
+        ...(fotos?.length && { fotos: fotos.map((foto) => ({ cor: foto.cor ?? null })) }),
       })),
-      edicoes: rascunho.edicoes.map(({ imagemUrl, ...edicao }) => ({
+      edicoes: rascunho.edicoes.map(({ imagemUrl, fotos, ...edicao }) => ({
         ...edicao,
         nome_atual: nomeItem(edicao.itemId),
-        nova_foto: Boolean(imagemUrl),
+        nova_foto: Boolean(imagemUrl) || Boolean(fotos?.length),
+        ...(fotos?.length && { fotos_novas: fotos.map((foto) => ({ cor: foto.cor ?? null })) }),
       })),
       status: rascunho.status.map((status) => ({
         ...status,
