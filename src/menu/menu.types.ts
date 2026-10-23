@@ -16,11 +16,20 @@ export interface ItemDraft {
   variacoes: VariacaoInput[];
 }
 
+export interface FotoProduto {
+  url: string;
+  ordem: number;
+  /** Cor que aparece na foto (varejo). */
+  cor?: string;
+}
+
 export interface ItemCardapio extends ItemDraft {
   id: string;
   cardapioId: string;
   categoriaId?: string;
   ativo: boolean;
+  /** Galeria em ordem; sem galeria, só o imagemUrl. Vem na leitura do cardápio. */
+  fotos?: FotoProduto[];
 }
 
 export interface HorarioLoja {

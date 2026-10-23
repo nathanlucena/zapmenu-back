@@ -9,6 +9,7 @@ import { entregaConfigurada, raioMaximoKm } from './entrega.js';
 import { enderecoVerificadoDaLoja } from './gestao/gestao.repository.prisma.js';
 import type { CardapioPublico, HorarioLoja, ItemCardapio, ItemDraft, LojaPublica, VariacaoOpcao } from './menu.types.js';
 import { cadastroCompleto, type LojaParaCadastro } from './cadastro-da-loja.js';
+import { fotosDoItem } from './fotos-do-produto.js';
 
 /** Os dados da loja salva que contam para o cadastro obrigatório. */
 function lojaParaCadastro(loja: {
@@ -59,9 +60,15 @@ export function paraLojaPublica(loja: Loja): LojaPublica {
   };
 }
 
-type ItemCardapioComVariacoes = Prisma.ItemCardapioGetPayload<{ include: { variacoes: true } }>;
+/** Tudo o que a vitrine mostra de um item. */
+const DETALHES_DO_ITEM = {
+  variacoes: true,
+  fotos: { orderBy: [{ ordem: 'asc' }, { criadoEm: 'asc' }] },
+} satisfies Prisma.ItemCardapioInclude;
 
-function paraItemCardapio(item: ItemCardapioComVariacoes): ItemCardapio {
+type ItemCardapioComDetalhes = Prisma.ItemCardapioGetPayload<{ include: typeof DETALHES_DO_ITEM }>;
+
+function paraItemCardapio(item: ItemCardapioComDetalhes): ItemCardapio {
   return {
     id: item.id,
     cardapioId: item.cardapioId,
@@ -75,6 +82,10 @@ function paraItemCardapio(item: ItemCardapioComVariacoes): ItemCardapio {
       nome: variacao.nome,
       opcoes: variacao.opcoes as unknown as VariacaoOpcao[],
     })),
+    fotos: fotosDoItem(
+      item.fotos.map((foto) => ({ url: foto.url, ordem: foto.ordem, cor: foto.cor ?? undefined })),
+      item.imagemUrl ?? undefined,
+    ),
   };
 }
 
@@ -125,7 +136,7 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
         prisma.categoria.findMany({ where: doCardapio, orderBy: [{ ordem: 'asc' }, { criadoEm: 'asc' }] }),
         prisma.itemCardapio.findMany({
           where: { ...doCardapio, ativo: true, removidoEm: null },
-          include: { variacoes: true },
+          include: DETALHES_DO_ITEM,
           orderBy: { criadoEm: 'asc' },
         }),
         prisma.loja.findUnique({ where: { empreendedorId } }),
@@ -206,7 +217,7 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
             })),
           },
         },
-        include: { variacoes: true },
+        include: DETALHES_DO_ITEM,
       });
       return paraItemCardapio(item);
     },
@@ -214,7 +225,7 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
     async listarItensAtivos(cardapioId: string) {
       const itens = await prisma.itemCardapio.findMany({
         where: { cardapioId, ativo: true, removidoEm: null },
-        include: { variacoes: true },
+        include: DETALHES_DO_ITEM,
         orderBy: { criadoEm: 'asc' },
       });
       return itens.map(paraItemCardapio);
@@ -223,7 +234,7 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
     async listarItens(cardapioId: string) {
       const itens = await prisma.itemCardapio.findMany({
         where: { cardapioId, removidoEm: null },
-        include: { variacoes: true },
+        include: DETALHES_DO_ITEM,
         orderBy: { criadoEm: 'asc' },
       });
       return itens.map(paraItemCardapio);

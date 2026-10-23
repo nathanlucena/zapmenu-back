@@ -121,9 +121,25 @@ model ItemCardapio {
 
   variacoes   Variacao[]
   itensPedido ItemPedido[]
+  fotos       FotoProduto[]
 
   @@index([cardapioId])
   @@index([categoriaId])
+}
+
+/// Galeria do produto (varejo). Sem fotos, a vitrine usa o imagemUrl do item.
+model FotoProduto {
+  id       String       @id @default(cuid())
+  itemId   String
+  item     ItemCardapio @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  url      String
+  /// Menor primeiro; a primeira é a capa do produto.
+  ordem    Int          @default(0)
+  /// Cor que aparece na foto, para a vitrine trocar a foto ao escolher a cor.
+  cor      String?
+  criadoEm DateTime     @default(now())
+
+  @@index([itemId])
 }
 
 model Variacao {

@@ -32,6 +32,31 @@ describe('GET /v1/menu/:empreendedorId', () => {
     expect(resposta.json().itens[0].nome).toBe('Bolo');
   });
 
+  it('mostra a galeria do produto e, sem galeria, a imagem do item como única foto', async () => {
+    const menuRepo = criarMenuRepositoryFake();
+    const camiseta = await criarItem(menuRepo, 'emp-1', { nome: 'Camiseta', precoBase: 60, variacoes: [] });
+    await criarItem(menuRepo, 'emp-1', { nome: 'Bolo', precoBase: 25, imagemUrl: 'bolo.jpg', variacoes: [] });
+    menuRepo.definirFotos(camiseta.id, [
+      { url: 'costas.jpg', ordem: 1 },
+      { url: 'frente.jpg', ordem: 0, cor: 'Azul' },
+    ]);
+    const app = buildApp({
+      menuRepo,
+      ordersRepo: criarOrdersRepositoryFake(),
+      pedidoTtlMinutos: 20,
+      frontendAllowedOrigin: 'http://localhost:3001',
+    });
+
+    const [itemCamiseta, itemBolo] = (await app.inject({ method: 'GET', url: '/v1/menu/emp-1' })).json().itens;
+
+    expect(itemCamiseta.fotos).toEqual([
+      { url: 'frente.jpg', ordem: 0, cor: 'Azul' },
+      { url: 'costas.jpg', ordem: 1 },
+    ]);
+    expect(itemBolo.imagemUrl).toBe('bolo.jpg');
+    expect(itemBolo.fotos).toEqual([{ url: 'bolo.jpg', ordem: 0 }]);
+  });
+
   it('retorna lista vazia para empreendedor que ainda não cadastrou itens', async () => {
     const menuRepo = criarMenuRepositoryFake();
     await menuRepo.obterOuCriarCardapio('emp-novo');

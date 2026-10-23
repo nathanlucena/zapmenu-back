@@ -1,7 +1,8 @@
 import { DomainError } from '../../shared/errors/domain-error.js';
 import type { RegrasDaLoja } from '../../orders/application/ports/loja-para-pedidos.js';
 import type { MenuRepository } from '../menu.repository.js';
-import type { ItemCardapio, ItemDraft } from '../menu.types.js';
+import { fotosDoItem } from '../fotos-do-produto.js';
+import type { FotoProduto, ItemCardapio, ItemDraft } from '../menu.types.js';
 
 let proximoId = 1;
 
@@ -17,12 +18,20 @@ export const REGRAS_PADRAO: RegrasDaLoja = {
 export type MenuRepositoryFake = MenuRepository & {
   /** Muda as regras de pedido de uma loja que já existe no fake. */
   definirRegras(empreendedorId: string, regras: Partial<RegrasDaLoja>): void;
+  /** Galeria de um item, como se tivesse sido cadastrada. */
+  definirFotos(itemId: string, fotos: FotoProduto[]): void;
 };
 
 export function criarMenuRepositoryFake(): MenuRepositoryFake {
   const cardapiosPorEmpreendedor = new Map<string, string>();
   const regrasPorEmpreendedor = new Map<string, RegrasDaLoja>();
   const itensPorCardapio = new Map<string, ItemCardapio[]>();
+  const fotosPorItem = new Map<string, FotoProduto[]>();
+
+  /** O item como a leitura do banco devolve. */
+  function lido(item: ItemCardapio): ItemCardapio {
+    return { ...item, fotos: fotosDoItem(fotosPorItem.get(item.id) ?? [], item.imagemUrl) };
+  }
 
   function buscarItem(cardapioId: string, itemId: string): ItemCardapio {
     const item = itensPorCardapio.get(cardapioId)?.find((candidato) => candidato.id === itemId);
@@ -38,7 +47,7 @@ export function criarMenuRepositoryFake(): MenuRepositoryFake {
       if (!cardapioId) {
         return null;
       }
-      const itens = (itensPorCardapio.get(cardapioId) ?? []).filter((item) => item.ativo);
+      const itens = (itensPorCardapio.get(cardapioId) ?? []).filter((item) => item.ativo).map(lido);
       return { loja: null, secoes: itens.length ? [{ id: null, nome: 'Outros', itens }] : [], itens };
     },
 
@@ -51,6 +60,10 @@ export function criarMenuRepositoryFake(): MenuRepositoryFake {
 
     definirRegras(empreendedorId, regras) {
       regrasPorEmpreendedor.set(empreendedorId, { ...REGRAS_PADRAO, ...regras });
+    },
+
+    definirFotos(itemId, fotos) {
+      fotosPorItem.set(itemId, fotos);
     },
 
     async obterOuCriarCardapio(empreendedorId: string) {
