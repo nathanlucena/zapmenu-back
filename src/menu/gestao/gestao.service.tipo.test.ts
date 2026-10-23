@@ -170,3 +170,56 @@ describe('gestão: cada tipo fechado na sua caixa', () => {
     expect(texto).not.toContain('cardápio');
   });
 });
+
+describe('gestão: mudar tipo da loja', () => {
+  it('pergunta o tipo, explica o que muda, e só troca com o sim', async () => {
+    const cenario = criarCenario(false, 'COMIDA');
+
+    const pergunta = await cenario.enviar('mudar tipo da loja');
+    expect(textos(pergunta)).toContain('Hoje sua loja é *Cardápio*');
+    expect(enquetes(pergunta)).toHaveLength(1);
+
+    const aviso = textos(await cenario.enviar(OPCAO_LOJA));
+    expect(aviso).toContain('os adicionais (variações com preço) deixam de aparecer');
+    expect(aviso).toContain('Nada é apagado');
+    expect(cenario.gestaoRepo.snapshot.segmento).toBe('COMIDA');
+
+    const feito = textos(await cenario.enviar('sim'));
+    expect(feito).toContain('Sua loja agora é *Loja*');
+    expect(feito).toContain('catálogo');
+    expect(cenario.gestaoRepo.snapshot.segmento).toBe('VAREJO');
+    expect(cenario.entradas).toHaveLength(0);
+  });
+
+  it('"não" na confirmação mantém o tipo', async () => {
+    const cenario = criarCenario(false, 'VAREJO');
+    await cenario.enviar('trocar o tipo da loja');
+    const aviso = textos(await cenario.enviar('1'));
+    expect(aviso).toContain('tamanhos e cores com estoque');
+
+    const texto = textos(await cenario.enviar('não'));
+
+    expect(texto).toContain('continua como *Loja*');
+    expect(cenario.gestaoRepo.snapshot.segmento).toBe('VAREJO');
+    expect(cenario.conversa().contexto.trocaDeTipo).toBeUndefined();
+  });
+
+  it('escolher o mesmo tipo não muda nada', async () => {
+    const cenario = criarCenario(false, 'VAREJO');
+    await cenario.enviar('mudar tipo');
+
+    expect(textos(await cenario.enviar('2'))).toContain('Sua loja já é *Loja*');
+  });
+
+  it('com alterações anotadas, pede para salvar ou descartar antes', async () => {
+    const cenario = criarCenario(false, 'COMIDA', [
+      { resposta: 'Anotei!', operacoes: [{ tipo: 'NOVO_ITEM', ref: 'n1', dados: { nome: 'Pizza', precoBase: 40 } }], operacoesMalformadas: [], finalizou: false, mostrarCardapio: false },
+    ]);
+    await cenario.enviar('pizza 40');
+
+    const texto = textos(await cenario.enviar('mudar tipo da loja'));
+
+    expect(texto).toContain('Antes de trocar o tipo da loja');
+    expect(cenario.conversa().contexto.trocaDeTipo).toBeUndefined();
+  });
+});

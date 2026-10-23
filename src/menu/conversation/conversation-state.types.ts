@@ -165,6 +165,8 @@ export interface Contexto {
   /** Endereço encontrado no mapa esperando o "sim" da pessoa para entrar no rascunho. */
   enderecoPendente?: EnderecoPendente;
   proximaRef: number;
+  /** "mudar tipo da loja" em andamento: sem `para`, esperando a escolha; com `para`, esperando o sim. */
+  trocaDeTipo?: { para?: 'COMIDA' | 'VAREJO' };
   /** ISO; usado para retomar/expirar rascunhos abandonados. */
   atualizadoEm?: string;
 }

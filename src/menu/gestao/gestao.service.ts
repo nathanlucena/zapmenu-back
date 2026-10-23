@@ -17,6 +17,7 @@ import { reconhecerComando } from './comandos.js';
 import { filtrarPorTipo } from './permissoes-por-tipo.js';
 import {
   ehOpcaoDaEnquete,
+  oQueMudaNaTroca,
   OPCOES_TIPO,
   PERGUNTA_TIPO,
   TEXTO_PERGUNTA_TIPO,
@@ -186,6 +187,10 @@ async function tratar(rodada: Rodada): Promise<void> {
     await escolherTipoNoCadastro(rodada);
     return;
   }
+  if (rodada.contexto.trocaDeTipo) {
+    await continuarTrocaDeTipo(rodada);
+    return;
+  }
   if (ehOpcaoDaEnquete(texto)) {
     // Voto numa enquete antiga do tipo: sem passar pela IA.
     responder(rodada, `Sua loja está como *${vocabulario(rodada.snapshot.segmento).tipo}*. Para trocar, mande *mudar tipo da loja*.`);
@@ -225,6 +230,9 @@ async function tratar(rodada: Rodada): Promise<void> {
       } else {
         responder(rodada, 'Ainda não tem nenhum item ou dado da loja anotado para mostrar. Me conta o que você quer mudar! 🙂');
       }
+      return;
+    case 'MUDAR_TIPO':
+      comecarTrocaDeTipo(rodada);
       return;
     case 'NAO_LEMBRAR':
       await rodada.deps.gestaoRepo.registrarLembreteOpcionais(rodada.empreendedorId, { desligar: true });
@@ -273,6 +281,66 @@ async function escolherTipoNoCadastro(rodada: Rodada): Promise<void> {
   rodada.estado = 'CONVERSANDO';
   const { tipo: nome, lista } = vocabulario(tipo);
   falar(rodada, `Combinado: sua loja é um *${nome}* ${tipo === 'VAREJO' ? '🛍️' : '🍔'}. Vou te ajudar a montar o ${lista}.`);
+}
+
+/** "mudar tipo da loja": mostra o tipo atual e pergunta o novo. Com alterações anotadas, pede para resolver antes. */
+function comecarTrocaDeTipo(rodada: Rodada): void {
+  if (!estaVazio(rodada.contexto.rascunho)) {
+    responder(
+      rodada,
+      'Antes de trocar o tipo da loja, salve as alterações anotadas (diga *pronto*) ou descarte (mande *cancelar*).',
+    );
+    return;
+  }
+  rodada.contexto.trocaDeTipo = {};
+  responder(
+    rodada,
+    `Hoje sua loja é *${vocabulario(rodada.snapshot.segmento).tipo}*. Para qual tipo você quer mudar? Responda *1* (Cardápio) ou *2* (Loja), ou *cancelar*.`,
+  );
+  rodada.respostas.push({ enquete: { pergunta: PERGUNTA_TIPO, opcoes: [...OPCOES_TIPO] } });
+}
+
+/** Escolha do novo tipo e depois o "sim": tudo sem IA. Só grava com a confirmação. */
+async function continuarTrocaDeTipo(rodada: Rodada): Promise<void> {
+  const troca = rodada.contexto.trocaDeTipo!;
+  const comando = rodada.mensagem.imagemUrl ? undefined : reconhecerComando(rodada.mensagem.texto);
+  const atual = rodada.snapshot.segmento === 'VAREJO' ? 'VAREJO' : 'COMIDA';
+  const manter = () => {
+    rodada.contexto.trocaDeTipo = undefined;
+    responder(rodada, `Ok, sua loja continua como *${vocabulario(atual).tipo}*.`);
+  };
+
+  if (comando === 'CANCELAR' || (troca.para && comando === 'NAO')) {
+    manter();
+    return;
+  }
+  if (!troca.para) {
+    const tipo = rodada.mensagem.imagemUrl ? undefined : tipoDaResposta(rodada.mensagem.texto);
+    if (!tipo) {
+      responder(rodada, 'Não entendi o tipo. Responda *1* (Cardápio) ou *2* (Loja), ou *cancelar* para manter como está.');
+      return;
+    }
+    if (tipo === atual) {
+      rodada.contexto.trocaDeTipo = undefined;
+      responder(rodada, `Sua loja já é *${vocabulario(tipo).tipo}*. Nada mudou.`);
+      return;
+    }
+    rodada.contexto.trocaDeTipo = { para: tipo };
+    responder(rodada, `${oQueMudaNaTroca(tipo)}
+
+Confirma a troca para *${vocabulario(tipo).tipo}*? (*sim*/*não*)`);
+    return;
+  }
+  if (comando !== 'SIM') {
+    responder(rodada, `Responda *sim* para trocar para *${vocabulario(troca.para).tipo}* ou *não* para manter como está.`);
+    return;
+  }
+  await rodada.deps.gestaoRepo.definirSegmento(rodada.empreendedorId, troca.para);
+  rodada.snapshot = await rodada.deps.gestaoRepo.carregarSnapshot(rodada.empreendedorId);
+  rodada.contexto.trocaDeTipo = undefined;
+  logger.info({ telefone: rodada.mensagem.telefone, segmento: troca.para }, '🔀 tipo da loja trocado');
+  const { tipo, lista } = vocabulario(troca.para);
+  responder(rodada, `✅ Pronto! Sua loja agora é *${tipo}*. Me conta o que quer mudar no ${lista}.`);
 }
 
 async function conversarComIA(rodada: Rodada): Promise<void> {

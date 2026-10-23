@@ -70,3 +70,12 @@ export function vocabulario(segmento: SegmentoLoja | undefined): Vocabulario {
     ? { tipo: 'Loja', lista: 'catálogo', item: 'produto', itens: 'produtos', exemploItem: 'camiseta básica 59,90, tamanhos P, M e G' }
     : { tipo: 'Cardápio', lista: 'cardápio', item: 'item', itens: 'itens', exemploItem: 'pizza calabresa 39,90' };
 }
+
+/** O que passa a valer e o que fica oculto ao trocar para `para`. Nada é apagado. */
+export function oQueMudaNaTroca(para: TipoDaLoja): string {
+  const mudanca =
+    para === 'VAREJO'
+      ? 'Ao virar *Loja*, os adicionais (variações com preço) deixam de aparecer na vitrine, e você passa a cadastrar tamanhos e cores com estoque, envio pelos Correios e política de troca.'
+      : 'Ao virar *Cardápio*, tamanhos e cores com estoque, as fotos extras dos produtos, o envio pelos Correios e a política de troca deixam de aparecer na vitrine, e os adicionais voltam a valer.';
+  return `${mudanca} Nada é apagado: se voltar para o tipo de agora, tudo reaparece.`;
+}
