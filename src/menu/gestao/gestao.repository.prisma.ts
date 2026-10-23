@@ -119,9 +119,20 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
           capaUrl: loja?.capaUrl ?? undefined,
           lembreteOpcionaisEm: loja?.lembreteOpcionaisEm ?? undefined,
           naoLembrarOpcionais: loja?.naoLembrarOpcionais ?? false,
+          tipoPendente: !loja?.segmentoDefinido,
         },
+        segmento: loja?.segmento,
       };
       return snapshot;
+    },
+
+    async definirSegmento(telefone, segmento) {
+      const { empreendedorId } = await obterCardapio(prisma, telefone);
+      await prisma.loja.upsert({
+        where: { empreendedorId },
+        update: { segmento, segmentoDefinido: true },
+        create: { empreendedorId, segmento, segmentoDefinido: true },
+      });
     },
 
     async registrarLembreteOpcionais(telefone, registro) {

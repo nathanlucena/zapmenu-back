@@ -10,6 +10,7 @@ function lojaSalva(dados: Partial<Loja> = {}): Loja {
     nome: 'Bolos da Dona',
     descricao: null,
     segmento: 'COMIDA',
+    segmentoDefinido: true,
     endereco: null,
     cep: null,
     logradouro: null,

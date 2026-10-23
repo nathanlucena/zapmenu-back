@@ -14,6 +14,14 @@ import type { EnderecoDeps } from '../endereco/endereco.types.js';
 import { entregaConfigurada } from '../entrega.js';
 import type { CadastroEmpreendedores } from './cadastro-empreendedores.js';
 import { reconhecerComando } from './comandos.js';
+import {
+  ehOpcaoDaEnquete,
+  OPCOES_TIPO,
+  PERGUNTA_TIPO,
+  TEXTO_PERGUNTA_TIPO,
+  tipoDaResposta,
+  vocabulario,
+} from './tipo-da-loja.js';
 import { montarPrevia, type PreviasRepository } from './previa.js';
 import type { GestaoRepository, SnapshotCardapio } from './gestao.repository.js';
 import type { InterpretadorMensagem, RespostaConversa } from './interpretador.js';
@@ -86,7 +94,11 @@ interface Rodada {
  * e só grava no banco depois do "sim".
  */
 /** Texto, ou a imagem da prévia (URL que o WhatsApp baixa) com legenda. */
-export type RespostaGestao = string | { imagemUrl: string; legenda: string };
+export type RespostaGestao =
+  | string
+  | { imagemUrl: string; legenda: string }
+  /** Enquete do WhatsApp; o voto volta como mensagem de texto com a opção escolhida. */
+  | { enquete: { pergunta: string; opcoes: string[] } };
 
 export async function processarMensagemGestao(mensagem: MensagemGestao, deps: GestaoDeps): Promise<RespostaGestao[]> {
   const empreendedorId = await deps.cadastro.empreendedorIdDoTelefone(mensagem.telefone);
@@ -168,6 +180,15 @@ function verificarAbandono(rodada: Rodada): void {
 
 async function tratar(rodada: Rodada): Promise<void> {
   const { texto, imagemUrl } = rodada.mensagem;
+  if (rodada.snapshot.lojaSalva.tipoPendente) {
+    await escolherTipoNoCadastro(rodada);
+    return;
+  }
+  if (ehOpcaoDaEnquete(texto)) {
+    // Voto numa enquete antiga do tipo: sem passar pela IA.
+    responder(rodada, `Sua loja está como *${vocabulario(rodada.snapshot.segmento).tipo}*. Para trocar, mande *mudar tipo da loja*.`);
+    return;
+  }
   const comando = !imagemUrl && texto.trim() ? reconhecerComando(texto) : undefined;
 
   if (rodada.contexto.enderecoPendente && (comando === 'SIM' || comando === 'NAO')) {
@@ -223,6 +244,32 @@ async function tratar(rodada: Rodada): Promise<void> {
   }
 
   await conversarComIA(rodada);
+}
+
+// ---------------------------------------------------------------------------
+// Tipo da loja
+// ---------------------------------------------------------------------------
+
+function perguntarTipo(rodada: Rodada): void {
+  responder(rodada, TEXTO_PERGUNTA_TIPO);
+  rodada.respostas.push({ enquete: { pergunta: PERGUNTA_TIPO, opcoes: [...OPCOES_TIPO] } });
+}
+
+/**
+ * Primeira pergunta de uma loja nova: cardápio ou loja. A resposta é lida sem
+ * IA (enquete, "1"/"2" ou palavra) e gravada na hora; até lá, nada mais anda.
+ */
+async function escolherTipoNoCadastro(rodada: Rodada): Promise<void> {
+  const tipo = rodada.mensagem.imagemUrl ? undefined : tipoDaResposta(rodada.mensagem.texto);
+  if (!tipo) {
+    perguntarTipo(rodada);
+    return;
+  }
+  await rodada.deps.gestaoRepo.definirSegmento(rodada.empreendedorId, tipo);
+  rodada.snapshot = await rodada.deps.gestaoRepo.carregarSnapshot(rodada.empreendedorId);
+  rodada.estado = 'CONVERSANDO';
+  const { tipo: nome, lista } = vocabulario(tipo);
+  falar(rodada, `Combinado: sua loja é um *${nome}* ${tipo === 'VAREJO' ? '🛍️' : '🍔'}. Vou te ajudar a montar o ${lista}.`);
 }
 
 async function conversarComIA(rodada: Rodada): Promise<void> {

@@ -58,6 +58,8 @@ model Loja {
   nome                     String?
   descricao                String?
   segmento                 SegmentoLoja @default(COMIDA)
+  /// O lojista escolheu o tipo no cadastro. Lojas anteriores à escolha ficam como já definidas (COMIDA).
+  segmentoDefinido         Boolean      @default(false)
   /// Texto exibido no cardápio; com endereço verificado, é o endereço formatado.
   endereco                 String?
   cep                      String?
