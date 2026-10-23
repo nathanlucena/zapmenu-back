@@ -64,6 +64,7 @@ export function paraLojaPublica(loja: Loja): LojaPublica {
 const DETALHES_DO_ITEM = {
   variacoes: true,
   fotos: { orderBy: [{ ordem: 'asc' }, { criadoEm: 'asc' }] },
+  skus: { orderBy: { id: 'asc' } },
 } satisfies Prisma.ItemCardapioInclude;
 
 type ItemCardapioComDetalhes = Prisma.ItemCardapioGetPayload<{ include: typeof DETALHES_DO_ITEM }>;
@@ -86,6 +87,14 @@ function paraItemCardapio(item: ItemCardapioComDetalhes): ItemCardapio {
       item.fotos.map((foto) => ({ url: foto.url, ordem: foto.ordem, cor: foto.cor ?? undefined })),
       item.imagemUrl ?? undefined,
     ),
+    skus: item.skus.map((sku) => ({
+      id: sku.id,
+      tamanho: sku.tamanho ?? undefined,
+      cor: sku.cor ?? undefined,
+      estoque: sku.estoque,
+      preco: sku.preco === null ? undefined : Number(sku.preco),
+      ativo: sku.ativo,
+    })),
   };
 }
 

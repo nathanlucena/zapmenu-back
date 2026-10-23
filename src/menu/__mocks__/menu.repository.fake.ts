@@ -2,7 +2,7 @@ import { DomainError } from '../../shared/errors/domain-error.js';
 import type { RegrasDaLoja } from '../../orders/application/ports/loja-para-pedidos.js';
 import type { MenuRepository } from '../menu.repository.js';
 import { fotosDoItem } from '../fotos-do-produto.js';
-import type { FotoProduto, ItemCardapio, ItemDraft } from '../menu.types.js';
+import type { FotoProduto, ItemCardapio, ItemDraft, Sku } from '../menu.types.js';
 
 let proximoId = 1;
 
@@ -20,6 +20,8 @@ export type MenuRepositoryFake = MenuRepository & {
   definirRegras(empreendedorId: string, regras: Partial<RegrasDaLoja>): void;
   /** Galeria de um item, como se tivesse sido cadastrada. */
   definirFotos(itemId: string, fotos: FotoProduto[]): void;
+  /** Tamanhos/cores de um item, como se tivessem sido cadastrados. */
+  definirSkus(itemId: string, skus: Sku[]): void;
 };
 
 export function criarMenuRepositoryFake(): MenuRepositoryFake {
@@ -27,10 +29,15 @@ export function criarMenuRepositoryFake(): MenuRepositoryFake {
   const regrasPorEmpreendedor = new Map<string, RegrasDaLoja>();
   const itensPorCardapio = new Map<string, ItemCardapio[]>();
   const fotosPorItem = new Map<string, FotoProduto[]>();
+  const skusPorItem = new Map<string, Sku[]>();
 
   /** O item como a leitura do banco devolve. */
   function lido(item: ItemCardapio): ItemCardapio {
-    return { ...item, fotos: fotosDoItem(fotosPorItem.get(item.id) ?? [], item.imagemUrl) };
+    return {
+      ...item,
+      fotos: fotosDoItem(fotosPorItem.get(item.id) ?? [], item.imagemUrl),
+      skus: skusPorItem.get(item.id) ?? [],
+    };
   }
 
   function buscarItem(cardapioId: string, itemId: string): ItemCardapio {
@@ -64,6 +71,10 @@ export function criarMenuRepositoryFake(): MenuRepositoryFake {
 
     definirFotos(itemId, fotos) {
       fotosPorItem.set(itemId, fotos);
+    },
+
+    definirSkus(itemId, skus) {
+      skusPorItem.set(itemId, skus);
     },
 
     async obterOuCriarCardapio(empreendedorId: string) {

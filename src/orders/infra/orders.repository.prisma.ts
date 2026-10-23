@@ -20,6 +20,7 @@ type PedidoComItens = Prisma.PedidoGetPayload<{ include: typeof COM_ITENS }>;
 function paraPedido(pedido: PedidoComItens): Pedido {
   const itens: ItemPedidoInput[] = pedido.itens.map((item) => ({
     itemCardapioId: item.itemCardapioId,
+    skuId: item.skuId ?? undefined,
     nome: item.itemCardapio.nome,
     quantidade: item.quantidade,
     precoUnitario: Number(item.precoUnitario),
@@ -87,6 +88,7 @@ export function criarOrdersRepositoryPrisma(prisma: PrismaClient): OrdersReposit
           itens: {
             create: dadosPedido.itens.map((item) => ({
               itemCardapio: { connect: { id: item.itemCardapioId } },
+              ...(item.skuId && { sku: { connect: { id: item.skuId } } }),
               quantidade: item.quantidade,
               precoUnitario: item.precoUnitario,
               variacaoEscolhida: (item.variacaoEscolhida as Prisma.InputJsonValue | undefined) ?? Prisma.JsonNull,

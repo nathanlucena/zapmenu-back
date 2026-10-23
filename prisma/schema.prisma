@@ -122,6 +122,7 @@ model ItemCardapio {
   variacoes   Variacao[]
   itensPedido ItemPedido[]
   fotos       FotoProduto[]
+  skus        Sku[]
 
   @@index([cardapioId])
   @@index([categoriaId])
@@ -150,6 +151,24 @@ model Variacao {
   opcoes Json
 
   @@index([itemId])
+}
+
+/// Combinação vendável de um produto (tamanho + cor) com estoque próprio. Item com
+/// SKU só é vendido escolhendo um; item sem SKU (comida) segue só com variações.
+model Sku {
+  id      String       @id @default(cuid())
+  itemId  String
+  item    ItemCardapio @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  tamanho String?
+  cor     String?
+  estoque Int          @default(0)
+  /// Sobrepõe o precoBase do item quando preenchido.
+  preco   Decimal?     @db.Decimal(10, 2)
+  ativo   Boolean      @default(true)
+
+  itensPedido ItemPedido[]
+
+  @@unique([itemId, tamanho, cor])
 }
 
 enum StatusPedido {
@@ -220,6 +239,9 @@ model ItemPedido {
   pedido            Pedido       @relation(fields: [pedidoId], references: [id])
   itemCardapioId    String
   itemCardapio      ItemCardapio @relation(fields: [itemCardapioId], references: [id])
+  /// Tamanho/cor escolhido, quando o item tem SKUs.
+  skuId             String?
+  sku               Sku?         @relation(fields: [skuId], references: [id])
   quantidade        Int
   variacaoEscolhida Json?
   /**

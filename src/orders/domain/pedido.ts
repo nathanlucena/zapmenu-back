@@ -80,6 +80,8 @@ export interface DetalhesPedido {
 
 export interface ItemPedidoInput {
   itemCardapioId: string;
+  /** Tamanho/cor vendido, quando o item tem SKUs. */
+  skuId?: string;
   /** Nome do item no cardápio; só vem na leitura do pedido, para mensagens. */
   nome?: string;
   quantidade: number;

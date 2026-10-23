@@ -26,6 +26,8 @@ const carrinhoInputSchema = z
       .array(
         z.object({
           itemCardapioId: z.string().min(1),
+          /** Tamanho/cor escolhido; obrigatório para item com SKUs. */
+          skuId: z.string().min(1).optional(),
           quantidade: z.number().int().positive(),
           // Aceito por compatibilidade, mas ignorado: o preço vem do cardápio.
           precoUnitario: z.number().nonnegative().optional(),
@@ -63,8 +65,9 @@ export function registerOrdersRoutes(app: FastifyInstance, deps: CriarPedidoDoCa
     const { itens, ...carrinho } = parseResult.data;
     const pedido = await criarPedidoDoCarrinho(deps, {
       ...carrinho,
-      itens: itens.map(({ itemCardapioId, quantidade, variacaoEscolhida, observacao }) => ({
+      itens: itens.map(({ itemCardapioId, skuId, quantidade, variacaoEscolhida, observacao }) => ({
         itemCardapioId,
+        skuId,
         quantidade,
         variacaoEscolhida,
         observacao,

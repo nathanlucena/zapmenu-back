@@ -1,6 +1,6 @@
 import { DomainError } from '../shared/errors/domain-error.js';
 import type { MenuRepository } from './menu.repository.js';
-import type { ItemCardapio, ItemDraft, VariacaoInput } from './menu.types.js';
+import type { ItemCardapio, ItemDraft, Sku, VariacaoInput } from './menu.types.js';
 
 export function lojaNaoEncontrada(): DomainError {
   return new DomainError('Loja não encontrada.', 'LOJA_NAO_ENCONTRADA', 'NAO_ENCONTRADO');
@@ -86,10 +86,15 @@ export async function criarItem(
 
 /**
  * Preço de uma unidade do item com as opções escolhidas. `escolha` mapeia o
- * nome da variação para o nome da opção (ex.: { Tamanho: "G" }). O preço vem
- * sempre do cardápio — nunca do que o cliente enviou.
+ * nome da variação para o nome da opção (ex.: { Tamanho: "G" }). O preço do
+ * SKU, quando tem, substitui o precoBase. O preço vem sempre do cardápio —
+ * nunca do que o cliente enviou.
  */
-export function calcularPrecoUnitario(item: ItemCardapio, escolha: Record<string, unknown> = {}): number {
+export function calcularPrecoUnitario(
+  item: ItemCardapio,
+  escolha: Record<string, unknown> = {},
+  sku?: Pick<Sku, 'preco'>,
+): number {
   const nomesVariacoes = new Set(item.variacoes.map((variacao) => variacao.nome));
   for (const nome of Object.keys(escolha)) {
     if (!nomesVariacoes.has(nome)) {
@@ -97,7 +102,7 @@ export function calcularPrecoUnitario(item: ItemCardapio, escolha: Record<string
     }
   }
 
-  let preco = item.precoBase;
+  let preco = sku?.preco ?? item.precoBase;
   for (const variacao of item.variacoes) {
     const escolhida = escolha[variacao.nome];
     const opcao = variacao.opcoes.find((candidata) => candidata.nome === escolhida);

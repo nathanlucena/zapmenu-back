@@ -23,6 +23,17 @@ export interface FotoProduto {
   cor?: string;
 }
 
+/** Tamanho + cor vendável de um produto, com estoque próprio (varejo). */
+export interface Sku {
+  id: string;
+  tamanho?: string;
+  cor?: string;
+  estoque: number;
+  /** Sobrepõe o precoBase do item. */
+  preco?: number;
+  ativo: boolean;
+}
+
 export interface ItemCardapio extends ItemDraft {
   id: string;
   cardapioId: string;
@@ -30,6 +41,8 @@ export interface ItemCardapio extends ItemDraft {
   ativo: boolean;
   /** Galeria em ordem; sem galeria, só o imagemUrl. Vem na leitura do cardápio. */
   fotos?: FotoProduto[];
+  /** Vazio para item sem tamanho/cor (toda comida). Vem na leitura do cardápio. */
+  skus?: Sku[];
 }
 
 export interface HorarioLoja {
