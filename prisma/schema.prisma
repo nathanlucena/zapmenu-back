@@ -222,6 +222,8 @@ model Pedido {
   enqueteAceiteId    String?          @unique
   /// Id da enquete de andamento (saiu/pronto, entregue/retirado) enviada à loja.
   enqueteAndamentoId String?          @unique
+  /// Pago sem estoque para algum SKU (corrida entre dois pagamentos): [{ skuId, quantidade, disponivel }].
+  faltaEstoque       Json?
 
   itens     ItemPedido[]
   pagamento Pagamento?

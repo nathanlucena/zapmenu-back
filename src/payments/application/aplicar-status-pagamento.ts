@@ -1,5 +1,6 @@
 import { confirmarPagamento } from '../../orders/application/confirmar-pagamento.js';
 import { DomainError } from '../../shared/errors/domain-error.js';
+import { logger } from '../../shared/logger/logger.js';
 import type { Pagamento, StatusPagamento } from '../domain/pagamento.js';
 import type { PaymentsServiceDeps } from './dependencias.js';
 
@@ -30,6 +31,11 @@ export async function aplicarStatusPagamento(
   }
 
   const pedidoPago = await confirmarPagamento(deps.ordersRepo, pedido.id, pedido, agora);
+  if (!pedidoPago) {
+    // Webhook e poller juntos: o outro já marcou como pago, baixou o estoque e avisou.
+    logger.info({ pedidoId: pedido.id }, 'pagamento já registrado por outra notificação');
+    return;
+  }
   await deps.notificarEmpreendedor(pedidoPago);
   await deps.avisarCliente?.(pedidoPago);
 }

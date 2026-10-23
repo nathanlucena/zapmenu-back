@@ -91,6 +91,30 @@ export interface ItemPedidoInput {
   observacao?: string;
 }
 
+/**
+ * SKU vendido sem estoque suficiente: dois pagamentos disputaram as últimas
+ * unidades e o PIX já tinha sido pago. A loja combina com o cliente.
+ */
+export interface FaltaEstoque {
+  skuId: string;
+  /** Total pedido desse SKU. */
+  quantidade: number;
+  /** O que havia no estoque na hora do pagamento (já baixado para zero). */
+  disponivel: number;
+}
+
+/** "falta estoque de Camiseta (Tamanho: M, Cor: Azul): pediu 2, havia 1". */
+export function descreverFaltas(pedido: Pick<Pedido, 'itens'>, faltas: FaltaEstoque[]): string {
+  return faltas
+    .map((falta) => {
+      const item = pedido.itens.find((candidato) => candidato.skuId === falta.skuId);
+      const opcoes = Object.entries(item?.variacaoEscolhida ?? {}).map(([nome, escolha]) => `${nome}: ${String(escolha)}`);
+      const nome = `${item?.nome ?? 'um item'}${opcoes.length > 0 ? ` (${opcoes.join(', ')})` : ''}`;
+      return `falta estoque de ${nome}: pediu ${falta.quantidade}, havia ${falta.disponivel}`;
+    })
+    .join('; ');
+}
+
 export interface CarrinhoInput {
   empreendedorId: string;
   itens: ItemPedidoInput[];
@@ -111,6 +135,7 @@ export interface Pedido extends DetalhesPedido {
   enqueteAceiteId?: string;
   /** Enquete de andamento (saiu/pronto, entregue/retirado) enviada à loja depois do pago/confirmado. */
   enqueteAndamentoId?: string;
+  faltaEstoque?: FaltaEstoque[];
 }
 
 /** O que o app do cliente vê de um pedido: sem telefone, endereço do cliente nem ids internos. */
@@ -151,6 +176,14 @@ const TRANSICOES_PERMITIDAS: Record<StatusPedido, StatusPedido[]> = {
   RECUSADO: [],
   CANCELADO: [],
 };
+
+/**
+ * Status em que o pedido virou venda e o estoque dos SKUs já foi baixado. Nenhum
+ * deles volta para EXPIRADO, RECUSADO ou CANCELADO, então não há estoque a devolver.
+ */
+export const STATUS_DE_VENDA = ['PAGO', 'CONFIRMADO'] as const satisfies readonly StatusPedido[];
+
+export type StatusDeVenda = (typeof STATUS_DE_VENDA)[number];
 
 export function podeTransicionar(atual: StatusPedido, proximo: StatusPedido): boolean {
   return TRANSICOES_PERMITIDAS[atual].includes(proximo);

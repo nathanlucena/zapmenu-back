@@ -1,17 +1,21 @@
 import { DomainError } from '../../shared/errors/domain-error.js';
 import type { OrdersRepository } from '../application/ports/orders.repository.js';
-import { estaExpirado, STATUS_EM_ANDAMENTO, type Pedido } from '../domain/pedido.js';
+import { estaExpirado, STATUS_EM_ANDAMENTO, type FaltaEstoque, type Pedido } from '../domain/pedido.js';
 
 let proximoId = 1;
 
 export interface OrdersRepositoryFake extends OrdersRepository {
   /** O fake não conhece pagamentos: o teste diz qual PIX o pedido tem. */
   definirPix(pedidoId: string, pix: { copiaCola: string; qrCodeBase64?: string }): void;
+  /** O fake não conhece o cardápio: o teste diz o estoque de cada SKU. */
+  definirEstoque(skuId: string, estoque: number): void;
+  estoqueDe(skuId: string): number | undefined;
 }
 
 export function criarOrdersRepositoryFake(): OrdersRepositoryFake {
   const pedidos = new Map<string, Pedido>();
   const pixPorPedido = new Map<string, { copiaCola: string; qrCodeBase64?: string }>();
+  const estoquePorSku = new Map<string, number>();
 
   return {
     async codigoJaExiste(codigoCurto: string) {
@@ -95,6 +99,46 @@ export function criarOrdersRepositoryFake(): OrdersRepositoryFake {
 
     definirPix(pedidoId, pix) {
       pixPorPedido.set(pedidoId, pix);
+    },
+
+    definirEstoque(skuId, estoque) {
+      estoquePorSku.set(skuId, estoque);
+    },
+
+    estoqueDe(skuId) {
+      return estoquePorSku.get(skuId);
+    },
+
+    async registrarVenda(id, venda) {
+      const pedido = pedidos.get(id);
+      if (!pedido || pedido.status !== venda.de) {
+        return { tipo: 'JA_REGISTRADA' };
+      }
+      const total = new Map<string, number>();
+      for (const { skuId, quantidade } of pedido.itens) {
+        if (skuId) total.set(skuId, (total.get(skuId) ?? 0) + quantidade);
+      }
+      const faltas: FaltaEstoque[] = [];
+      const baixas = new Map<string, number>();
+      for (const [skuId, quantidade] of total) {
+        const disponivel = Math.max(estoquePorSku.get(skuId) ?? 0, 0);
+        if (disponivel < quantidade) faltas.push({ skuId, quantidade, disponivel });
+        baixas.set(skuId, Math.min(quantidade, disponivel));
+      }
+      if (faltas.length > 0 && venda.seFaltarEstoque === 'NAO_VENDER') {
+        return { tipo: 'SEM_ESTOQUE', faltas };
+      }
+      for (const [skuId, baixa] of baixas) {
+        estoquePorSku.set(skuId, (estoquePorSku.get(skuId) ?? 0) - baixa);
+      }
+      const vendido: Pedido = {
+        ...pedido,
+        status: venda.para,
+        confirmadoEm: venda.confirmadoEm,
+        ...(faltas.length > 0 && { faltaEstoque: faltas }),
+      };
+      pedidos.set(id, vendido);
+      return { tipo: 'REGISTRADA', pedido: vendido };
     },
 
     async listarExpirados(agora: Date) {

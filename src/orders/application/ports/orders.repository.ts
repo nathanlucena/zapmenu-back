@@ -1,4 +1,22 @@
-import type { Pedido, ResumoPedidoPublico, StatusPedido } from '../../domain/pedido.js';
+import type { FaltaEstoque, Pedido, ResumoPedidoPublico, StatusDeVenda, StatusPedido } from '../../domain/pedido.js';
+
+export interface Venda {
+  /** Só registra se o pedido ainda estiver neste status: webhook e poller podem chegar juntos. */
+  de: StatusPedido;
+  para: StatusDeVenda;
+  confirmadoEm: Date;
+  /**
+   * VENDER_ASSIM_MESMO: o dinheiro já entrou (PIX); baixa o que houver, sem ficar
+   * negativo, e grava a falta no pedido. NAO_VENDER: nada muda se faltar.
+   */
+  seFaltarEstoque: 'VENDER_ASSIM_MESMO' | 'NAO_VENDER';
+}
+
+export type ResultadoVenda =
+  | { tipo: 'REGISTRADA'; pedido: Pedido }
+  /** Outro processo já mudou o status: nada foi baixado de novo. */
+  | { tipo: 'JA_REGISTRADA' }
+  | { tipo: 'SEM_ESTOQUE'; faltas: FaltaEstoque[] };
 
 export interface OrdersRepository {
   codigoJaExiste(codigoCurto: string): Promise<boolean>;
@@ -16,6 +34,8 @@ export interface OrdersRepository {
     alteracoes: Partial<Pick<Pedido, 'status' | 'telefoneCliente' | 'confirmadoEm' | 'expiraEm' | 'enqueteAceiteId' | 'enqueteAndamentoId'>>,
   ): Promise<Pedido>;
   listarExpirados(agora: Date): Promise<Pedido[]>;
+  /** Muda o pedido para PAGO/CONFIRMADO e, na mesma transação, dá baixa no estoque dos SKUs. */
+  registrarVenda(id: string, venda: Venda): Promise<ResultadoVenda>;
 }
 
 export type { StatusPedido };

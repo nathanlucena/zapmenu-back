@@ -209,8 +209,8 @@ describe('confirmarPagamento', () => {
 
     const pago = await confirmarPagamento(repositorio, criado.id, { status: 'AGUARDANDO_PAGAMENTO' });
 
-    expect(pago.status).toBe('PAGO');
-    expect(pago.confirmadoEm).toBeInstanceOf(Date);
+    expect(pago?.status).toBe('PAGO');
+    expect(pago?.confirmadoEm).toBeInstanceOf(Date);
   });
 
   it('lança DomainError se pedido não está em AGUARDANDO_PAGAMENTO', async () => {

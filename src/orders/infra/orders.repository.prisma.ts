@@ -1,11 +1,12 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
-import type { OrdersRepository } from '../application/ports/orders.repository.js';
+import type { OrdersRepository, ResultadoVenda } from '../application/ports/orders.repository.js';
 import { empreendedorPorIdentificador } from '../../shared/db/identificador-loja.js';
 import { DomainError } from '../../shared/errors/domain-error.js';
 import {
   STATUS_COM_PRAZO,
   STATUS_EM_ANDAMENTO,
   type EnderecoEntrega,
+  type FaltaEstoque,
   type ItemPedidoInput,
   type Pedido,
   type ResumoPedidoPublico,
@@ -48,7 +49,26 @@ function paraPedido(pedido: PedidoComItens): Pedido {
     confirmadoEm: pedido.confirmadoEm ?? undefined,
     enqueteAceiteId: pedido.enqueteAceiteId ?? undefined,
     enqueteAndamentoId: pedido.enqueteAndamentoId ?? undefined,
+    faltaEstoque: (pedido.faltaEstoque as FaltaEstoque[] | null) ?? undefined,
   };
+}
+
+/** Desfaz a transação da venda quando falta estoque e a regra é não vender. */
+class VendaSemEstoque extends Error {
+  constructor(public readonly faltas: FaltaEstoque[]) {
+    super('venda sem estoque');
+  }
+}
+
+/** Total de cada SKU no pedido (o mesmo SKU pode estar em mais de uma linha). */
+function totalPorSku(itens: { skuId: string | null; quantidade: number }[]): Map<string, number> {
+  const total = new Map<string, number>();
+  for (const { skuId, quantidade } of itens) {
+    if (skuId) {
+      total.set(skuId, (total.get(skuId) ?? 0) + quantidade);
+    }
+  }
+  return total;
 }
 
 /**
@@ -174,6 +194,57 @@ export function criarOrdersRepositoryPrisma(prisma: PrismaClient): OrdersReposit
     async atualizar(id: string, alteracoes) {
       const pedido = await prisma.pedido.update({ where: { id }, data: alteracoes, include: COM_ITENS });
       return paraPedido(pedido);
+    },
+
+    async registrarVenda(id, venda) {
+      try {
+        return await prisma.$transaction(async (tx): Promise<ResultadoVenda> => {
+          // Condicional: a segunda notificação do mesmo pagamento não acha o pedido no status de origem.
+          const { count } = await tx.pedido.updateMany({
+            where: { id, status: venda.de },
+            data: { status: venda.para, confirmadoEm: venda.confirmadoEm },
+          });
+          if (count === 0) {
+            return { tipo: 'JA_REGISTRADA' };
+          }
+
+          const pedidos = totalPorSku(await tx.itemPedido.findMany({ where: { pedidoId: id }, select: { skuId: true, quantidade: true } }));
+          const ids = [...pedidos.keys()].sort();
+          const faltas: FaltaEstoque[] = [];
+          if (ids.length > 0) {
+            // Trava as linhas (sempre na mesma ordem, sem deadlock) até o fim da transação.
+            const estoques = await tx.$queryRaw<{ id: string; estoque: number }[]>`
+              SELECT "id", "estoque" FROM "Sku" WHERE "id" IN (${Prisma.join(ids)}) ORDER BY "id" FOR UPDATE`;
+            const estoquePorId = new Map(estoques.map((sku) => [sku.id, sku.estoque]));
+            for (const skuId of ids) {
+              const quantidade = pedidos.get(skuId)!;
+              const disponivel = Math.max(estoquePorId.get(skuId) ?? 0, 0);
+              const baixa = Math.min(quantidade, disponivel);
+              if (baixa < quantidade) {
+                faltas.push({ skuId, quantidade, disponivel });
+              }
+              if (baixa > 0) {
+                // Nunca fica negativo, mesmo se algo escapar da trava.
+                await tx.sku.updateMany({ where: { id: skuId, estoque: { gte: baixa } }, data: { estoque: { decrement: baixa } } });
+              }
+            }
+          }
+
+          if (faltas.length > 0) {
+            if (venda.seFaltarEstoque === 'NAO_VENDER') {
+              throw new VendaSemEstoque(faltas);
+            }
+            await tx.pedido.update({ where: { id }, data: { faltaEstoque: faltas as unknown as Prisma.InputJsonValue } });
+          }
+          const pedido = await tx.pedido.findUniqueOrThrow({ where: { id }, include: COM_ITENS });
+          return { tipo: 'REGISTRADA', pedido: paraPedido(pedido) };
+        });
+      } catch (erro) {
+        if (erro instanceof VendaSemEstoque) {
+          return { tipo: 'SEM_ESTOQUE', faltas: erro.faltas };
+        }
+        throw erro;
+      }
     },
 
     async listarExpirados(agora: Date) {

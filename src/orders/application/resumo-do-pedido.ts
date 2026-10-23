@@ -1,4 +1,4 @@
-import { descreverPagamento, type Pedido } from '../domain/pedido.js';
+import { descreverFaltas, descreverPagamento, type Pedido } from '../domain/pedido.js';
 
 function reais(valor: number): string {
   return `R$ ${valor.toFixed(2)}`;
@@ -28,6 +28,9 @@ export function linhasDoPedido(pedido: Pedido): string[] {
     if (item.observacao) {
       linhas.push(`   📝 ${item.observacao}`);
     }
+  }
+  if (pedido.faltaEstoque?.length) {
+    linhas.push(`⚠️ Pago, mas ${descreverFaltas(pedido, pedido.faltaEstoque)}. Combine com o cliente (troca ou devolução).`);
   }
   linhas.push('');
   if (pedido.modalidade === 'ENTREGA' && pedido.entrega) {
