@@ -1,5 +1,19 @@
 import type { FaltaEstoque, Pedido, ResumoPedidoPublico, StatusDeVenda, StatusPedido } from '../../domain/pedido.js';
 
+export type AlteracoesPedido = Partial<
+  Pick<
+    Pedido,
+    | 'status'
+    | 'telefoneCliente'
+    | 'confirmadoEm'
+    | 'expiraEm'
+    | 'enqueteAceiteId'
+    | 'enqueteAndamentoId'
+    | 'codigoRastreio'
+    | 'transportadora'
+  >
+>;
+
 export interface Venda {
   /** Só registra se o pedido ainda estiver neste status: webhook e poller podem chegar juntos. */
   de: StatusPedido;
@@ -26,13 +40,15 @@ export interface OrdersRepository {
   /** Pelo id da enquete de aceite ou da de andamento. */
   buscarPorEnquete(enqueteId: string): Promise<Pedido | null>;
   listarPorStatus(status: StatusPedido): Promise<Pedido[]>;
-  /** Pedidos em andamento criados antes de `limite`, para concluir sozinhos. */
+  /**
+   * Pedidos criados antes de `limite` que podem concluir sozinhos: status de
+   * STATUS_QUE_CONCLUEM_SOZINHOS e sem produto de tamanho/cor (varejo envia, leva dias).
+   */
   listarEmAndamentoAntesDe(limite: Date): Promise<Pedido[]>;
   buscarResumoPublico(codigoCurto: string): Promise<ResumoPedidoPublico | null>;
-  atualizar(
-    id: string,
-    alteracoes: Partial<Pick<Pedido, 'status' | 'telefoneCliente' | 'confirmadoEm' | 'expiraEm' | 'enqueteAceiteId' | 'enqueteAndamentoId'>>,
-  ): Promise<Pedido>;
+  atualizar(id: string, alteracoes: AlteracoesPedido): Promise<Pedido>;
+  /** Só atualiza se o pedido ainda estiver em `de`; null se outro processo já mudou o status. */
+  atualizarSeStatus(id: string, de: StatusPedido, alteracoes: AlteracoesPedido): Promise<Pedido | null>;
   listarExpirados(agora: Date): Promise<Pedido[]>;
   /** SKUs do pedido sem estoque para a quantidade pedida agora, sem baixar nada. */
   faltasDeEstoque(id: string): Promise<FaltaEstoque[]>;

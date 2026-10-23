@@ -163,6 +163,52 @@ describe('loja aceita ou recusa o pedido antes do PIX', () => {
     expect(loja.mensagensEnviadas.at(-1)?.conteudo).toContain('já está como "concluído"');
   });
 
+  it('etapas do varejo em texto: separei, enviei com rastreio e entreguei, avisando o cliente uma vez por etapa', async () => {
+    const encomenda = await criarPedido(
+      ordersRepo,
+      { empreendedorId: 'emp-1', itens: [{ itemCardapioId: 'camiseta', quantidade: 1, precoUnitario: 60 }] },
+      20,
+      new Date(),
+      { modalidade: 'ENTREGA', formaPagamento: 'CARTAO' },
+    );
+    await cliente.emitirMensagem({ id: 'c3', telefone: TELEFONE_CLIENTE, corpo: encomenda.codigoCurto, timestamp: new Date() });
+    await loja.emitirMensagem({ id: 'l4', telefone: TELEFONE_LOJA, corpo: `aceitar ${encomenda.codigoCurto}`, timestamp: new Date() });
+    const statusDaEncomenda = async () => (await ordersRepo.buscarPorId(encomenda.id))?.status;
+    const avisosAoCliente = () => cliente.mensagensEnviadas.length;
+
+    await loja.emitirMensagem({ id: 'l5', telefone: TELEFONE_LOJA, corpo: `separei ${encomenda.codigoCurto}`, timestamp: new Date() });
+    expect(await statusDaEncomenda()).toBe('SEPARADO');
+    expect(cliente.mensagensEnviadas.at(-1)?.conteudo).toBe(
+      `Seu pedido ${encomenda.codigoCurto} foi separado 📦 Avisamos quando sair.`,
+    );
+    expect(loja.mensagensEnviadas.at(-1)?.conteudo).toBe(`Pedido ${encomenda.codigoCurto}: separado ✅ Cliente avisado.`);
+
+    await loja.emitirMensagem({
+      id: 'l6',
+      telefone: TELEFONE_LOJA,
+      corpo: `enviei ${encomenda.codigoCurto} rastreio NX123456789BR`,
+      timestamp: new Date(),
+    });
+    expect(await ordersRepo.buscarPorId(encomenda.id)).toMatchObject({
+      status: 'ENVIADO',
+      codigoRastreio: 'NX123456789BR',
+      transportadora: 'Correios',
+    });
+    expect(cliente.mensagensEnviadas.at(-1)?.conteudo).toBe(
+      `Seu pedido ${encomenda.codigoCurto} foi enviado pelos Correios 🚚\nCódigo de rastreio: NX123456789BR\nPagamento: Cartão na entrega — R$ 60.00.`,
+    );
+
+    // A mesma etapa de novo não muda nada nem avisa o cliente outra vez.
+    const antes = avisosAoCliente();
+    await loja.emitirMensagem({ id: 'l7', telefone: TELEFONE_LOJA, corpo: `enviei ${encomenda.codigoCurto}`, timestamp: new Date() });
+    expect(avisosAoCliente()).toBe(antes);
+    expect(loja.mensagensEnviadas.at(-1)?.conteudo).toContain('já está como "enviado"');
+
+    await loja.emitirMensagem({ id: 'l8', telefone: TELEFONE_LOJA, corpo: `entreguei ${encomenda.codigoCurto}`, timestamp: new Date() });
+    expect(await statusDaEncomenda()).toBe('CONCLUIDO');
+    expect(cliente.mensagensEnviadas.at(-1)?.conteudo).toContain('concluído');
+  });
+
   it('"pronto PED-XXXX" antes do pagamento é recusado com explicação', async () => {
     await loja.emitirMensagem({ id: 'l9', telefone: TELEFONE_LOJA, corpo: `pronto ${pedido.codigoCurto}`, timestamp: new Date() });
 

@@ -4,7 +4,7 @@ import { empreendedorPorIdentificador } from '../../shared/db/identificador-loja
 import { DomainError } from '../../shared/errors/domain-error.js';
 import {
   STATUS_COM_PRAZO,
-  STATUS_EM_ANDAMENTO,
+  STATUS_QUE_CONCLUEM_SOZINHOS,
   type EnderecoEntrega,
   type FaltaEstoque,
   type ItemPedidoInput,
@@ -50,6 +50,8 @@ function paraPedido(pedido: PedidoComItens): Pedido {
     enqueteAceiteId: pedido.enqueteAceiteId ?? undefined,
     enqueteAndamentoId: pedido.enqueteAndamentoId ?? undefined,
     faltaEstoque: (pedido.faltaEstoque as FaltaEstoque[] | null) ?? undefined,
+    codigoRastreio: pedido.codigoRastreio ?? undefined,
+    transportadora: pedido.transportadora ?? undefined,
   };
 }
 
@@ -145,6 +147,8 @@ export function criarOrdersRepositoryPrisma(prisma: PrismaClient): OrdersReposit
         expiraEm: pedido.expiraEm,
         criadoEm: pedido.criadoEm,
         nomeLoja: pedido.empreendedor.loja?.nome ?? undefined,
+        codigoRastreio: pedido.codigoRastreio ?? undefined,
+        transportadora: pedido.transportadora ?? undefined,
         pix:
           pedido.status === 'AGUARDANDO_PAGAMENTO' && pedido.pagamento?.copiaCola
             ? { copiaCola: pedido.pagamento.copiaCola, qrCodeBase64: pedido.pagamento.qrCodeBase64 ?? undefined }
@@ -185,7 +189,11 @@ export function criarOrdersRepositoryPrisma(prisma: PrismaClient): OrdersReposit
 
     async listarEmAndamentoAntesDe(limite: Date) {
       const pedidos = await prisma.pedido.findMany({
-        where: { status: { in: STATUS_EM_ANDAMENTO }, criadoEm: { lt: limite } },
+        where: {
+          status: { in: STATUS_QUE_CONCLUEM_SOZINHOS },
+          criadoEm: { lt: limite },
+          itens: { none: { skuId: { not: null } } },
+        },
         include: COM_ITENS,
       });
       return pedidos.map(paraPedido);
@@ -256,6 +264,15 @@ export function criarOrdersRepositoryPrisma(prisma: PrismaClient): OrdersReposit
         }
         throw erro;
       }
+    },
+
+    async atualizarSeStatus(id, de, alteracoes) {
+      const { count } = await prisma.pedido.updateMany({ where: { id, status: de }, data: alteracoes });
+      if (count === 0) {
+        return null;
+      }
+      const pedido = await prisma.pedido.findUniqueOrThrow({ where: { id }, include: COM_ITENS });
+      return paraPedido(pedido);
     },
 
     async listarExpirados(agora: Date) {

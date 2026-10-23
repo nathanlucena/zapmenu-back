@@ -7,6 +7,8 @@ import {
   STATUS_EM_ANDAMENTO,
   type AndamentoPedido,
   type Pedido,
+  type Rastreio,
+  type StatusPedido,
 } from '../domain/pedido.js';
 import { garantirDonoDaLoja } from './decidir-pedido.js';
 import type { ContatoEmpreendedores, MensageiroEmpreendedor } from './ports/avisos-empreendedor.js';
@@ -54,15 +56,31 @@ export async function pedirAndamentoDaLoja(
   }
 }
 
-/** A loja avisa que o pedido saiu/está pronto ou foi entregue/retirado. Só o dono da loja. */
+function statusDoAndamento(pedido: Pick<Pedido, 'modalidade'>, andamento: AndamentoPedido): StatusPedido {
+  switch (andamento) {
+    case 'A_CAMINHO':
+      return statusACaminho(pedido.modalidade);
+    case 'SEPARADO':
+    case 'ENVIADO':
+    case 'CONCLUIDO':
+      return andamento;
+  }
+}
+
+/**
+ * A loja avisa que separou, que o pedido saiu/está pronto, que enviou (com
+ * rastreio) ou que foi entregue/retirado. Só o dono da loja. Repetir o mesmo
+ * aviso, ou dois avisos ao mesmo tempo, não muda nada nem avisa o cliente de novo.
+ */
 export async function atualizarAndamento(
   deps: AndamentoDeps,
   pedido: Pedido,
   andamento: AndamentoPedido,
   telefoneDaLoja: string,
+  rastreio: Rastreio = {},
 ): Promise<Pedido> {
   await garantirDonoDaLoja(deps.contatos, pedido, telefoneDaLoja);
-  const proximo = andamento === 'A_CAMINHO' ? statusACaminho(pedido.modalidade) : 'CONCLUIDO';
+  const proximo = statusDoAndamento(pedido, andamento);
   if (pedido.status === proximo) {
     throw new DomainError(
       `O pedido ${pedido.codigoCurto} já está como "${ROTULO_STATUS_PEDIDO[proximo].toLowerCase()}".`,
@@ -76,7 +94,21 @@ export async function atualizarAndamento(
       : `ainda não foi pago ou aceito (${ROTULO_STATUS_PEDIDO[pedido.status].toLowerCase()})`;
     throw new DomainError(`O pedido ${pedido.codigoCurto} ${motivo}.`, 'TRANSICAO_INVALIDA', 'CONFLITO');
   }
-  return deps.ordersRepo.atualizar(pedido.id, { status: proximo });
+  if (proximo === 'ENVIADO' && pedido.modalidade !== 'ENTREGA') {
+    throw new DomainError(
+      `O pedido ${pedido.codigoCurto} é para retirar na loja, não para enviar.`,
+      'TRANSICAO_INVALIDA',
+      'CONFLITO',
+    );
+  }
+  const atualizado = await deps.ordersRepo.atualizarSeStatus(pedido.id, pedido.status, {
+    status: proximo,
+    ...(proximo === 'ENVIADO' && rastreio),
+  });
+  if (!atualizado) {
+    throw new DomainError(`O pedido ${pedido.codigoCurto} acabou de ser atualizado.`, 'ANDAMENTO_REPETIDO', 'CONFLITO');
+  }
+  return atualizado;
 }
 
 /** Pedidos em andamento há mais de `horas` são concluídos sozinhos, para nada ficar "a caminho" para sempre. */

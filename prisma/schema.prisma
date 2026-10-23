@@ -180,7 +180,11 @@ enum StatusPedido {
   PAGO
   /// Aceito pela loja, com pagamento na entrega ou no balcão.
   CONFIRMADO
+  /// Varejo: a loja separou as peças.
+  SEPARADO
   SAIU_PARA_ENTREGA
+  /// Varejo: despachado por transportadora, com rastreio.
+  ENVIADO
   PRONTO_PARA_RETIRADA
   CONCLUIDO
   EXPIRADO
@@ -222,6 +226,9 @@ model Pedido {
   enqueteAceiteId    String?          @unique
   /// Id da enquete de andamento (saiu/pronto, entregue/retirado) enviada à loja.
   enqueteAndamentoId String?          @unique
+  /// Rastreio informado pela loja ao enviar (varejo).
+  codigoRastreio     String?
+  transportadora     String?
   /// Pago sem estoque para algum SKU (corrida entre dois pagamentos): [{ skuId, quantidade, disponivel }].
   faltaEstoque       Json?
 

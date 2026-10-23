@@ -15,6 +15,7 @@ import {
   extrairDecisaoPedido,
   ROTULO_STATUS_PEDIDO,
   type AndamentoPedido,
+  type Rastreio,
   type DecisaoPedido,
   type Pedido,
 } from '../../orders/domain/pedido.js';
@@ -163,17 +164,18 @@ function mensageiroDa(whatsapp: WhatsAppClient) {
   };
 }
 
-/** Loja avisou que saiu/está pronto ou foi entregue/retirado: atualiza e avisa o cliente. */
+/** Loja avisou que separou, saiu/está pronto, enviou ou foi entregue/retirado: atualiza e avisa o cliente. */
 async function aplicarAndamento(
   deps: DecisaoPedidoDeps,
   whatsapp: WhatsAppClient,
   telefoneLoja: string,
   pedido: Pedido,
   andamento: AndamentoPedido,
+  rastreio?: Rastreio,
 ): Promise<void> {
   let atualizado: Pedido;
   try {
-    atualizado = await atualizarAndamento(deps, pedido, andamento, telefoneLoja);
+    atualizado = await atualizarAndamento(deps, pedido, andamento, telefoneLoja, rastreio);
   } catch (erro) {
     if (erro instanceof DomainError) {
       await whatsapp.sendText(telefoneLoja, erro.message);
@@ -219,7 +221,7 @@ export async function tratarRespostaDaLojaEmTexto(
   if (decisao) {
     await aplicarDecisao(deps, whatsapp, mensagem.telefone, pedido, decisao.decisao);
   } else if (andamento) {
-    await aplicarAndamento(deps, whatsapp, mensagem.telefone, pedido, andamento.andamento);
+    await aplicarAndamento(deps, whatsapp, mensagem.telefone, pedido, andamento.andamento, andamento.rastreio);
   }
   return true;
 }

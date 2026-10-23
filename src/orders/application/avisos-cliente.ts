@@ -7,12 +7,26 @@ export function mensagemPagamentoConfirmado(pedido: Pick<Pedido, 'codigoCurto'>)
 
 /** Aviso ao cliente quando a loja atualiza o andamento; undefined quando não há o que avisar. */
 export function mensagemAndamento(
-  pedido: Pick<Pedido, 'codigoCurto' | 'status' | 'formaPagamento' | 'trocoPara' | 'modalidade' | 'valorTotal'>,
+  pedido: Pick<
+    Pedido,
+    'codigoCurto' | 'status' | 'formaPagamento' | 'trocoPara' | 'modalidade' | 'valorTotal' | 'codigoRastreio' | 'transportadora'
+  >,
 ): string | undefined {
   const pagar = pagaNaEntrega(pedido.formaPagamento)
     ? `\nPagamento: ${descreverPagamento(pedido)} — R$ ${pedido.valorTotal.toFixed(2)}.`
     : '';
   switch (pedido.status) {
+    case 'SEPARADO':
+      return `Seu pedido ${pedido.codigoCurto} foi separado 📦 Avisamos quando ${pedido.modalidade === 'ENTREGA' ? 'sair' : 'estiver pronto para retirar'}.`;
+    case 'ENVIADO': {
+      const por = !pedido.transportadora
+        ? ''
+        : pedido.transportadora === 'Correios'
+          ? ' pelos Correios'
+          : ` pela ${pedido.transportadora}`;
+      const rastreio = pedido.codigoRastreio ? `\nCódigo de rastreio: ${pedido.codigoRastreio}` : '';
+      return `Seu pedido ${pedido.codigoCurto} foi enviado${por} 🚚${rastreio}${pagar}`;
+    }
     case 'SAIU_PARA_ENTREGA':
       return `Seu pedido ${pedido.codigoCurto} saiu para entrega 🛵${pagar}`;
     case 'PRONTO_PARA_RETIRADA':

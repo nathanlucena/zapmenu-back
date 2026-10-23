@@ -1,6 +1,6 @@
 import { DomainError } from '../../shared/errors/domain-error.js';
 import type { OrdersRepository } from '../application/ports/orders.repository.js';
-import { estaExpirado, STATUS_EM_ANDAMENTO, type FaltaEstoque, type Pedido } from '../domain/pedido.js';
+import { estaExpirado, STATUS_QUE_CONCLUEM_SOZINHOS, type FaltaEstoque, type Pedido } from '../domain/pedido.js';
 
 let proximoId = 1;
 
@@ -49,6 +49,8 @@ export function criarOrdersRepositoryFake(): OrdersRepositoryFake {
         valorTotal,
         expiraEm,
         criadoEm,
+        codigoRastreio: pedido.codigoRastreio,
+        transportadora: pedido.transportadora,
         pix: status === 'AGUARDANDO_PAGAMENTO' ? pixPorPedido.get(pedido.id) : undefined,
         // O fake não conhece o cardápio: usa o id do item como nome.
         itens: pedido.itens.map(({ itemCardapioId, quantidade, precoUnitario, variacaoEscolhida, observacao }) => ({
@@ -83,7 +85,10 @@ export function criarOrdersRepositoryFake(): OrdersRepositoryFake {
 
     async listarEmAndamentoAntesDe(limite: Date) {
       return Array.from(pedidos.values()).filter(
-        (pedido) => STATUS_EM_ANDAMENTO.includes(pedido.status) && pedido.criadoEm < limite,
+        (pedido) =>
+          STATUS_QUE_CONCLUEM_SOZINHOS.includes(pedido.status) &&
+          pedido.criadoEm < limite &&
+          !pedido.itens.some((item) => item.skuId),
       );
     },
 
@@ -91,6 +96,16 @@ export function criarOrdersRepositoryFake(): OrdersRepositoryFake {
       const pedido = pedidos.get(id);
       if (!pedido) {
         throw new DomainError(`Pedido ${id} não encontrado.`, 'PEDIDO_NAO_ENCONTRADO');
+      }
+      const atualizado = { ...pedido, ...alteracoes };
+      pedidos.set(id, atualizado);
+      return atualizado;
+    },
+
+    async atualizarSeStatus(id, de, alteracoes) {
+      const pedido = pedidos.get(id);
+      if (!pedido || pedido.status !== de) {
+        return null;
       }
       const atualizado = { ...pedido, ...alteracoes };
       pedidos.set(id, atualizado);

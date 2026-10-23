@@ -4,7 +4,9 @@ export type StatusPedido =
   | 'AGUARDANDO_PAGAMENTO'
   | 'PAGO'
   | 'CONFIRMADO'
+  | 'SEPARADO'
   | 'SAIU_PARA_ENTREGA'
+  | 'ENVIADO'
   | 'PRONTO_PARA_RETIRADA'
   | 'CONCLUIDO'
   | 'EXPIRADO'
@@ -19,7 +21,9 @@ export const ROTULO_STATUS_PEDIDO: Record<StatusPedido, string> = {
   // Pago (PIX) e confirmado (pagamento na entrega) são os dois "a loja está preparando".
   PAGO: 'Pago, em preparo',
   CONFIRMADO: 'Confirmado, em preparo (pagamento na entrega)',
+  SEPARADO: 'Separado',
   SAIU_PARA_ENTREGA: 'Saiu para entrega',
+  ENVIADO: 'Enviado',
   PRONTO_PARA_RETIRADA: 'Pronto para retirar',
   CONCLUIDO: 'Concluído',
   EXPIRADO: 'Expirado',
@@ -136,6 +140,8 @@ export interface Pedido extends DetalhesPedido {
   /** Enquete de andamento (saiu/pronto, entregue/retirado) enviada à loja depois do pago/confirmado. */
   enqueteAndamentoId?: string;
   faltaEstoque?: FaltaEstoque[];
+  codigoRastreio?: string;
+  transportadora?: string;
 }
 
 /** O que o app do cliente vê de um pedido: sem telefone, endereço do cliente nem ids internos. */
@@ -151,6 +157,9 @@ export interface ResumoPedidoPublico {
   expiraEm: Date;
   criadoEm: Date;
   nomeLoja?: string;
+  /** Depois que a loja envia por transportadora. */
+  codigoRastreio?: string;
+  transportadora?: string;
   /** Só enquanto o pedido aguarda pagamento: o mesmo PIX enviado no WhatsApp, para copiar na tela. */
   pix?: { copiaCola: string; qrCodeBase64?: string };
   itens: {
@@ -167,9 +176,12 @@ const TRANSICOES_PERMITIDAS: Record<StatusPedido, StatusPedido[]> = {
   AGUARDANDO_ACEITE: ['AGUARDANDO_PAGAMENTO', 'CONFIRMADO', 'RECUSADO', 'EXPIRADO', 'CANCELADO'],
   AGUARDANDO_PAGAMENTO: ['PAGO', 'EXPIRADO', 'CANCELADO'],
   // Pago e confirmado são "em preparo"; dali a loja avisa que saiu/está pronto e depois conclui.
-  PAGO: ['SAIU_PARA_ENTREGA', 'PRONTO_PARA_RETIRADA', 'CONCLUIDO'],
-  CONFIRMADO: ['SAIU_PARA_ENTREGA', 'PRONTO_PARA_RETIRADA', 'CONCLUIDO'],
+  // Separado e enviado são as etapas do varejo; a comida pode seguir sem elas.
+  PAGO: ['SEPARADO', 'SAIU_PARA_ENTREGA', 'ENVIADO', 'PRONTO_PARA_RETIRADA', 'CONCLUIDO'],
+  CONFIRMADO: ['SEPARADO', 'SAIU_PARA_ENTREGA', 'ENVIADO', 'PRONTO_PARA_RETIRADA', 'CONCLUIDO'],
+  SEPARADO: ['SAIU_PARA_ENTREGA', 'ENVIADO', 'PRONTO_PARA_RETIRADA', 'CONCLUIDO'],
   SAIU_PARA_ENTREGA: ['CONCLUIDO'],
+  ENVIADO: ['CONCLUIDO'],
   PRONTO_PARA_RETIRADA: ['CONCLUIDO'],
   CONCLUIDO: [],
   EXPIRADO: [],
@@ -234,24 +246,78 @@ export function validarCarrinho(carrinho: CarrinhoInput): string[] {
   return erros;
 }
 
-/** Pedido aceito e ainda não concluído: em preparo, saiu para entrega ou pronto para retirar. */
-export const STATUS_EM_ANDAMENTO: StatusPedido[] = ['PAGO', 'CONFIRMADO', 'SAIU_PARA_ENTREGA', 'PRONTO_PARA_RETIRADA'];
+/** Pedido aceito e ainda não concluído: em preparo, separado, a caminho ou pronto para retirar. */
+export const STATUS_EM_ANDAMENTO: StatusPedido[] = [
+  'PAGO',
+  'CONFIRMADO',
+  'SEPARADO',
+  'SAIU_PARA_ENTREGA',
+  'ENVIADO',
+  'PRONTO_PARA_RETIRADA',
+];
 
-/** O que a loja informa depois do preparo: saiu/está pronto (conforme a modalidade) ou foi entregue/retirado. */
-export type AndamentoPedido = 'A_CAMINHO' | 'CONCLUIDO';
+/**
+ * Os que a conclusão automática fecha depois de algumas horas (comida). Separado
+ * e enviado ficam de fora: uma encomenda pelos Correios leva dias.
+ */
+export const STATUS_QUE_CONCLUEM_SOZINHOS: StatusPedido[] = ['PAGO', 'CONFIRMADO', 'SAIU_PARA_ENTREGA', 'PRONTO_PARA_RETIRADA'];
 
-const REGEX_ANDAMENTO = /^\s*(saiu|pronto|pronta|entregue|retirado|retirada|conclu[ií]do)\b.*?(PED-[A-Z0-9]{4})/i;
+/**
+ * O que a loja informa depois do preparo: separou (varejo), saiu/está pronto
+ * (conforme a modalidade), enviou por transportadora ou foi entregue/retirado.
+ */
+export type AndamentoPedido = 'SEPARADO' | 'A_CAMINHO' | 'ENVIADO' | 'CONCLUIDO';
 
-/** "saiu PED-7KQ2", "pronto PED-7KQ2", "entregue PED-7KQ2": alternativa em texto à enquete de andamento. */
-export function extrairAndamentoPedido(texto: string): { andamento: AndamentoPedido; codigoCurto: string } | null {
+export interface Rastreio {
+  codigoRastreio?: string;
+  transportadora?: string;
+}
+
+const REGEX_ANDAMENTO =
+  /^\s*(separei|separado|separada|enviei|enviado|enviada|despachei|despachado|saiu|pronto|pronta|entregue|entreguei|retirado|retirada|conclu[ií]do)\b.*?(PED-[A-Z0-9]{4})/i;
+/** Formato dos códigos dos Correios: AA123456789BR. */
+const CODIGO_CORREIOS = /\b([A-Z]{2}\d{9}[A-Z]{2})\b/i;
+const REGEX_RASTREIO = /\b(?:rastreio|rastreamento|c[oó]digo)\s*:?\s*([A-Z0-9]{6,40})\b/i;
+const REGEX_TRANSPORTADORA = /\b(?:pel[oa]|via|transportadora)\s+(\p{L}[\p{L}\d-]*)/iu;
+
+function andamentoDaPalavra(palavra: string): AndamentoPedido {
+  if (palavra.startsWith('separ')) return 'SEPARADO';
+  if (palavra.startsWith('envi') || palavra.startsWith('despach')) return 'ENVIADO';
+  if (palavra === 'saiu' || palavra.startsWith('pront')) return 'A_CAMINHO';
+  return 'CONCLUIDO';
+}
+
+/** "rastreio NX123BR pela Jadlog"; um código no formato dos Correios dispensa a palavra "rastreio". */
+function extrairRastreio(texto: string): Rastreio | undefined {
+  const codigoRastreio = (REGEX_RASTREIO.exec(texto)?.[1] ?? CODIGO_CORREIOS.exec(texto)?.[1])?.toUpperCase();
+  const transportadora =
+    REGEX_TRANSPORTADORA.exec(texto)?.[1] ?? (codigoRastreio && CODIGO_CORREIOS.test(codigoRastreio) ? 'Correios' : undefined);
+  if (!codigoRastreio && !transportadora) {
+    return undefined;
+  }
+  return {
+    codigoRastreio,
+    transportadora: transportadora && transportadora.charAt(0).toUpperCase() + transportadora.slice(1),
+  };
+}
+
+/**
+ * Alternativa em texto à enquete de andamento: "separei PED-7KQ2", "saiu PED-7KQ2",
+ * "enviei PED-7KQ2 rastreio NX123456789BR", "entreguei PED-7KQ2".
+ */
+export function extrairAndamentoPedido(
+  texto: string,
+): { andamento: AndamentoPedido; codigoCurto: string; rastreio?: Rastreio } | null {
   const match = REGEX_ANDAMENTO.exec(texto);
   if (!match) {
     return null;
   }
-  const palavra = match[1]!.toLowerCase();
+  const andamento = andamentoDaPalavra(match[1]!.toLowerCase());
+  const depoisDoCodigo = texto.slice(match.index + match[0].length);
   return {
-    andamento: palavra === 'saiu' || palavra.startsWith('pront') ? 'A_CAMINHO' : 'CONCLUIDO',
+    andamento,
     codigoCurto: match[2]!.toUpperCase(),
+    ...(andamento === 'ENVIADO' && { rastreio: extrairRastreio(depoisDoCodigo) }),
   };
 }
 
