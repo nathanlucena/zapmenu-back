@@ -196,6 +196,17 @@ export function criarOrdersRepositoryPrisma(prisma: PrismaClient): OrdersReposit
       return paraPedido(pedido);
     },
 
+    async faltasDeEstoque(id) {
+      const itens = await prisma.itemPedido.findMany({
+        where: { pedidoId: id, skuId: { not: null } },
+        select: { skuId: true, quantidade: true, sku: { select: { estoque: true } } },
+      });
+      const estoquePorSku = new Map(itens.map((item) => [item.skuId!, Math.max(item.sku?.estoque ?? 0, 0)]));
+      return [...totalPorSku(itens)]
+        .filter(([skuId, quantidade]) => estoquePorSku.get(skuId)! < quantidade)
+        .map(([skuId, quantidade]) => ({ skuId, quantidade, disponivel: estoquePorSku.get(skuId)! }));
+    },
+
     async registrarVenda(id, venda) {
       try {
         return await prisma.$transaction(async (tx): Promise<ResultadoVenda> => {

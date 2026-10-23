@@ -6,6 +6,7 @@ import {
   pagaNaEntrega,
   ROTULO_STATUS_PEDIDO,
   type DecisaoPedido,
+  type FaltaEstoque,
   type Pedido,
 } from '../domain/pedido.js';
 import type { ContatoEmpreendedores } from './ports/avisos-empreendedor.js';
@@ -31,6 +32,14 @@ export async function garantirDonoDaLoja(
   if (!telefoneDono || chaveTelefone(telefoneDono) !== chaveTelefone(telefone)) {
     throw new DomainError(`O pedido ${pedido.codigoCurto} não é da sua loja.`, 'PEDIDO_DE_OUTRA_LOJA', 'CONFLITO');
   }
+}
+
+function semEstoque(pedido: Pedido, faltas: FaltaEstoque[]): DomainError {
+  return new DomainError(
+    `Não dá para aceitar o pedido ${pedido.codigoCurto}: ${descreverFaltas(pedido, faltas)}. Recuse o pedido ou ajuste o estoque.`,
+    'SEM_ESTOQUE',
+    'CONFLITO',
+  );
 }
 
 export async function decidirPedido(
@@ -60,6 +69,11 @@ export async function decidirPedido(
     return deps.ordersRepo.atualizar(pedido.id, { status: 'RECUSADO' });
   }
   if (!pagaNaEntrega(pedido.formaPagamento)) {
+    // O estoque só baixa com o PIX pago, mas não vale cobrar o que já acabou.
+    const faltas = await deps.ordersRepo.faltasDeEstoque(pedido.id);
+    if (faltas.length > 0) {
+      throw semEstoque(pedido, faltas);
+    }
     return deps.ordersRepo.atualizar(pedido.id, { status: 'AGUARDANDO_PAGAMENTO' });
   }
   // Pago na entrega: aceitar já é a venda, então o estoque baixa aqui. Nada foi
@@ -71,11 +85,7 @@ export async function decidirPedido(
     seFaltarEstoque: 'NAO_VENDER',
   });
   if (venda.tipo === 'SEM_ESTOQUE') {
-    throw new DomainError(
-      `Não dá para aceitar o pedido ${pedido.codigoCurto}: ${descreverFaltas(pedido, venda.faltas)}. Recuse o pedido ou ajuste o estoque.`,
-      'SEM_ESTOQUE',
-      'CONFLITO',
-    );
+    throw semEstoque(pedido, venda.faltas);
   }
   if (venda.tipo === 'JA_REGISTRADA') {
     throw new DomainError(`O pedido ${pedido.codigoCurto} já foi respondido.`, 'PEDIDO_JA_DECIDIDO', 'CONFLITO');

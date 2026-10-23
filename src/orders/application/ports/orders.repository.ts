@@ -34,6 +34,8 @@ export interface OrdersRepository {
     alteracoes: Partial<Pick<Pedido, 'status' | 'telefoneCliente' | 'confirmadoEm' | 'expiraEm' | 'enqueteAceiteId' | 'enqueteAndamentoId'>>,
   ): Promise<Pedido>;
   listarExpirados(agora: Date): Promise<Pedido[]>;
+  /** SKUs do pedido sem estoque para a quantidade pedida agora, sem baixar nada. */
+  faltasDeEstoque(id: string): Promise<FaltaEstoque[]>;
   /** Muda o pedido para PAGO/CONFIRMADO e, na mesma transação, dá baixa no estoque dos SKUs. */
   registrarVenda(id: string, venda: Venda): Promise<ResultadoVenda>;
 }

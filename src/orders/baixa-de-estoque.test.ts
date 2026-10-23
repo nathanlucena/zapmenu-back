@@ -134,6 +134,21 @@ describe('baixa de estoque no pagamento na entrega', () => {
     expect(ordersRepo.estoqueDe('sku-m-azul')).toBe(1);
   });
 
+  it('pedido com PIX sem estoque não é aceito, para não cobrar o que acabou', async () => {
+    const ordersRepo = criarOrdersRepositoryFake();
+    ordersRepo.definirEstoque('sku-m-azul', 1);
+    const pedido = await pedidoNoStatus(ordersRepo, 'AGUARDANDO_ACEITE');
+
+    const aceite = decidirPedido({ ordersRepo, contatos }, pedido, 'ACEITAR', DONO, AGORA);
+
+    await expect(aceite).rejects.toMatchObject({
+      code: 'SEM_ESTOQUE',
+      message: `Não dá para aceitar o pedido ${pedido.codigoCurto}: falta estoque de Camiseta (Tamanho: M, Cor: Azul): pediu 2, havia 1. Recuse o pedido ou ajuste o estoque.`,
+    });
+    expect((await ordersRepo.buscarPorId(pedido.id))?.status).toBe('AGUARDANDO_ACEITE');
+    expect(ordersRepo.estoqueDe('sku-m-azul')).toBe(1);
+  });
+
   it('pedido com PIX aceito só vai para pagamento, sem baixar', async () => {
     const ordersRepo = criarOrdersRepositoryFake();
     ordersRepo.definirEstoque('sku-m-azul', 2);

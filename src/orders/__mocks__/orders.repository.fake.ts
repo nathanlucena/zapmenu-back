@@ -109,6 +109,16 @@ export function criarOrdersRepositoryFake(): OrdersRepositoryFake {
       return estoquePorSku.get(skuId);
     },
 
+    async faltasDeEstoque(id) {
+      const total = new Map<string, number>();
+      for (const { skuId, quantidade } of pedidos.get(id)?.itens ?? []) {
+        if (skuId) total.set(skuId, (total.get(skuId) ?? 0) + quantidade);
+      }
+      return [...total]
+        .map(([skuId, quantidade]) => ({ skuId, quantidade, disponivel: Math.max(estoquePorSku.get(skuId) ?? 0, 0) }))
+        .filter((falta) => falta.disponivel < falta.quantidade);
+    },
+
     async registrarVenda(id, venda) {
       const pedido = pedidos.get(id);
       if (!pedido || pedido.status !== venda.de) {
