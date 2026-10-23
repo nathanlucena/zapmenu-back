@@ -6,7 +6,7 @@ export type Comando = 'CANCELAR' | 'CARDAPIO' | 'SIM' | 'NAO' | 'PENDENCIAS' | '
 
 const PALAVRAS: Record<Comando, string[]> = {
   CANCELAR: ['cancelar', 'cancela'],
-  CARDAPIO: ['cardapio', 'ver cardapio', 'meu cardapio'],
+  CARDAPIO: ['cardapio', 'ver cardapio', 'meu cardapio', 'catalogo', 'ver catalogo', 'meu catalogo', 'meus produtos', 'ver produtos'],
   SIM: ['sim', 's', 'confirmar', 'confirmo', 'pode salvar', 'salvar', 'sim, pode salvar'],
   NAO: ['nao', 'n'],
   PENDENCIAS: [
@@ -39,7 +39,7 @@ const PALAVRAS: Record<Comando, string[]> = {
  * o meu cardapio", "quero ver o cardapio atual"... (texto já normalizado).
  */
 const PEDIDO_CARDAPIO =
-  /^(?:(?:quero|queria|pode|me|por favor)\s+)*(?:ver|mostrar?|manda|mandar|envia|enviar|exibir?|exibe|listar?)?\s*(?:me\s+)?(?:o\s+)?(?:meu\s+)?cardapio(?:\s+atual)?(?:\s+por favor)?$/;
+  /^(?:(?:quero|queria|pode|me|por favor)\s+)*(?:ver|mostrar?|manda|mandar|envia|enviar|exibir?|exibe|listar?)?\s*(?:me\s+)?(?:o\s+)?(?:meu\s+)?(?:cardapio|catalogo)(?:\s+atual)?(?:\s+por favor)?$/;
 
 /** Minúsculas, sem acentos, sem pontuação final e com espaços simples. */
 export function normalizar(texto: string): string {

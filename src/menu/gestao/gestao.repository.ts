@@ -1,4 +1,4 @@
-import type { DadosLoja, Rascunho, Variacao } from '../conversation/conversation-state.types.js';
+import type { DadosLoja, LinhaGrade, Rascunho, Variacao } from '../conversation/conversation-state.types.js';
 import type { SegmentoLoja } from '../menu.types.js';
 
 export interface CategoriaSnapshot {
@@ -18,6 +18,8 @@ export interface ItemSnapshot {
   categoriaId?: string;
   categoriaNome?: string;
   variacoes: Variacao[];
+  /** Tamanhos/cores à venda (loja); vazio ou ausente na comida. */
+  grade?: LinhaGrade[];
 }
 
 /** Foto do cardápio atual de um empreendedor, base para a IA e para o resumo. */

@@ -4,13 +4,14 @@ import { contextoInicial } from '../conversation/conversation-state.types.js';
 import { criarGestaoRepositoryFake } from './__mocks__/gestao.repository.fake.js';
 import { criarCadastroPorLista } from './cadastro-empreendedores.js';
 import { processarMensagemGestao, type GestaoDeps, type RespostaGestao } from './gestao.service.js';
-import type { EntradaConversa, InterpretadorMensagem } from './interpretador.js';
+import type { EntradaConversa, InterpretadorMensagem, RespostaConversa } from './interpretador.js';
+import { AVISO_SO_DA_LOJA, AVISO_SO_DO_CARDAPIO } from './permissoes-por-tipo.js';
 import { OPCAO_CARDAPIO, OPCAO_LOJA, tipoDaResposta } from './tipo-da-loja.js';
 
 const TELEFONE = '5581999990000';
 
 /** Loja nova: ainda não escolheu entre cardápio e loja. */
-function criarCenario(tipoPendente = true) {
+function criarCenario(tipoPendente = true, segmento?: 'COMIDA' | 'VAREJO', roteiro: RespostaConversa[] = []) {
   let conversa: ConversaPersistida = { telefone: TELEFONE, estado: 'OCIOSO', contexto: contextoInicial() };
   const conversationRepo: ConversationRepository = {
     async obterOuCriar() {
@@ -21,18 +22,19 @@ function criarCenario(tipoPendente = true) {
     },
   };
   const gestaoRepo = criarGestaoRepositoryFake({
+    segmento,
     lojaSalva: { existe: false, temLogo: false, temCapa: false, naoLembrarOpcionais: false, tipoPendente },
   });
   const entradas: EntradaConversa[] = [];
   const interpretador: InterpretadorMensagem = {
     async conversar(entrada) {
       entradas.push(entrada);
-      return { resposta: 'Oi!', operacoes: [], operacoesMalformadas: [], finalizou: false, mostrarCardapio: false };
+      return roteiro.shift() ?? { resposta: 'Oi!', operacoes: [], operacoesMalformadas: [], finalizou: false, mostrarCardapio: false };
     },
   };
   const deps: GestaoDeps = { conversationRepo, gestaoRepo, interpretador, cadastro: criarCadastroPorLista([]) };
   const enviar = (texto: string) => processarMensagemGestao({ telefone: TELEFONE, texto }, deps);
-  return { gestaoRepo, entradas, enviar };
+  return { gestaoRepo, entradas, enviar, conversa: () => conversa };
 }
 
 const textos = (respostas: RespostaGestao[]) => respostas.filter((r): r is string => typeof r === 'string').join('\n---\n');
@@ -108,5 +110,63 @@ describe('gestão: escolha do tipo no cadastro', () => {
 
     expect(enquetes(respostas)).toHaveLength(0);
     expect(cenario.entradas).toHaveLength(1);
+  });
+});
+
+describe('gestão: cada tipo fechado na sua caixa', () => {
+  const ia = (operacoes: RespostaConversa['operacoes']): RespostaConversa => ({
+    resposta: 'Anotei!',
+    operacoes,
+    operacoesMalformadas: [],
+    finalizou: false,
+    mostrarCardapio: false,
+  });
+
+  it('cardápio: a IA recebe o tipo, e grade ou frete que ela proponha são recusados com explicação', async () => {
+    const cenario = criarCenario(false, 'COMIDA', [
+      ia([
+        { tipo: 'NOVO_ITEM', ref: 'n1', dados: { nome: 'Pizza', precoBase: 40 } },
+        { tipo: 'DEFINIR_GRADE', ref: 'n1', grade: [{ tamanho: 'G', estoque: 3 }] },
+        { tipo: 'ATUALIZAR_LOJA', dados: { aceitaEnvio: true, freteEnvio: 20 } },
+      ]),
+    ]);
+
+    const texto = textos(await cenario.enviar('pizza 40, tamanho G com 3 unidades e envio por 20'));
+
+    expect(cenario.entradas[0]?.segmento).toBe('COMIDA');
+    expect(texto).toContain(AVISO_SO_DA_LOJA);
+    const { rascunho } = cenario.conversa().contexto;
+    expect(rascunho.novosItens).toEqual([{ ref: 'n1', nome: 'Pizza', precoBase: 40 }]);
+    expect(rascunho.loja).toBeUndefined();
+  });
+
+  it('loja: aceita produto com grade e recusa adicionais', async () => {
+    const cenario = criarCenario(false, 'VAREJO', [
+      ia([
+        {
+          tipo: 'NOVO_ITEM',
+          ref: 'n1',
+          dados: { nome: 'Camiseta', precoBase: 59.9, variacoes: [{ nome: 'Extra', opcoes: [{ nome: 'Bordado', precoAdicional: 10 }] }] },
+        },
+        { tipo: 'DEFINIR_GRADE', ref: 'n1', grade: [{ tamanho: 'P', cor: 'Azul', estoque: 4 }] },
+      ]),
+    ]);
+
+    const texto = textos(await cenario.enviar('camiseta 59,90, P azul 4, com bordado +10'));
+
+    expect(cenario.entradas[0]?.segmento).toBe('VAREJO');
+    expect(texto).toContain(AVISO_SO_DO_CARDAPIO);
+    expect(cenario.conversa().contexto.rascunho.novosItens).toEqual([
+      { ref: 'n1', nome: 'Camiseta', precoBase: 59.9, grade: [{ tamanho: 'P', cor: 'Azul', estoque: 4 }] },
+    ]);
+  });
+
+  it('loja: o robô fala em catálogo', async () => {
+    const cenario = criarCenario(false, 'VAREJO');
+
+    const texto = textos(await cenario.enviar('catálogo'));
+
+    expect(texto).toContain('Seu catálogo ainda está vazio');
+    expect(texto).not.toContain('cardápio');
   });
 });

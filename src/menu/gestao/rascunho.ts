@@ -3,6 +3,7 @@ import type {
   DadosLoja,
   FaixaEntrega,
   Horario,
+  LinhaGrade,
   NovoItem,
   Rascunho,
   Variacao,
@@ -140,6 +141,23 @@ export function aplicarOperacoes(aplicacao: AplicacaoOperacoes, operacoes: Opera
         }
         break;
       }
+      case 'DEFINIR_GRADE': {
+        const validacao = validarGrade(operacao.grade);
+        validacao.avisos.forEach((aviso) => avisos.add(aviso));
+        if (operacao.ref && novoItem(operacao.ref)) {
+          novoItem(operacao.ref)!.grade = validacao.grade;
+        } else if (operacao.itemId && itemExiste(operacao.itemId)) {
+          let edicao = rascunho.edicoes.find((candidata) => candidata.itemId === operacao.itemId);
+          if (!edicao) {
+            edicao = { itemId: operacao.itemId };
+            rascunho.edicoes.push(edicao);
+          }
+          edicao.grade = validacao.grade;
+        } else {
+          avisarItemDesconhecido();
+        }
+        break;
+      }
       case 'ANEXAR_FOTO_LOJA': {
         const foto = fotoAtual ?? contexto.fotoPendente;
         if (!foto) {
@@ -235,6 +253,46 @@ export function aplicarOperacoes(aplicacao: AplicacaoOperacoes, operacoes: Opera
     contexto.fotoPendente = fotoAtual;
   }
   return [...avisos];
+}
+
+/**
+ * Grade como a loja vai vender: estoque inteiro e não negativo, sem linha sem
+ * tamanho nem cor (a não ser que seja a única) e sem combinação repetida (a
+ * última vale). Devolve a grade arrumada e avisos para a pessoa.
+ */
+export function validarGrade(grade: LinhaGrade[]): { grade: LinhaGrade[]; avisos: string[] } {
+  const avisos: string[] = [];
+  const porChave = new Map<string, LinhaGrade>();
+  for (const linha of grade) {
+    const tamanho = linha.tamanho?.trim() || undefined;
+    const cor = linha.cor?.trim() || undefined;
+    if (!tamanho && !cor && grade.length > 1) {
+      avisos.push('⚠️ Uma linha da grade veio sem tamanho nem cor e ficou de fora.');
+      continue;
+    }
+    const estoque = Math.max(0, Math.floor(linha.estoque));
+    porChave.set(`${tamanho?.toLowerCase() ?? ''}|${cor?.toLowerCase() ?? ''}`, {
+      ...(tamanho && { tamanho: tamanho.toUpperCase().length <= 3 ? tamanho.toUpperCase() : tamanho }),
+      ...(cor && { cor: cor.charAt(0).toUpperCase() + cor.slice(1) }),
+      estoque,
+      ...(linha.preco !== undefined && linha.preco >= 0 && { preco: linha.preco }),
+    });
+  }
+  return { grade: [...porChave.values()], avisos };
+}
+
+/** "P Azul 5 · M Azul 3 (R$ 69,90) · G Azul esgotado" */
+export function descreverGrade(grade: LinhaGrade[]): string {
+  if (grade.length === 0) {
+    return 'sem tamanhos/cores';
+  }
+  return grade
+    .map((linha) => {
+      const nome = [linha.tamanho, linha.cor].filter(Boolean).join(' ');
+      const estoque = linha.estoque === 0 ? 'esgotado' : `${linha.estoque}`;
+      return `${nome} ${estoque}${linha.preco !== undefined ? ` (${formatarPreco(linha.preco)})` : ''}`;
+    })
+    .join(' · ');
 }
 
 /** Passa o endereço confirmado para o rascunho. Devolve false se não havia nada pendente. */
@@ -374,6 +432,9 @@ export function descreverAlteracoes(rascunho: Rascunho, snapshot: SnapshotCardap
       linhas.push(`   _${novo.descricao}_`);
     }
     linhas.push(...descreverVariacoes(novo.variacoes));
+    if (novo.grade) {
+      linhas.push(`   Grade: ${descreverGrade(novo.grade)}`);
+    }
   }
 
   for (const edicao of rascunho.edicoes) {
@@ -386,6 +447,7 @@ export function descreverAlteracoes(rascunho: Rascunho, snapshot: SnapshotCardap
     if (edicao.descricao !== undefined) mudancas.push(`descrição → _${edicao.descricao}_`);
     if (edicao.categoria !== undefined) mudancas.push(`categoria → *${edicao.categoria ?? 'Outros'}*`);
     if (edicao.imagemUrl !== undefined) mudancas.push('nova foto 📷');
+    if (edicao.grade !== undefined) mudancas.push(`grade → ${descreverGrade(edicao.grade)}`);
     if (edicao.variacoes !== undefined) mudancas.push('variações:');
     linhas.push(`✏️ *${atual?.nome ?? 'item'}*: ${mudancas.join(' · ') || 'sem mudanças'}`);
     if (edicao.variacoes !== undefined) {

@@ -6,6 +6,7 @@ import type {
   EnderecoVerificado,
   FaixaEntrega,
   Horario,
+  LinhaGrade,
   Rascunho,
   Variacao,
 } from '../conversation/conversation-state.types.js';
@@ -70,7 +71,7 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
         prisma.categoria.findMany({ where: { cardapioId }, orderBy: [{ ordem: 'asc' }, { criadoEm: 'asc' }] }),
         prisma.itemCardapio.findMany({
           where: { cardapioId, removidoEm: null },
-          include: { variacoes: true, categoria: true },
+          include: { variacoes: true, categoria: true, skus: { where: { ativo: true }, orderBy: { id: 'asc' } } },
           orderBy: { criadoEm: 'asc' },
         }),
         prisma.loja.findUnique({ where: { empreendedorId } }),
@@ -90,6 +91,12 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
           categoriaId: item.categoriaId ?? undefined,
           categoriaNome: item.categoria?.nome,
           variacoes: paraVariacoes(item.variacoes),
+          grade: item.skus.map((sku) => ({
+            tamanho: sku.tamanho ?? undefined,
+            cor: sku.cor ?? undefined,
+            estoque: sku.estoque,
+            preco: sku.preco === null ? undefined : Number(sku.preco),
+          })),
         })),
         loja: loja
           ? {
@@ -166,7 +173,7 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
 
         for (const novo of rascunho.novosItens) {
           garantirItemCompleto(novo);
-          await tx.itemCardapio.create({
+          const criado = await tx.itemCardapio.create({
             data: {
               cardapioId,
               nome: novo.nome,
@@ -177,6 +184,9 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
               variacoes: { create: (novo.variacoes ?? []).map(paraVariacaoPrisma) },
             },
           });
+          if (novo.grade) {
+            await sincronizarGrade(tx, criado.id, novo.grade);
+          }
         }
 
         for (const edicao of rascunho.edicoes) {
@@ -190,6 +200,9 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
             dados.categoriaId = edicao.categoria === null ? null : await idCategoria(edicao.categoria);
           }
           await atualizarItem(tx, cardapioId, edicao.itemId, dados);
+          if (edicao.grade) {
+            await sincronizarGrade(tx, edicao.itemId, edicao.grade);
+          }
           if (edicao.variacoes) {
             await tx.variacao.deleteMany({ where: { itemId: edicao.itemId } });
             await tx.variacao.createMany({
@@ -206,6 +219,30 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
       });
     },
   };
+}
+
+/**
+ * Deixa os SKUs do item iguais à grade: atualiza ou cria cada combinação e
+ * pausa as que saíram (pedidos antigos continuam apontando para elas).
+ */
+async function sincronizarGrade(tx: Tx, itemId: string, grade: LinhaGrade[]): Promise<void> {
+  const existentes = await tx.sku.findMany({ where: { itemId } });
+  const chave = (tamanho?: string | null, cor?: string | null) => `${tamanho?.toLowerCase() ?? ''}|${cor?.toLowerCase() ?? ''}`;
+  const mantidos = new Set<string>();
+  for (const linha of grade) {
+    const existente = existentes.find((sku) => chave(sku.tamanho, sku.cor) === chave(linha.tamanho, linha.cor));
+    const dados = { estoque: linha.estoque, preco: linha.preco ?? null, ativo: true };
+    if (existente) {
+      await tx.sku.update({ where: { id: existente.id }, data: dados });
+      mantidos.add(existente.id);
+    } else {
+      await tx.sku.create({ data: { itemId, tamanho: linha.tamanho ?? null, cor: linha.cor ?? null, ...dados } });
+    }
+  }
+  const pausar = existentes.filter((sku) => !mantidos.has(sku.id)).map((sku) => sku.id);
+  if (pausar.length > 0) {
+    await tx.sku.updateMany({ where: { id: { in: pausar } }, data: { ativo: false } });
+  }
 }
 
 function paraVariacaoPrisma(variacao: Variacao) {

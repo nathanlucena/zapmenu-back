@@ -90,6 +90,17 @@ export interface DadosLoja {
   freteEnvio?: number;
   /** Exceções por UF: { "PE": 12 }. Substitui a lista anterior inteira. */
   fretePorUf?: Record<string, number>;
+  /** Trocas e devoluções, em texto livre (loja). */
+  politicaTroca?: string;
+}
+
+/** Uma combinação vendável de um produto da loja (varejo): vira um SKU com estoque. */
+export interface LinhaGrade {
+  tamanho?: string;
+  cor?: string;
+  estoque: number;
+  /** Só quando esse tamanho/cor custa diferente do produto. */
+  preco?: number;
 }
 
 /** Item que ainda não existe no cardápio; `ref` é o apelido usado pela IA (ex.: "n1"). */
@@ -102,6 +113,8 @@ export interface NovoItem {
   categoria?: string | null;
   variacoes?: Variacao[];
   imagemUrl?: string;
+  /** Grade completa de tamanhos/cores com estoque (só loja). */
+  grade?: LinhaGrade[];
 }
 
 /** Alterações num item existente; só os campos presentes mudam. */
@@ -114,6 +127,8 @@ export interface EdicaoItem {
   categoria?: string | null;
   variacoes?: Variacao[];
   imagemUrl?: string;
+  /** Substitui a grade inteira; o que sair dela fica pausado (pedidos antigos apontam para ele). */
+  grade?: LinhaGrade[];
 }
 
 export type AcaoStatus = 'PAUSAR' | 'REATIVAR' | 'REMOVER';

@@ -3,10 +3,12 @@ import type {
   Contexto,
   DadosLoja,
   Estado,
+  LinhaGrade,
   MensagemHistorico,
   Rascunho,
   Variacao,
 } from '../conversation/conversation-state.types.js';
+import type { SegmentoLoja } from '../menu.types.js';
 import type { SnapshotCardapio } from './gestao.repository.js';
 
 /** Campos de item que a IA pode informar (novo item ou edição). */
@@ -30,6 +32,8 @@ export type Operacao =
   | { tipo: 'EDITAR_ITEM'; itemId: string; dados: DadosItemOperacao }
   | { tipo: 'PAUSAR_ITEM' | 'REATIVAR_ITEM' | 'REMOVER_ITEM' | 'DESFAZER_ITEM'; itemId: string }
   | { tipo: 'ANEXAR_FOTO'; ref?: string; itemId?: string }
+  /** Loja: grade completa de tamanhos/cores com estoque de um produto (novo pela ref ou existente). */
+  | { tipo: 'DEFINIR_GRADE'; ref?: string; itemId?: string; grade: LinhaGrade[] }
   | { tipo: 'ANEXAR_FOTO_LOJA'; destino: 'LOGO' | 'CAPA' }
   | { tipo: 'NOVA_CATEGORIA'; nome: string }
   | { tipo: 'RENOMEAR_CATEGORIA'; categoriaId: string; novoNome: string }
@@ -54,6 +58,8 @@ export interface EntradaConversa {
   snapshot: SnapshotCardapio;
   /** Dados obrigatórios que faltam para a loja entrar no ar, com a pergunta sugerida ("Horário de funcionamento: Quais dias…?"). */
   cadastroPendente?: string[];
+  /** Tipo da loja: muda o prompt e o que a IA pode propor. Ausente = COMIDA. */
+  segmento?: SegmentoLoja;
 }
 
 export interface RespostaConversa {

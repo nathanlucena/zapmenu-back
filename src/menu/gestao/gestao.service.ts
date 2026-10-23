@@ -14,6 +14,7 @@ import type { EnderecoDeps } from '../endereco/endereco.types.js';
 import { entregaConfigurada } from '../entrega.js';
 import type { CadastroEmpreendedores } from './cadastro-empreendedores.js';
 import { reconhecerComando } from './comandos.js';
+import { filtrarPorTipo } from './permissoes-por-tipo.js';
 import {
   ehOpcaoDaEnquete,
   OPCOES_TIPO,
@@ -31,6 +32,7 @@ import {
   contarAlteracoes,
   descreverAlteracoes,
   descreverFaixas,
+  descreverGrade,
   estaVazio,
   formatarHorarios,
   formatarPreco,
@@ -200,11 +202,12 @@ async function tratar(rodada: Rodada): Promise<void> {
     case 'CANCELAR': {
       const tinhaAlteracoes = !estaVazio(rodada.contexto.rascunho);
       reiniciar(rodada);
+      const { lista } = vocabulario(rodada.snapshot.segmento);
       responder(
         rodada,
         tinhaAlteracoes
-          ? '🗑️ Ok, descartei as alterações. Nada foi mudado no cardápio.'
-          : 'Ok! Quando quiser mexer no cardápio é só me chamar. 😊',
+          ? `🗑️ Ok, descartei as alterações. Nada foi mudado no ${lista}.`
+          : `Ok! Quando quiser mexer no ${lista} é só me chamar. 😊`,
       );
       return;
     }
@@ -217,7 +220,7 @@ async function tratar(rodada: Rodada): Promise<void> {
     case 'PREVIA':
       if (!rodada.deps.previas) {
         responder(rodada, 'A prévia em imagem não está disponível agora. O resumo em texto continua: diga *pronto* quando terminar.');
-      } else if (await responderPrevia(rodada, 'Assim vai ficar no cardápio 👇')) {
+      } else if (await responderPrevia(rodada, `Assim vai ficar no ${vocabulario(rodada.snapshot.segmento).lista} 👇`)) {
         responder(rodada, 'Quando terminar, diga *pronto* para revisar e salvar.');
       } else {
         responder(rodada, 'Ainda não tem nenhum item ou dado da loja anotado para mostrar. Me conta o que você quer mudar! 🙂');
@@ -300,6 +303,7 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
       cadastroPendente: obrigatoriosDaLoja(lojaParaCadastro(rodada.snapshot, rodada.contexto.rascunho.loja))
         .filter((item) => !item.ok)
         .map((item) => `${item.rotulo}: ${item.comoPedir}`),
+      segmento: rodada.snapshot.segmento,
     });
   } catch (erro) {
     logger.warn({ err: erro }, 'falha ao conversar com a IA');
@@ -327,10 +331,18 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
     logger.warn({ operacoes: saida.operacoesMalformadas }, 'operações da IA fora do formato foram ignoradas');
   }
 
-  const avisos = aplicarOperacoes(
-    { contexto: rodada.contexto, snapshot: rodada.snapshot, fotoAtual: rodada.mensagem.imagemUrl },
-    saida.operacoes,
-  );
+  // O tipo da loja fecha o que a IA pode fazer: o que for do outro tipo é descartado com aviso.
+  const doTipo = filtrarPorTipo(rodada.snapshot.segmento, saida.operacoes);
+  if (doTipo.avisos.length > 0) {
+    logger.info({ segmento: rodada.snapshot.segmento ?? 'COMIDA' }, 'operações de outro tipo de loja foram descartadas');
+  }
+  const avisos = [
+    ...doTipo.avisos,
+    ...aplicarOperacoes(
+      { contexto: rodada.contexto, snapshot: rodada.snapshot, fotoAtual: rodada.mensagem.imagemUrl },
+      doTipo.operacoes,
+    ),
+  ];
   if (saida.operacoesMalformadas.length > 0) {
     avisos.push('⚠️ Não consegui entender parte do que você pediu. Pode explicar de outro jeito?');
   }
@@ -343,7 +355,7 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
     responder(rodada, descreverCardapio(rodada.snapshot));
     const pendentes = contarAlteracoes(rodada.contexto.rascunho);
     if (pendentes > 0) {
-      responder(rodada, avisoAlteracoesPendentes(pendentes));
+      responder(rodada, avisoAlteracoesPendentes(pendentes, vocabulario(rodada.snapshot.segmento).lista));
     }
   }
   for (const aviso of avisos) {
@@ -353,7 +365,7 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
     await procurarEndereco(rodada);
   }
 
-  const mudouRascunho = saida.operacoes.length > 0;
+  const mudouRascunho = doTipo.operacoes.length > 0;
   if (estadoAnterior === 'CONFIRMANDO' && !mudouRascunho) {
     if (saida.decisao === 'CONFIRMAR') {
       await salvar(rodada);
@@ -525,13 +537,14 @@ async function avisarSituacaoDoCadastro(rodada: Rodada, completoAntes: boolean):
   }
   const { slug } = rodada.snapshot.loja;
   const link = slug && rodada.deps.urlDoCardapio ? rodada.deps.urlDoCardapio(slug) : slug;
+  const fala = vocabulario(rodada.snapshot.segmento);
   responder(
     rodada,
     [
       '🎉 *Sua loja está no ar!*',
-      link ? `Link do cardápio para divulgar: ${link}` : '',
+      link ? `Link do ${fala.lista} para divulgar: ${link}` : '',
       '',
-      'Próximo passo: me mande os itens do cardápio — nome, preço e, se quiser, uma foto. Ex.: _pizza calabresa 39,90_',
+      `Próximo passo: me mande os ${fala.itens} do ${fala.lista} — nome, preço e, se quiser, uma foto. Ex.: _${fala.exemploItem}_`,
     ]
       .filter((linha, indice) => linha || indice !== 1)
       .join('\n'),
@@ -568,7 +581,7 @@ async function finalizar(rodada: Rodada): Promise<void> {
     return;
   }
   rodada.estado = 'CONFIRMANDO';
-  await responderPrevia(rodada, 'Assim vai ficar no cardápio 👇');
+  await responderPrevia(rodada, `Assim vai ficar no ${vocabulario(rodada.snapshot.segmento).lista} 👇`);
   responder(rodada, montarResumo(rascunho, rodada.snapshot));
 }
 
@@ -632,7 +645,10 @@ async function salvar(rodada: Rodada): Promise<void> {
   logger.info({ telefone: rodada.mensagem.telefone, alteracoes: total }, '💾 rascunho salvo no cardápio');
   const completoAntes = cadastroCompleto(lojaParaCadastro(rodada.snapshot));
   reiniciar(rodada);
-  responder(rodada, `✅ Pronto! ${total === 1 ? '1 alteração salva' : `${total} alterações salvas`} no cardápio.`);
+  responder(
+    rodada,
+    `✅ Pronto! ${total === 1 ? '1 alteração salva' : `${total} alterações salvas`} no ${vocabulario(rodada.snapshot.segmento).lista}.`,
+  );
   await avisarSituacaoDoCadastro(rodada, completoAntes);
 }
 
@@ -670,19 +686,21 @@ function falar(rodada: Rodada, texto: string): void {
   rodada.contexto.historico = rodada.contexto.historico.slice(-MAX_HISTORICO);
 }
 
-/** Cardápio atual agrupado por categoria, com a numeração usada pela IA. */
+/** Cardápio (ou catálogo) atual agrupado por categoria, com a numeração usada pela IA. */
 function descreverCardapio(snapshot: SnapshotCardapio): string {
+  const fala = vocabulario(snapshot.segmento);
   if (snapshot.itens.length === 0) {
-    return 'Seu cardápio ainda está vazio. Me conta o primeiro item, por exemplo: _pizza calabresa 39,90_';
+    return `Seu ${fala.lista} ainda está vazio. Me conta o primeiro ${fala.item}, por exemplo: _${fala.exemploItem}_`;
   }
   const grupos = new Map<string, string[]>();
   snapshot.itens.forEach((item, indice) => {
     const grupo = item.categoriaNome ?? 'Outros';
     const linha = `${indice + 1}. ${item.nome} — ${formatarPreco(item.precoBase)}${item.ativo ? '' : ' ⏸️ _pausado_'}`;
-    grupos.set(grupo, [...(grupos.get(grupo) ?? []), linha]);
+    const grade = snapshot.segmento === 'VAREJO' && item.grade?.length ? [`   ${descreverGrade(item.grade)}`] : [];
+    grupos.set(grupo, [...(grupos.get(grupo) ?? []), linha, ...grade]);
   });
 
-  const linhas = ['📋 *Seu cardápio*'];
+  const linhas = [`📋 *Seu ${fala.lista}*`];
   // Categorias na ordem cadastrada; "Outros" por último.
   for (const nome of [...snapshot.categorias.map((categoria) => categoria.nome), 'Outros']) {
     const itens = grupos.get(nome);
@@ -698,7 +716,7 @@ function descreverCardapio(snapshot: SnapshotCardapio): string {
     linhas.push(`📍 ${loja.endereco}`);
   }
   if (loja.slug) {
-    linhas.push(`🔗 Link do cardápio: ${loja.slug}`);
+    linhas.push(`🔗 Link do ${fala.lista}: ${loja.slug}`);
   }
   if (loja.fazEntrega) {
     linhas.push(
@@ -707,12 +725,17 @@ function descreverCardapio(snapshot: SnapshotCardapio): string {
         : '🛵 Entrega parada: falta configurar o endereço e as faixas de distância.',
     );
   }
-  linhas.push('', 'Para mudar algo, é só me dizer — ex.: _a coca agora é 15_, _acabou a pizza de frango_.');
+  linhas.push(
+    '',
+    snapshot.segmento === 'VAREJO'
+      ? 'Para mudar algo, é só me dizer — ex.: _a camiseta agora é 49,90_, _chegaram mais 3 M azul_.'
+      : 'Para mudar algo, é só me dizer — ex.: _a coca agora é 15_, _acabou a pizza de frango_.',
+  );
   return linhas.join('\n');
 }
 
 /** O cardápio mostrado é o salvo; sem isso parece que a alteração anotada se perdeu. */
-export function avisoAlteracoesPendentes(total: number): string {
+export function avisoAlteracoesPendentes(total: number, lista = 'cardápio'): string {
   const alteracoes = total === 1 ? '1 alteração anotada que ainda não foi salva' : `${total} alterações anotadas que ainda não foram salvas`;
-  return `✏️ Esse é o cardápio salvo. Você tem ${alteracoes}: quando terminar, diga *pronto* para revisar e salvar.`;
+  return `✏️ Esse é o ${lista} salvo. Você tem ${alteracoes}: quando terminar, diga *pronto* para revisar e salvar.`;
 }

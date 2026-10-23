@@ -7,7 +7,15 @@ import type { MenuRepository } from './menu.repository.js';
 import type { FaixaEntrega } from './conversation/conversation-state.types.js';
 import { entregaConfigurada, raioMaximoKm } from './entrega.js';
 import { enderecoVerificadoDaLoja } from './gestao/gestao.repository.prisma.js';
-import type { CardapioPublico, HorarioLoja, ItemCardapio, ItemDraft, LojaPublica, VariacaoOpcao } from './menu.types.js';
+import type {
+  CardapioPublico,
+  HorarioLoja,
+  ItemCardapio,
+  ItemDraft,
+  LojaPublica,
+  SegmentoLoja,
+  VariacaoOpcao,
+} from './menu.types.js';
 import { cadastroCompleto, type LojaParaCadastro } from './cadastro-da-loja.js';
 import { fotosDoItem } from './fotos-do-produto.js';
 import { freteConfigurado, type FreteFixo } from '../orders/domain/envio.js';
@@ -36,9 +44,20 @@ function lojaParaCadastro(loja: {
   };
 }
 
-/** Frete fixo configurado, ou undefined se a loja não envia (ou não pôs valor nenhum). */
-function freteDaLoja(loja: Pick<Loja, 'aceitaEnvio' | 'freteEnvio' | 'fretePorUf'>): FreteFixo | undefined {
-  if (!loja.aceitaEnvio) {
+/**
+ * O item como o tipo da loja mostra. Trocar de tipo não apaga nada: o que é do
+ * outro tipo (adicionais na Loja; grade e galeria no Cardápio) só fica oculto,
+ * e o pedido é precificado sobre esta mesma visão.
+ */
+function doTipoDaLoja(item: ItemCardapio, segmento: SegmentoLoja): ItemCardapio {
+  return segmento === 'VAREJO'
+    ? { ...item, variacoes: [] }
+    : { ...item, skus: [], fotos: fotosDoItem([], item.imagemUrl) };
+}
+
+/** Frete fixo configurado, ou undefined se a loja não envia (ou não pôs valor nenhum). Envio é só do tipo Loja. */
+function freteDaLoja(loja: Pick<Loja, 'aceitaEnvio' | 'freteEnvio' | 'fretePorUf' | 'segmento'>): FreteFixo | undefined {
+  if (!loja.aceitaEnvio || loja.segmento !== 'VAREJO') {
     return undefined;
   }
   const frete: FreteFixo = {
@@ -71,7 +90,7 @@ export function paraLojaPublica(loja: Loja): LojaPublica {
     logoUrl: loja.logoUrl ?? undefined,
     corDestaque: loja.corDestaque ?? undefined,
     fuso: loja.fuso,
-    politicaTroca: loja.politicaTroca ?? undefined,
+    politicaTroca: loja.segmento === 'VAREJO' ? (loja.politicaTroca ?? undefined) : undefined,
     envio: freteDaLoja(loja),
   };
 }
@@ -167,7 +186,8 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
         prisma.loja.findUnique({ where: { empreendedorId } }),
       ]);
 
-      const disponiveis = itens.map(paraItemCardapio);
+      const segmento = loja?.segmento ?? 'COMIDA';
+      const disponiveis = itens.map((item) => doTipoDaLoja(paraItemCardapio(item), segmento));
       const secoes = [
         ...categorias.map((categoria) => ({
           id: categoria.id as string | null,

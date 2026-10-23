@@ -1,4 +1,4 @@
-import type { Loja } from '@prisma/client';
+import { Prisma, type Loja } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 import { paraLojaPublica } from './menu.repository.prisma.js';
 
@@ -56,9 +56,24 @@ describe('paraLojaPublica', () => {
   });
 
   it('mostra a política de troca, mas não o CEP de origem', () => {
-    const loja = paraLojaPublica(lojaSalva({ politicaTroca: 'Troca em até 7 dias com etiqueta.', cepOrigem: '50000-000' }));
+    const loja = paraLojaPublica(
+      lojaSalva({ segmento: 'VAREJO', politicaTroca: 'Troca em até 7 dias com etiqueta.', cepOrigem: '50000-000' }),
+    );
 
     expect(loja.politicaTroca).toBe('Troca em até 7 dias com etiqueta.');
     expect(JSON.stringify(loja)).not.toContain('50000-000');
+  });
+
+  it('no tipo Cardápio, política de troca e envio ficam ocultos (sem apagar)', () => {
+    const loja = paraLojaPublica(
+      lojaSalva({ politicaTroca: 'Troca em 7 dias.', aceitaEnvio: true, freteEnvio: new Prisma.Decimal(25) }),
+    );
+
+    expect(loja.politicaTroca).toBeUndefined();
+    expect(loja.envio).toBeUndefined();
+    expect(paraLojaPublica(lojaSalva({ segmento: 'VAREJO', aceitaEnvio: true, freteEnvio: new Prisma.Decimal(25) })).envio).toEqual({
+      padrao: 25,
+      porUf: {},
+    });
   });
 });
