@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from '@prisma/client';
+import type { Loja, Prisma, PrismaClient } from '@prisma/client';
 import { DomainError } from '../shared/errors/domain-error.js';
 import type { HorarioFuncionamento } from '../orders/domain/horario-loja.js';
 import type { RegrasDaLoja } from '../orders/application/ports/loja-para-pedidos.js';
@@ -7,7 +7,7 @@ import type { MenuRepository } from './menu.repository.js';
 import type { FaixaEntrega } from './conversation/conversation-state.types.js';
 import { entregaConfigurada, raioMaximoKm } from './entrega.js';
 import { enderecoVerificadoDaLoja } from './gestao/gestao.repository.prisma.js';
-import type { CardapioPublico, HorarioLoja, ItemCardapio, ItemDraft, VariacaoOpcao } from './menu.types.js';
+import type { CardapioPublico, HorarioLoja, ItemCardapio, ItemDraft, LojaPublica, VariacaoOpcao } from './menu.types.js';
 import { cadastroCompleto, type LojaParaCadastro } from './cadastro-da-loja.js';
 
 /** Os dados da loja salva que contam para o cadastro obrigatório. */
@@ -29,6 +29,32 @@ function lojaParaCadastro(loja: {
     enderecoConfirmado: loja.latitude !== null && loja.longitude !== null,
     faixasEntrega: Array.isArray(loja.faixasEntrega) ? loja.faixasEntrega : [],
     horarios: Array.isArray(loja.horarios) ? loja.horarios : [],
+  };
+}
+
+/** A loja salva como o app do cliente vê. */
+export function paraLojaPublica(loja: Loja): LojaPublica {
+  const faixasEntrega = loja.faixasEntrega as unknown as FaixaEntrega[];
+  return {
+    nome: loja.nome ?? undefined,
+    descricao: loja.descricao ?? undefined,
+    segmento: loja.segmento,
+    endereco: loja.endereco ?? undefined,
+    aceitaRetirada: loja.aceitaRetirada,
+    aceitaPagamentoNaEntrega: loja.aceitaPagamentoNaEntrega,
+    emMontagem: !cadastroCompleto(lojaParaCadastro(loja)),
+    // Loja antiga (taxa fixa, sem endereço verificado ou faixas) não entrega até configurar.
+    fazEntrega: loja.fazEntrega && entregaConfigurada({ enderecoVerificado: enderecoVerificadoDaLoja(loja), faixasEntrega }),
+    faixasEntrega,
+    raioMaximoKm: raioMaximoKm(faixasEntrega),
+    taxaEntrega: loja.taxaEntrega === null ? undefined : Number(loja.taxaEntrega),
+    pedidoMinimo: loja.pedidoMinimo === null ? undefined : Number(loja.pedidoMinimo),
+    horarios: loja.horarios as unknown as HorarioLoja[],
+    slug: loja.slug ?? undefined,
+    capaUrl: loja.capaUrl ?? undefined,
+    logoUrl: loja.logoUrl ?? undefined,
+    corDestaque: loja.corDestaque ?? undefined,
+    fuso: loja.fuso,
   };
 }
 
@@ -114,28 +140,8 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
         { id: null, nome: 'Outros', itens: disponiveis.filter((item) => !item.categoriaId) },
       ].filter((secao) => secao.itens.length > 0);
 
-      const faixasEntrega = (loja?.faixasEntrega ?? []) as unknown as FaixaEntrega[];
       const cardapio: CardapioPublico = {
-        loja: loja && {
-          nome: loja.nome ?? undefined,
-          descricao: loja.descricao ?? undefined,
-          endereco: loja.endereco ?? undefined,
-          aceitaRetirada: loja.aceitaRetirada,
-          aceitaPagamentoNaEntrega: loja.aceitaPagamentoNaEntrega,
-          emMontagem: !cadastroCompleto(lojaParaCadastro(loja)),
-          // Loja antiga (taxa fixa, sem endereço verificado ou faixas) não entrega até configurar.
-          fazEntrega: loja.fazEntrega && entregaConfigurada({ enderecoVerificado: enderecoVerificadoDaLoja(loja), faixasEntrega }),
-          faixasEntrega,
-          raioMaximoKm: raioMaximoKm(faixasEntrega),
-          taxaEntrega: loja.taxaEntrega === null ? undefined : Number(loja.taxaEntrega),
-          pedidoMinimo: loja.pedidoMinimo === null ? undefined : Number(loja.pedidoMinimo),
-          horarios: loja.horarios as unknown as HorarioLoja[],
-          slug: loja.slug ?? undefined,
-          capaUrl: loja.capaUrl ?? undefined,
-          logoUrl: loja.logoUrl ?? undefined,
-          corDestaque: loja.corDestaque ?? undefined,
-          fuso: loja.fuso,
-        },
+        loja: loja && paraLojaPublica(loja),
         secoes,
         itens: disponiveis,
       };

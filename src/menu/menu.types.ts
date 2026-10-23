@@ -29,9 +29,13 @@ export interface HorarioLoja {
   fecha: string;
 }
 
+/** Ramo da loja. Lojas antigas são todas COMIDA. */
+export type SegmentoLoja = 'COMIDA' | 'VAREJO' | 'SERVICOS';
+
 export interface LojaPublica {
   nome?: string;
   descricao?: string;
+  segmento: SegmentoLoja;
   endereco?: string;
   aceitaRetirada: boolean;
   /** Dinheiro ou cartão na entrega/balcão. Opcional: só o cardápio público preenche. */

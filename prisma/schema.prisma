@@ -42,6 +42,13 @@ model Categoria {
   @@index([cardapioId])
 }
 
+/// Ramo da loja. Muda o vocabulário e os recursos (tamanhos e cores no varejo), nunca o fluxo de comida.
+enum SegmentoLoja {
+  COMIDA
+  VAREJO
+  SERVICOS
+}
+
 /// Dados exibidos no cardápio público. Separada do Empreendedor para permitir
 /// mais de uma loja por empreendedor no futuro.
 model Loja {
@@ -50,6 +57,7 @@ model Loja {
   empreendedor             Empreendedor @relation(fields: [empreendedorId], references: [id])
   nome                     String?
   descricao                String?
+  segmento                 SegmentoLoja @default(COMIDA)
   /// Texto exibido no cardápio; com endereço verificado, é o endereço formatado.
   endereco                 String?
   cep                      String?
