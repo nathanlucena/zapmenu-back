@@ -20,6 +20,8 @@ export interface RegrasDaLoja {
   pedidoMinimo?: number;
   horarios: HorarioFuncionamento[];
   fuso?: string;
+  /** Ramo da loja; muda as etapas oferecidas à loja (varejo tem "Separado"). */
+  segmento?: 'COMIDA' | 'VAREJO' | 'SERVICOS';
 }
 
 export interface LojaParaPedidos {

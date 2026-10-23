@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { criarOrdersRepositoryFake } from '../__mocks__/orders.repository.fake.js';
 import { extrairAndamentoPedido } from '../domain/pedido.js';
-import { atualizarAndamento, concluirPedidosAntigos, pedirAndamentoDaLoja } from './andamento-pedido.js';
+import {
+  andamentoDaOpcao,
+  atualizarAndamento,
+  concluirPedidosAntigos,
+  pedirAndamentoDaLoja,
+} from './andamento-pedido.js';
+import type { RegrasDaLoja } from './ports/loja-para-pedidos.js';
 import { criarPedido } from './criar-pedido.js';
 
 const carrinho = { empreendedorId: 'emp-1', itens: [{ itemCardapioId: 'i1', quantidade: 1, precoUnitario: 10 }] };
@@ -94,6 +100,41 @@ describe('pedirAndamentoDaLoja', () => {
 
     expect(enquetes).toEqual([{ pergunta: `Andamento do pedido ${pedido.codigoCurto}`, opcoes: ['Pronto para retirar', 'Retirado'] }]);
     expect((await repo.buscarPorEnquete('enquete-9'))?.id).toBe(pedido.id);
+  });
+});
+
+describe('enquete de andamento por segmento', () => {
+  async function opcoesDaEnquete(segmento: RegrasDaLoja['segmento']) {
+    const repo = criarOrdersRepositoryFake();
+    const pedido = await criarPedido(repo, carrinho, 20, new Date(), { modalidade: 'ENTREGA' });
+    let opcoes: string[] = [];
+    const regras = { aceitaRetirada: true, fazEntrega: true, aceitaPagamentoNaEntrega: true, cadastroCompleto: true, faixasEntrega: [], horarios: [], segmento };
+    await pedirAndamentoDaLoja(
+      {
+        ordersRepo: repo,
+        contatos: { telefoneDe: async () => '5511900000001' },
+        mensageiro: {
+          enviarTexto: async () => undefined,
+          enviarEnquete: async (_telefone, _pergunta, enviadas) => {
+            opcoes = enviadas;
+            return 'enquete-1';
+          },
+        },
+        lojaParaPedidos: { regrasDe: async () => regras },
+      },
+      pedido,
+    );
+    return opcoes;
+  }
+
+  it('varejo ganha "Separado" antes de sair', async () => {
+    expect(await opcoesDaEnquete('VAREJO')).toEqual(['Separado', 'Saiu para entrega', 'Entregue']);
+    expect(andamentoDaOpcao({ modalidade: 'ENTREGA' }, 'Separado')).toBe('SEPARADO');
+  });
+
+  it('comida continua com as duas opções de sempre', async () => {
+    expect(await opcoesDaEnquete('COMIDA')).toEqual(['Saiu para entrega', 'Entregue']);
+    expect(await opcoesDaEnquete(undefined)).toEqual(['Saiu para entrega', 'Entregue']);
   });
 });
 

@@ -21,6 +21,7 @@ import { comPagamentoSimulado } from './payments/infra/pagamento-simulado.js';
 import { pedirAceiteDaLoja } from './orders/application/pedir-aceite-da-loja.js';
 import { mensagemPagamentoConfirmado } from './orders/application/avisos-cliente.js';
 import { pedirAndamentoDaLoja } from './orders/application/andamento-pedido.js';
+import { criarLojaParaPedidos } from './menu/loja-para-pedidos.js';
 import { criarEnquetesRepositoryPrisma } from './whatsapp/baileys/enquetes.repository.prisma.js';
 import { criarPreviasRepositoryPrisma } from './menu/gestao/previas.repository.prisma.js';
 import type { PaymentsServiceDeps } from './payments/application/dependencias.js';
@@ -87,6 +88,7 @@ async function main(): Promise<void> {
   let pedidosWhatsAppClient: WhatsAppClient | undefined;
 
   const contatos = criarContatoEmpreendedoresPrisma(prisma);
+  const lojaParaPedidos = criarLojaParaPedidos(menuRepo);
   const mensageiroLoja = {
     async enviarTexto(telefone: string, texto: string) {
       if (!menuWhatsAppClient) {
@@ -103,7 +105,7 @@ async function main(): Promise<void> {
   // Pago: a loja recebe os dados completos e a enquete de andamento (saiu/pronto, entregue/retirado).
   const notificarEmpreendedor = async (pedido: Pedido) => {
     await avisarPedidoPago(avisoPedidoPago, pedido);
-    await pedirAndamentoDaLoja({ ordersRepo, contatos, mensageiro: mensageiroLoja }, pedido);
+    await pedirAndamentoDaLoja({ ordersRepo, contatos, mensageiro: mensageiroLoja, lojaParaPedidos }, pedido);
   };
   const avisarCliente = async (pedido: Pedido) => {
     if (!pedidosWhatsAppClient || !pedido.telefoneCliente) {
@@ -149,7 +151,7 @@ async function main(): Promise<void> {
         urlDaImagem: (id) => `${(env.FRONTEND_URL_INTERNA ?? env.FRONTEND_ALLOWED_ORIGIN).replace(/\/$/, '')}/api/previa/${id}`,
       },
       urlDoCardapio: (slug) => `${(env.FRONTEND_URL_PUBLICA ?? env.FRONTEND_ALLOWED_ORIGIN).replace(/\/$/, '')}/${slug}`,
-      decisoes: { ordersRepo, contatos, geradorCobranca, clientePedidos: () => pedidosWhatsAppClient },
+      decisoes: { ordersRepo, contatos, geradorCobranca, clientePedidos: () => pedidosWhatsAppClient, lojaParaPedidos },
     });
   };
   const registrarPedidos = (conexao: WhatsAppClient) => {

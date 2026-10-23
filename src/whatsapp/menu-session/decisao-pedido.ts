@@ -8,6 +8,7 @@ import {
 } from '../../orders/application/andamento-pedido.js';
 import { mensagemAndamento } from '../../orders/application/avisos-cliente.js';
 import type { ContatoEmpreendedores } from '../../orders/application/ports/avisos-empreendedor.js';
+import type { LojaParaPedidos } from '../../orders/application/ports/loja-para-pedidos.js';
 import type { OrdersRepository } from '../../orders/application/ports/orders.repository.js';
 import {
   descreverPagamento,
@@ -36,6 +37,8 @@ export interface DecisaoPedidoDeps {
   idempotency: IdempotencyRepository;
   /** Sessão que fala com os clientes; pode ainda não estar conectada. */
   clientePedidos: () => WhatsAppClient | undefined;
+  /** Para saber o segmento da loja (varejo tem "Separado" na enquete de andamento). */
+  lojaParaPedidos?: LojaParaPedidos;
 }
 
 /** Como foi o aviso ao cliente: avisado, não deu para avisar, ou (aceite com PIX) o PIX não saiu. */

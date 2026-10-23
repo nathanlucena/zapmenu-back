@@ -202,6 +202,7 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
         pedidoMinimo: loja.pedidoMinimo === null ? undefined : Number(loja.pedidoMinimo),
         horarios: loja.horarios as unknown as HorarioFuncionamento[],
         fuso: loja.fuso,
+        segmento: loja.segmento,
       };
       return regras;
     },

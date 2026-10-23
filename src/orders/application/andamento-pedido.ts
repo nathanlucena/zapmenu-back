@@ -12,7 +12,11 @@ import {
 } from '../domain/pedido.js';
 import { garantirDonoDaLoja } from './decidir-pedido.js';
 import type { ContatoEmpreendedores, MensageiroEmpreendedor } from './ports/avisos-empreendedor.js';
+import type { LojaParaPedidos } from './ports/loja-para-pedidos.js';
 import type { OrdersRepository } from './ports/orders.repository.js';
+
+/** Opção extra da enquete nas lojas de varejo, antes de sair/ficar pronto. */
+export const OPCAO_SEPARADO = 'Separado';
 
 /** Opções da enquete de andamento, na ordem em que a loja usa: primeiro a caminho, depois concluído. */
 export function opcoesDeAndamento(pedido: Pick<Pedido, 'modalidade'>): { aCaminho: string; concluido: string } {
@@ -23,6 +27,7 @@ export function opcoesDeAndamento(pedido: Pick<Pedido, 'modalidade'>): { aCaminh
 
 export function andamentoDaOpcao(pedido: Pick<Pedido, 'modalidade'>, opcao: string): AndamentoPedido | undefined {
   const opcoes = opcoesDeAndamento(pedido);
+  if (opcao === OPCAO_SEPARADO) return 'SEPARADO';
   if (opcao === opcoes.aCaminho) return 'A_CAMINHO';
   if (opcao === opcoes.concluido) return 'CONCLUIDO';
   return undefined;
@@ -33,21 +38,27 @@ export interface AndamentoDeps {
   contatos: ContatoEmpreendedores;
 }
 
+/** Sem ela, a enquete é a de sempre (comida). */
+export interface AndamentoComEnqueteDeps extends AndamentoDeps {
+  mensageiro: MensageiroEmpreendedor;
+  lojaParaPedidos?: LojaParaPedidos;
+}
+
 /**
- * Manda à loja a enquete de andamento do pedido (saiu/pronto e entregue/retirado).
- * A mesma enquete serve para os dois passos: trocar o voto avança o pedido.
+ * Manda à loja a enquete de andamento do pedido (saiu/pronto e entregue/retirado;
+ * no varejo, "Separado" antes). A mesma enquete serve para todos os passos:
+ * trocar o voto avança o pedido.
  */
-export async function pedirAndamentoDaLoja(
-  deps: AndamentoDeps & { mensageiro: MensageiroEmpreendedor },
-  pedido: Pedido,
-): Promise<void> {
+export async function pedirAndamentoDaLoja(deps: AndamentoComEnqueteDeps, pedido: Pedido): Promise<void> {
   const telefone = await deps.contatos.telefoneDe(pedido.empreendedorId);
   if (!telefone || !deps.mensageiro.enviarEnquete) {
     logger.warn({ pedidoId: pedido.id }, 'não foi possível enviar a enquete de andamento');
     return;
   }
   const opcoes = opcoesDeAndamento(pedido);
+  const varejo = (await deps.lojaParaPedidos?.regrasDe(pedido.empreendedorId))?.segmento === 'VAREJO';
   const enqueteId = await deps.mensageiro.enviarEnquete(telefone, `Andamento do pedido ${pedido.codigoCurto}`, [
+    ...(varejo ? [OPCAO_SEPARADO] : []),
     opcoes.aCaminho,
     opcoes.concluido,
   ]);
