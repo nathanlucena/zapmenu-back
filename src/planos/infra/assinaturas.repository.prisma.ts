@@ -125,5 +125,18 @@ export function criarAssinaturasRepositoryPrisma(prisma: PrismaClient): Assinatu
     async contarProdutos(empreendedorId) {
       return prisma.itemCardapio.count({ where: { removidoEm: null, cardapio: { empreendedorId } } });
     },
+
+    async usoDaCota(empreendedorId, chave, mes) {
+      const uso = await prisma.usoDeCota.findUnique({ where: { empreendedorId_mes_chave: { empreendedorId, mes, chave } } });
+      return uso?.usado ?? 0;
+    },
+
+    async somarUsoDaCota(empreendedorId, chave, mes, quantidade) {
+      await prisma.usoDeCota.upsert({
+        where: { empreendedorId_mes_chave: { empreendedorId, mes, chave } },
+        update: { usado: { increment: quantidade } },
+        create: { empreendedorId, mes, chave, usado: quantidade },
+      });
+    },
   };
 }

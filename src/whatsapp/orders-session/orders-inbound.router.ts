@@ -20,6 +20,8 @@ export interface OrdersInboundRouterDeps {
   pedirAceite: (pedido: Pedido) => Promise<void>;
   /** Quanto tempo a loja tem para responder. */
   prazoAceiteMs?: number;
+  /** Áudio do cliente vira texto (loja do pedido mais recente dele, no Profissional). Sem isso, pede para escrever. */
+  ouvirAudio?: (telefone: string, audio: NonNullable<MensagemRecebida['audio']>) => Promise<{ tipo: 'TEXTO' | 'RESPOSTA'; texto: string }>;
 }
 
 /** Gera (ou reaproveita) o PIX do pedido e manda para o cliente: copia e cola + QR code. */
@@ -97,6 +99,18 @@ export function registrarOrdersInboundRouter(deps: OrdersInboundRouterDeps): voi
     try {
       if (await deps.idempotency.jaProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id)) {
         logger.info({ mensagemId: mensagem.id }, 'mensagem de pedidos já processada (reentrega), ignorando');
+        return;
+      }
+      if (mensagem.audio) {
+        const ouvido = deps.ouvirAudio
+          ? await deps.ouvirAudio(mensagem.telefone, mensagem.audio)
+          : { tipo: 'RESPOSTA' as const, texto: 'Por aqui ainda não consigo ouvir áudios. Pode escrever?' };
+        if (ouvido.tipo === 'RESPOSTA') {
+          await deps.whatsapp.sendText(mensagem.telefone, ouvido.texto);
+        } else {
+          await tratarMensagem({ ...mensagem, corpo: ouvido.texto, audio: undefined }, deps);
+        }
+        await deps.idempotency.marcarProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id);
         return;
       }
       await tratarMensagem(mensagem, deps);

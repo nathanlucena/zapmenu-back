@@ -7,6 +7,8 @@ import { criarCadastroPorLista } from '../../menu/gestao/cadastro-empreendedores
 import { criarIdempotencyRepositoryFake } from '../../shared/idempotency/__mocks__/idempotency.repository.fake.js';
 import { criarWhatsAppClientFake } from '../__mocks__/whatsapp-client.fake.js';
 import { registrarMenuInboundRouter } from './menu-inbound.router.js';
+import { criarTranscritorFake } from '../../audio/__mocks__/transcritor.fake.js';
+import { criarAssinaturasRepositoryFake } from '../../planos/__mocks__/assinaturas.repository.fake.js';
 
 const TELEFONE = '5581999990000';
 
@@ -23,7 +25,10 @@ function cenario() {
   const ia = criarInterpretadorRoteiroFake();
   const whatsapp = criarWhatsAppClientFake();
   const idempotency = criarIdempotencyRepositoryFake();
+  const cotas = criarAssinaturasRepositoryFake();
+  cotas.definirLoja({ empreendedorId: 'emp-1', telefone: TELEFONE }, { plano: 'PROFISSIONAL', status: 'ATIVA' });
   registrarMenuInboundRouter({
+    audio: { transcritor: criarTranscritorFake(), cotas },
     conversationRepo,
     gestaoRepo: criarGestaoRepositoryFake({
       loja: { nome: 'Pizzaria do Zé' },
@@ -36,8 +41,8 @@ function cenario() {
     agrupamento: { silencioMs: 3_000, maximoMs: 10_000 },
   });
   let id = 0;
-  const mandar = (corpo: string, imagemUrl?: string) =>
-    whatsapp.emitirMensagem({ id: `m${++id}`, telefone: TELEFONE, corpo, imagemUrl, timestamp: new Date() });
+  const mandar = (corpo: string, imagemUrl?: string, audio?: { dados: Uint8Array; mimetype: string; segundos: number }) =>
+    whatsapp.emitirMensagem({ id: `m${++id}`, telefone: TELEFONE, corpo, imagemUrl, audio, timestamp: new Date() });
   const textos = () => whatsapp.mensagensEnviadas.map((mensagem) => mensagem.conteudo);
   return { ia, whatsapp, idempotency, mandar, textos };
 }
@@ -95,5 +100,15 @@ describe('gestão: mensagens seguidas viram uma rodada só', () => {
     await mandar('o que falta?');
     expect(textos().join('\n')).toContain('Horário de funcionamento');
     expect(ia.entradas).toHaveLength(0);
+  });
+
+  it('áudio: responde "Entendi" e o texto entra na rodada como se fosse escrito', async () => {
+    const { ia, mandar, textos } = cenario();
+    ia.responder({ resposta: 'Anotei!' });
+    await mandar('', undefined, { dados: new Uint8Array([1]), mimetype: 'audio/ogg', segundos: 8 });
+    expect(textos()).toContain('🎤 Entendi: “entrou pizza de calabresa 40 reais”');
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(ia.entradas[0]!.mensagem).toBe('entrou pizza de calabresa 40 reais');
+    expect(textos()).toContain('Anotei!');
   });
 });

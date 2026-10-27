@@ -3,6 +3,8 @@ export interface MensagemRecebida {
   telefone: string;
   corpo: string;
   imagemUrl?: string;
+  /** Nota de voz ou áudio. `dados` só vem até 2 min (o resto nem é baixado) e não é guardado. */
+  audio?: { dados?: Uint8Array; mimetype: string; segundos?: number };
   timestamp: Date;
 }
 

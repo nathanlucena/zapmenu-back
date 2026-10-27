@@ -81,7 +81,7 @@ describe('criarBaileysClient', () => {
     expect(recebidas.map((m) => m.telefone)).toEqual(['5511955554444', '5511977776666']);
   });
 
-  it('ignora grupos, mensagens da própria conta, histórico e mídia que não é imagem', async () => {
+  it('ignora grupos, mensagens da própria conta, histórico e mídia que não é imagem nem áudio', async () => {
     const fake = criarSocketFake();
     const recebidas = ouvir(fake);
 
@@ -90,12 +90,27 @@ describe('criarBaileysClient', () => {
       texto('5511988887777@s.whatsapp.net', 'minha', { fromMe: true }),
       {
         key: { id: 'A1', remoteJid: '5511988887777@s.whatsapp.net', fromMe: false },
-        message: { audioMessage: {} },
+        message: { videoMessage: {} },
       },
     ]);
     await fake.receber([texto('5511988887777@s.whatsapp.net', 'antiga')], 'append');
 
     expect(recebidas).toEqual([]);
+  });
+
+  it('áudio chega com a duração; o longo (mais de 2 min) nem é baixado', async () => {
+    const fake = criarSocketFake();
+    const recebidas = ouvir(fake);
+
+    await fake.receber([
+      {
+        key: { id: 'AUD', remoteJid: '5511988887777@s.whatsapp.net', fromMe: false },
+        message: { audioMessage: { seconds: 300, mimetype: 'audio/ogg; codecs=opus' } },
+      },
+    ]);
+
+    expect(recebidas).toHaveLength(1);
+    expect(recebidas[0]?.audio).toEqual({ mimetype: 'audio/ogg; codecs=opus', segundos: 300 });
   });
 
   it('usa a legenda como texto quando chega uma imagem', async () => {

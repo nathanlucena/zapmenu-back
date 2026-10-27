@@ -37,6 +37,8 @@ export interface OrdersRepository {
   criar(pedido: Omit<Pedido, 'id'>): Promise<Pedido>;
   buscarPorId(id: string): Promise<Pedido | null>;
   buscarPorCodigo(codigoCurto: string): Promise<Pedido | null>;
+  /** O pedido mais recente desse cliente (pelo telefone), para saber de qual loja ele fala. */
+  ultimoDoCliente(telefoneCliente: string): Promise<Pedido | null>;
   /** Pelo id da enquete de aceite ou da de andamento. */
   buscarPorEnquete(enqueteId: string): Promise<Pedido | null>;
   listarPorStatus(status: StatusPedido): Promise<Pedido[]>;

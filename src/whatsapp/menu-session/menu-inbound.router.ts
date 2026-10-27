@@ -5,6 +5,7 @@ import { logger } from '../../shared/logger/logger.js';
 import type { MensagemRecebida, WhatsAppClient } from '../whatsapp-client.interface.js';
 import { ehComandoSemIA } from '../../menu/gestao/comandos.js';
 import { criarAgrupador, type OpcoesAgrupamento } from './agrupador.js';
+import { AUDIO_DESLIGADO, ouvirAudio, type OuvirAudioDeps } from '../../audio/application/ouvir-audio.js';
 import { criarAvisoDeFalha } from '../falhas.js';
 import { registrarVotosDaLoja, tratarRespostaDaLojaEmTexto, type DecisaoPedidoDeps } from './decisao-pedido.js';
 
@@ -21,6 +22,8 @@ export interface MenuInboundRouterDeps extends GestaoDeps {
    * silêncio, teto de 10 s). Sem isso, cada mensagem é uma rodada.
    */
   agrupamento?: OpcoesAgrupamento;
+  /** Transcrição dos áudios do lojista (Profissional). Sem isso, pede para escrever. */
+  audio?: OuvirAudioDeps;
 }
 
 /** Várias mensagens viram uma: os textos em linhas, a primeira foto junto; as outras fotos vão depois. */
@@ -110,15 +113,46 @@ export function registrarMenuInboundRouter(deps: MenuInboundRouterDeps): void {
     }
   };
 
+  /**
+   * Áudio vira texto antes de tudo ("🎤 Entendi: …") e segue como mensagem
+   * escrita. Quando não dá (desligado, longo, sem cota, falhou), responde e
+   * devolve undefined.
+   */
+  const comAudioTranscrito = async (mensagem: MensagemRecebida): Promise<MensagemRecebida | undefined> => {
+    if (!mensagem.audio) {
+      return mensagem;
+    }
+    try {
+      await deps.whatsapp.sendTyping?.(mensagem.telefone).catch(() => undefined);
+      const resultado = deps.audio
+        ? await ouvirAudio(deps.audio, mensagem.telefone, mensagem.audio, 'LOJISTA')
+        : { tipo: 'RESPOSTA' as const, texto: AUDIO_DESLIGADO };
+      if (resultado.tipo === 'RESPOSTA') {
+        await deps.whatsapp.sendText(mensagem.telefone, resultado.texto);
+        await deps.idempotency.marcarProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id);
+        return undefined;
+      }
+      await deps.whatsapp.sendText(mensagem.telefone, `🎤 Entendi: “${resultado.texto}”`);
+      return { ...mensagem, corpo: [mensagem.corpo, resultado.texto].filter(Boolean).join('\n'), audio: undefined };
+    } catch (erro) {
+      await avisarFalha(deps.whatsapp, mensagem.telefone, mensagem.id, erro);
+      return undefined;
+    }
+  };
+
   const agrupador =
     deps.agrupamento &&
     criarAgrupador<MensagemRecebida>(deps.agrupamento, (telefone, mensagens) => {
       void enfileirar(telefone, () => processarRodada(mensagens));
     });
 
-  deps.whatsapp.onMessage(async (mensagem) => {
-    if (await deps.idempotency.jaProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id)) {
-      logger.info({ mensagemId: mensagem.id }, 'mensagem de gestão já processada (reentrega), ignorando');
+  deps.whatsapp.onMessage(async (recebida) => {
+    if (await deps.idempotency.jaProcessado(ORIGEM_IDEMPOTENCIA, recebida.id)) {
+      logger.info({ mensagemId: recebida.id }, 'mensagem de gestão já processada (reentrega), ignorando');
+      return;
+    }
+    const mensagem = await comAudioTranscrito(recebida);
+    if (!mensagem) {
       return;
     }
     // Aceite/recusa de pedido e comandos curtos sozinhos (sim, cancelar, o que falta…) respondem na hora.

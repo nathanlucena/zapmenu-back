@@ -86,6 +86,16 @@ const envSchema = z.object({
   // De quanto em quanto tempo o job das assinaturas roda (cada aviso sai uma vez por dia).
   ASSINATURAS_VERIFICACAO_INTERVALO_MINUTOS: z.coerce.number().positive().default(60),
 
+  // Transcrição de áudios (Profissional) por uma API compatível com a da OpenAI (/audio/transcriptions):
+  // OpenAI (https://api.openai.com/v1, whisper-1) ou Groq (https://api.groq.com/openai/v1, whisper-large-v3).
+  // Sem chave, o bot pede para escrever.
+  TRANSCRICAO_API_URL: z.string().url().default('https://api.openai.com/v1'),
+  TRANSCRICAO_API_KEY: z
+    .string()
+    .optional()
+    .transform((valor) => valor?.trim() || undefined),
+  TRANSCRICAO_MODELO: z.string().default('whisper-1'),
+
   PEDIDO_TTL_MINUTOS: z.coerce.number().default(20),
   // Quanto tempo a loja tem para aceitar ou recusar um pedido depois que o cliente manda o código.
   PEDIDO_ACEITE_MINUTOS: z.coerce.number().int().positive().default(15),
