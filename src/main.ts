@@ -36,6 +36,9 @@ import { iniciarSessaoWhatsApp } from './whatsapp/baileys/session-manager.js';
 import { dividirMensagens } from './whatsapp/numero-unico/dividir-mensagens.js';
 import { identificarBot, ROTULO_GESTAO, ROTULO_PEDIDOS } from './whatsapp/identificacao/identificar-bot.js';
 import { chaveTelefone } from './shared/telefone/telefone.js';
+import { criarAssinaturasRepositoryPrisma } from './planos/infra/assinaturas.repository.prisma.js';
+import { avisarLimiteDePedidos } from './planos/application/avisar-limite-de-pedidos.js';
+import type { PlanosDeps } from './planos/application/dependencias.js';
 
 async function main(): Promise<void> {
   const env = getEnv();
@@ -102,10 +105,20 @@ async function main(): Promise<void> {
     },
   };
   const avisoPedidoPago = { contatos, mensageiro: mensageiroLoja };
+  const urlPublica = (env.FRONTEND_URL_PUBLICA ?? env.FRONTEND_ALLOWED_ORIGIN).replace(/\/$/, '');
+  const planos: PlanosDeps = {
+    repo: criarAssinaturasRepositoryPrisma(prisma),
+    mensageiro: mensageiroLoja,
+    idempotency,
+    linkDosPlanos: `${urlPublica}/#planos`,
+  };
+  // Cada venda confere o limite de pedidos do mês (aviso de 80% e 100%; o cliente nunca é barrado).
+  const aoVirarVenda = (pedido: Pedido) => avisarLimiteDePedidos(planos, pedido.empreendedorId);
   // Pago: a loja recebe os dados completos e a enquete de andamento (saiu/pronto, entregue/retirado).
   const notificarEmpreendedor = async (pedido: Pedido) => {
     await avisarPedidoPago(avisoPedidoPago, pedido);
     await pedirAndamentoDaLoja({ ordersRepo, contatos, mensageiro: mensageiroLoja, lojaParaPedidos }, pedido);
+    await aoVirarVenda(pedido);
   };
   const avisarCliente = async (pedido: Pedido) => {
     if (!pedidosWhatsAppClient || !pedido.telefoneCliente) {
@@ -150,8 +163,16 @@ async function main(): Promise<void> {
         repo: previas,
         urlDaImagem: (id) => `${(env.FRONTEND_URL_INTERNA ?? env.FRONTEND_ALLOWED_ORIGIN).replace(/\/$/, '')}/api/previa/${id}`,
       },
-      urlDoCardapio: (slug) => `${(env.FRONTEND_URL_PUBLICA ?? env.FRONTEND_ALLOWED_ORIGIN).replace(/\/$/, '')}/${slug}`,
-      decisoes: { ordersRepo, contatos, geradorCobranca, clientePedidos: () => pedidosWhatsAppClient, lojaParaPedidos },
+      urlDoCardapio: (slug) => `${urlPublica}/${slug}`,
+      planos,
+      decisoes: {
+        ordersRepo,
+        contatos,
+        geradorCobranca,
+        clientePedidos: () => pedidosWhatsAppClient,
+        lojaParaPedidos,
+        aoVirarVenda,
+      },
     });
   };
   const registrarPedidos = (conexao: WhatsAppClient) => {
