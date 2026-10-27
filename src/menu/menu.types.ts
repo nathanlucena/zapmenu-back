@@ -86,6 +86,10 @@ export interface LojaPublica {
   politicaTroca?: string;
   /** Envio pelos Correios com frete fixo; ausente quando a loja não envia. */
   envio?: { padrao?: number; porUf: Record<string, number> };
+  /** Rodapé "Feito com ZapMenu": o plano da loja não inclui tirar o selo. Só o cardápio público preenche. */
+  mostrarSelo?: boolean;
+  /** Assinatura suspensa: o app mostra "Loja temporariamente indisponível" e não aceita pedidos. */
+  indisponivel?: boolean;
 }
 
 /** Uma seção do cardápio; `id` null é o grupo "Outros" (itens sem categoria). */

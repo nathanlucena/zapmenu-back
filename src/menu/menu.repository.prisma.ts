@@ -19,6 +19,7 @@ import type {
 import { cadastroCompleto, type LojaParaCadastro } from './cadastro-da-loja.js';
 import { fotosDoItem } from './fotos-do-produto.js';
 import { freteConfigurado, type FreteFixo } from '../orders/domain/envio.js';
+import { cardapioNoPlano, regrasNoPlano } from './plano-na-vitrine.js';
 
 /** Os dados da loja salva que contam para o cadastro obrigatório. */
 function lojaParaCadastro(loja: {
@@ -177,7 +178,7 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
       const empreendedorId = empreendedor.id;
       // Filtra pelo dono em vez do id do cardápio: quem ainda não tem cardápio recebe listas vazias.
       const doCardapio = { cardapio: { empreendedorId } };
-      const [categorias, itens, loja] = await Promise.all([
+      const [categorias, itens, loja, plano] = await Promise.all([
         prisma.categoria.findMany({ where: doCardapio, orderBy: [{ ordem: 'asc' }, { criadoEm: 'asc' }] }),
         prisma.itemCardapio.findMany({
           where: { ...doCardapio, ativo: true, removidoEm: null },
@@ -185,6 +186,7 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
           orderBy: { criadoEm: 'asc' },
         }),
         prisma.loja.findUnique({ where: { empreendedorId } }),
+        prisma.assinatura.findUnique({ where: { empreendedorId }, select: { plano: true, status: true } }),
       ]);
 
       const segmento = loja?.segmento ?? 'COMIDA';
@@ -203,28 +205,32 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
         secoes,
         itens: disponiveis,
       };
-      return cardapio;
+      return cardapioNoPlano(cardapio, plano ?? undefined);
     },
 
     async obterRegrasDePedido(identificador: string) {
       const empreendedor = await prisma.empreendedor.findFirst({
         where: empreendedorPorIdentificador(identificador),
-        include: { loja: true },
+        include: { loja: true, assinatura: { select: { plano: true, status: true } } },
       });
       if (!empreendedor) {
         return null;
       }
       const { loja } = empreendedor;
+      const plano = empreendedor.assinatura ?? undefined;
       if (!loja) {
         // Loja sem nada configurado: os mesmos padrões do schema.
-        return {
-          aceitaRetirada: true,
-          fazEntrega: false,
-          aceitaPagamentoNaEntrega: true,
-          faixasEntrega: [],
-          horarios: [],
-          cadastroCompleto: false,
-        };
+        return regrasNoPlano(
+          {
+            aceitaRetirada: true,
+            fazEntrega: false,
+            aceitaPagamentoNaEntrega: true,
+            faixasEntrega: [],
+            horarios: [],
+            cadastroCompleto: false,
+          },
+          plano,
+        );
       }
       const regras: RegrasDaLoja = {
         aceitaRetirada: loja.aceitaRetirada,
@@ -242,7 +248,7 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
         segmento: loja.segmento,
         envio: freteDaLoja(loja),
       };
-      return regras;
+      return regrasNoPlano(regras, plano);
     },
 
     async obterOuCriarCardapio(telefoneEmpreendedor: string) {

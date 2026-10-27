@@ -25,6 +25,8 @@ export interface RegrasDaLoja {
   envio?: FreteFixo;
   /** Ramo da loja; muda as etapas oferecidas à loja (varejo tem "Separado"). */
   segmento?: 'COMIDA' | 'VAREJO' | 'SERVICOS';
+  /** Assinatura do ZapMenu suspensa: não recebe pedidos. */
+  indisponivel?: boolean;
 }
 
 export interface LojaParaPedidos {
