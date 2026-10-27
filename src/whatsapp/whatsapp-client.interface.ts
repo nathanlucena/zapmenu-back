@@ -3,6 +3,8 @@ export interface MensagemRecebida {
   telefone: string;
   corpo: string;
   imagemUrl?: string;
+  /** Nota de voz ou áudio. `dados` só vem até 2 min (o resto nem é baixado) e não é guardado. */
+  audio?: { dados?: Uint8Array; mimetype: string; segundos?: number };
   timestamp: Date;
 }
 
@@ -26,6 +28,8 @@ export interface WhatsAppClient {
   sendImage(telefone: string, imagemUrlOuBase64: string, legenda?: string): Promise<void>;
   /** Envia uma enquete de escolha única; devolve o id dela, ou undefined se o envio foi bloqueado. */
   sendPoll(telefone: string, pergunta: string, opcoes: string[]): Promise<string | undefined>;
+  /** Mostra "digitando..." para a pessoa. Opcional: nem todo cliente tem. */
+  sendTyping?(telefone: string): Promise<void>;
   onMessage(manipulador: ManipuladorMensagem): void;
   onPollVote(manipulador: ManipuladorVoto): void;
 }

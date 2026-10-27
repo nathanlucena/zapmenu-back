@@ -328,8 +328,9 @@ async function salvarLoja(tx: Tx, empreendedorId: string, loja: DadosLoja): Prom
     slug: loja.slug,
     corDestaque: loja.corDestaque,
     instagram: loja.instagram,
-    logoUrl: loja.logoUrl,
-    capaUrl: loja.capaUrl,
+    // "" = tirar a foto.
+    logoUrl: loja.logoUrl === '' ? null : loja.logoUrl,
+    capaUrl: loja.capaUrl === '' ? null : loja.capaUrl,
     aceitaPagamentoNaEntrega: loja.aceitaPagamentoNaEntrega,
     aceitaEnvio: loja.aceitaEnvio,
     freteEnvio: loja.freteEnvio,

@@ -2,7 +2,17 @@
  * Palavras-chave tratadas sem IA: funcionam mesmo com a IA fora do ar e não
  * gastam uma chamada para o óbvio. O resto da conversa é interpretado pela IA.
  */
-export type Comando = 'CANCELAR' | 'CARDAPIO' | 'SIM' | 'NAO' | 'PENDENCIAS' | 'NAO_LEMBRAR' | 'PREVIA' | 'MUDAR_TIPO';
+export type Comando =
+  | 'CANCELAR'
+  | 'CARDAPIO'
+  | 'SIM'
+  | 'NAO'
+  | 'PENDENCIAS'
+  | 'NAO_LEMBRAR'
+  | 'PREVIA'
+  | 'MUDAR_TIPO'
+  | 'TIRAR_CAPA'
+  | 'TIRAR_LOGO';
 
 const PALAVRAS: Record<Comando, string[]> = {
   CANCELAR: ['cancelar', 'cancela'],
@@ -42,6 +52,8 @@ const PALAVRAS: Record<Comando, string[]> = {
     'trocar o tipo',
     'tipo da loja',
   ],
+  TIRAR_CAPA: ['tirar a capa', 'tirar capa', 'remover a capa', 'remover capa', 'apagar a capa', 'sem capa'],
+  TIRAR_LOGO: ['tirar o logo', 'tirar a logo', 'tirar logo', 'remover o logo', 'remover a logo', 'remover logo', 'apagar o logo', 'sem logo'],
   NAO_LEMBRAR: ['nao lembrar mais', 'nao quero lembrete', 'para de lembrar', 'pare de lembrar', 'sem lembrete'],
 };
 
@@ -170,4 +182,30 @@ export function reconhecerComandoDeRelatorio(texto: string): ComandoDeRelatorio 
   return (Object.entries(PALAVRAS_DE_RELATORIO) as [ComandoDeRelatorio, string[]][]).find(([, palavras]) =>
     palavras.includes(normalizado),
   )?.[0];
+}
+
+/** Mensagem que a gestão responde sem IA (sim, cancelar, o que falta, meu plano…): sozinha, responde na hora. */
+export function ehComandoSemIA(texto: string): boolean {
+  return Boolean(
+    reconhecerComando(texto) ||
+      reconhecerComandoDePlano(texto) ||
+      reconhecerComandoDePromocao(texto) ||
+      reconhecerComandoDeRelatorio(texto) ||
+      reconhecerComandoDeDescricao(texto),
+  );
+}
+
+/** Pedido de descrição escrita pela IA: de um item (pelo nome) ou de uma categoria. */
+export type ComandoDeDescricao = { tipo: 'ITEM' | 'CATEGORIA'; nome: string };
+
+const DESCRICAO_DA_CATEGORIA = /^(?:melhor(?:a|ar)|escreve(?:r)?|cria(?:r)?)\s+(?:as\s+)?descricoes\s+(?:da|do|de|dos|das)\s+categoria\s+(.+)$/;
+const DESCRICAO_DO_ITEM = /^(?:melhor(?:a|ar)|escreve(?:r)?|cria(?:r)?)\s+(?:a\s+|uma\s+)?descricao\s+(?:da|do|de|para|pra|pro)\s+(?:a\s+|o\s+)?(.+)$/;
+
+export function reconhecerComandoDeDescricao(texto: string): ComandoDeDescricao | undefined {
+  const normalizado = normalizar(texto);
+  const categoria = normalizado.match(DESCRICAO_DA_CATEGORIA);
+  if (categoria) return { tipo: 'CATEGORIA', nome: categoria[1]!.trim() };
+  const item = normalizado.match(DESCRICAO_DO_ITEM);
+  if (item) return { tipo: 'ITEM', nome: item[1]!.trim() };
+  return undefined;
 }

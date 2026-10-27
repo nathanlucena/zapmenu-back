@@ -31,4 +31,10 @@ export interface AssinaturasRepository {
   contarVendas(empreendedorId: string, de: Date, ate: Date): Promise<number>;
   /** Produtos no cardápio (ativos e pausados, sem os removidos). */
   contarProdutos(empreendedorId: string): Promise<number>;
+  /** Quanto já foi usado da cota no mês ("2026-10"). Áudio em segundos. */
+  usoDaCota(empreendedorId: string, chave: ChaveDeCota, mes: string): Promise<number>;
+  somarUsoDaCota(empreendedorId: string, chave: ChaveDeCota, mes: string, quantidade: number): Promise<void>;
 }
+
+/** Cotas mensais do plano que o app consome. */
+export type ChaveDeCota = 'minutosAudioMes' | 'sugestoesIaMes';

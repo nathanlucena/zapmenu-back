@@ -174,6 +174,11 @@ export function criarOrdersRepositoryPrisma(prisma: PrismaClient): OrdersReposit
       return pedido ? paraPedido(pedido) : null;
     },
 
+    async ultimoDoCliente(telefoneCliente: string) {
+      const pedido = await prisma.pedido.findFirst({ where: { telefoneCliente }, orderBy: { criadoEm: 'desc' }, include: COM_ITENS });
+      return pedido ? paraPedido(pedido) : null;
+    },
+
     async buscarPorEnquete(enqueteId: string) {
       const pedido = await prisma.pedido.findFirst({
         where: { OR: [{ enqueteAceiteId: enqueteId }, { enqueteAndamentoId: enqueteId }] },

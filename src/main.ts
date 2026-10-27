@@ -45,6 +45,10 @@ import { criarPromocoesRepositoryPrisma } from './promocoes/infra/promocoes.repo
 import { iniciarJobPromocoes } from './promocoes/infra/promocoes.job.js';
 import { criarRelatoriosRepositoryPrisma } from './relatorios/infra/relatorios.repository.prisma.js';
 import { iniciarJobRelatorios } from './relatorios/infra/relatorios.job.js';
+import { criarTranscritorOpenAiCompativel } from './audio/infra/transcritor-openai-compativel.js';
+import { ouvirAudio, type OuvirAudioDeps } from './audio/application/ouvir-audio.js';
+import { criarGeradorDeDescricoesDeepSeek } from './menu/gestao/deepseek-descricoes.js';
+import { criarImagensDaLojaSharp } from './menu/imagens/imagens-da-loja.sharp.js';
 
 async function main(): Promise<void> {
   const env = getEnv();
@@ -132,6 +136,16 @@ async function main(): Promise<void> {
   };
   const promocoes = { repo: criarPromocoesRepositoryPrisma(prisma), mensageiro: mensageiroLoja };
   const relatorios = { repo: criarRelatoriosRepositoryPrisma(prisma), mensageiro: mensageiroLoja };
+  const audio: OuvirAudioDeps = {
+    transcritor: env.TRANSCRICAO_API_KEY
+      ? criarTranscritorOpenAiCompativel({ url: env.TRANSCRICAO_API_URL, chave: env.TRANSCRICAO_API_KEY, modelo: env.TRANSCRICAO_MODELO })
+      : undefined,
+    cotas: planos.repo,
+    linkDosPlanos: planos.linkDosPlanos,
+  };
+  if (!audio.transcritor) {
+    logger.warn('TRANSCRICAO_API_KEY não definida: os áudios não são transcritos (o bot pede para escrever)');
+  }
   // Cada venda confere o limite de pedidos do mês (aviso de 80% e 100%; o cliente nunca é barrado).
   const aoVirarVenda = (pedido: Pedido) => avisarLimiteDePedidos(planos, pedido.empreendedorId);
   // Pago: a loja recebe os dados completos e a enquete de andamento (saiu/pronto, entregue/retirado).
@@ -184,9 +198,24 @@ async function main(): Promise<void> {
         urlDaImagem: (id) => `${(env.FRONTEND_URL_INTERNA ?? env.FRONTEND_ALLOWED_ORIGIN).replace(/\/$/, '')}/api/previa/${id}`,
       },
       urlDoCardapio: (slug) => `${urlPublica}/${slug}`,
+      // Mensagens seguidas viram uma rodada: 3 s de silêncio, no máximo 10 s desde a primeira.
+      agrupamento: { silencioMs: 3_000, maximoMs: 10_000 },
       planos,
       promocoes,
       relatorios,
+      audio,
+      imagens: criarImagensDaLojaSharp(),
+      // Descrições pela IA usam o mesmo DeepSeek da gestão; sem chave, a oferta não aparece.
+      descricoes: env.DEEPSEEK_API_KEY
+        ? {
+            gerador: criarGeradorDeDescricoesDeepSeek({
+              apiKey: env.DEEPSEEK_API_KEY,
+              modelo: env.DEEPSEEK_MODEL,
+              baseURL: env.DEEPSEEK_BASE_URL,
+            }),
+            cotas: planos.repo,
+          }
+        : undefined,
       decisoes: {
         ordersRepo,
         contatos,
@@ -207,6 +236,14 @@ async function main(): Promise<void> {
       geradorCobranca,
       pedirAceite: (pedido) => pedirAceiteDaLoja({ ordersRepo, contatos, mensageiro: mensageiroLoja }, pedido),
       prazoAceiteMs: env.PEDIDO_ACEITE_MINUTOS * 60_000,
+      // O áudio do cliente conta na cota da loja do pedido mais recente dele.
+      ouvirAudio: async (telefone, audioRecebido) => {
+        const pedido = await ordersRepo.ultimoDoCliente(telefone);
+        if (!pedido) {
+          return { tipo: 'RESPOSTA', texto: 'Não consegui ouvir o áudio. Pode escrever o código do pedido (PED-XXXX)?' };
+        }
+        return ouvirAudio(audio, pedido.empreendedorId, audioRecebido, 'CLIENTE');
+      },
     });
   };
   const sessao = (sessionName: string, tokenStorePath: string) => ({

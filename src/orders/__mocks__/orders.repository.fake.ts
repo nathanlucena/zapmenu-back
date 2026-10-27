@@ -71,6 +71,11 @@ export function criarOrdersRepositoryFake(): OrdersRepositoryFake {
       return Array.from(pedidos.values()).find((pedido) => pedido.codigoCurto === codigoCurto) ?? null;
     },
 
+    async ultimoDoCliente(telefoneCliente: string) {
+      const doCliente = Array.from(pedidos.values()).filter((pedido) => pedido.telefoneCliente === telefoneCliente);
+      return doCliente.sort((a, b) => b.criadoEm.getTime() - a.criadoEm.getTime())[0] ?? null;
+    },
+
     async buscarPorEnquete(enqueteId: string) {
       return (
         Array.from(pedidos.values()).find(

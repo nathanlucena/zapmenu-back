@@ -14,6 +14,7 @@ export function criarAssinaturasRepositoryFake(): AssinaturasRepositoryFake {
   const assinaturas = new Map<string, Assinatura>();
   const vendas = new Map<string, Date[]>();
   const produtos = new Map<string, number>();
+  const cotas = new Map<string, number>();
 
   const lojaDe = (identificador: string) =>
     lojas.get(identificador) ?? [...lojas.values()].find((loja) => loja.telefone === identificador);
@@ -70,6 +71,13 @@ export function criarAssinaturasRepositoryFake(): AssinaturasRepositoryFake {
     },
     async contarProdutos(empreendedorId) {
       return produtos.get(empreendedorId) ?? 0;
+    },
+    async usoDaCota(empreendedorId, chave, mes) {
+      return cotas.get(`${empreendedorId}:${chave}:${mes}`) ?? 0;
+    },
+    async somarUsoDaCota(empreendedorId, chave, mes, quantidade) {
+      const chaveDoMapa = `${empreendedorId}:${chave}:${mes}`;
+      cotas.set(chaveDoMapa, (cotas.get(chaveDoMapa) ?? 0) + quantidade);
     },
   };
 }

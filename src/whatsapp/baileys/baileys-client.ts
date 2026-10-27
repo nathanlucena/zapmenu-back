@@ -125,7 +125,7 @@ export function criarBaileysClient(socket: WASocket, options: BaileysClientOptio
     conteudo: ConteudoMensagem,
   ): Promise<{ telefone: string } | { motivo: string }> {
     const jid = chave.remoteJid ?? '';
-    if (conteudo.midia && conteudo.midia !== 'image') {
+    if (conteudo.midia && conteudo.midia !== 'image' && conteudo.midia !== 'audio') {
       return { motivo: `mídia não suportada (${conteudo.midia})` };
     }
     if (!ehConversaIndividual(jid)) {
@@ -257,6 +257,13 @@ export function criarBaileysClient(socket: WASocket, options: BaileysClientOptio
       logger.info({ para: telefone, conteudo: trecho(texto) }, '🤖 BOT RESPONDEU');
     },
 
+    async sendTyping(telefone) {
+      if (!destinoPermitido(telefone)) {
+        return;
+      }
+      await socket.sendPresenceUpdate('composing', await jidDeDestino(telefone));
+    },
+
     async sendImage(telefone, imagemUrlOuBase64, legenda) {
       if (!destinoPermitido(telefone)) {
         return;
@@ -297,11 +304,32 @@ export function criarBaileysClient(socket: WASocket, options: BaileysClientOptio
           }
         }
 
+        let audio: MensagemRecebida['audio'];
+        if (conteudo.midia === 'audio') {
+          const dadosDoAudio = normalizeMessageContent(mensagem.message)?.audioMessage;
+          const segundos = dadosDoAudio?.seconds ?? undefined;
+          audio = { mimetype: dadosDoAudio?.mimetype ?? 'audio/ogg', segundos };
+          // Áudio longo demais nem é baixado: a resposta pede para escrever.
+          if ((segundos ?? 0) <= 120) {
+            try {
+              audio.dados = await downloadMediaMessage(
+                mensagem,
+                'buffer',
+                {},
+                { logger: logger.child({ modulo: 'baileys' }), reuploadRequest: socket.updateMediaMessage },
+              );
+            } catch (erro) {
+              logger.warn({ err: erro, mensagemId: chave.id }, 'Falha ao baixar o áudio recebido do WhatsApp');
+            }
+          }
+        }
+
         const mensagemRecebida: MensagemRecebida = {
           id: chave.id,
           telefone: avaliacao.telefone,
           corpo: conteudo.texto,
           imagemUrl,
+          audio,
           timestamp: instanteDaMensagem(mensagem),
         };
 

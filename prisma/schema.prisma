@@ -476,3 +476,17 @@ model RelatorioEnviado {
 
   @@unique([lojaId, tipo, chave])
 }
+
+/// Quanto a loja já usou de uma cota do plano no mês (fuso da loja): segundos de áudio, sugestões de IA.
+model UsoDeCota {
+  id             String   @id @default(cuid())
+  empreendedorId String
+  /// "2026-10".
+  mes            String
+  /// "minutosAudioMes" (guardado em segundos) ou "sugestoesIaMes".
+  chave          String
+  usado          Int      @default(0)
+  atualizadoEm   DateTime @updatedAt
+
+  @@unique([empreendedorId, mes, chave])
+}

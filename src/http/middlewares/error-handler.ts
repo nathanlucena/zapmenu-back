@@ -30,6 +30,8 @@ const MENSAGEM_DO_SERVICO: Record<ServicoExterno, string> = {
   mercado_pago: 'O pagamento está fora do ar agora. Tente de novo em instantes.',
   viacep: 'A busca de endereço está fora do ar agora. Tente de novo em instantes.',
   google: 'A busca de endereço está fora do ar agora. Tente de novo em instantes.',
+  transcricao: 'A transcrição de áudio está fora do ar agora. Tente de novo em instantes.',
+  deepseek: 'A IA está fora do ar agora. Tente de novo em instantes.',
 };
 
 /** Falhas do banco que têm uma resposta melhor que "erro interno". */
