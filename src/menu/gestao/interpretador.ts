@@ -45,7 +45,20 @@ export type Operacao =
   | { tipo: 'DEFINIR_ENDERECO'; dados: ConsultaEndereco }
   /** Resposta da pessoa ao "é aqui?" do endereço encontrado. */
   | { tipo: 'CONFIRMAR_ENDERECO' | 'RECUSAR_ENDERECO' }
-  | { tipo: 'DESCARTAR_TUDO' };
+  | { tipo: 'DESCARTAR_TUDO' }
+  /** Promoção nova: não entra no rascunho; o código mostra o resumo e grava depois do "sim". */
+  | { tipo: 'NOVA_PROMOCAO'; promocao: PromocaoProposta };
+
+/** Promoção como a IA propõe: ids do cardápio, dias 0–6 e a data final "AAAA-MM-DD" (inclusive). */
+export interface PromocaoProposta {
+  tipo: 'PRECO_FIXO' | 'PERCENTUAL';
+  valor: number;
+  alvo: { tipo: 'LOJA' } | { tipo: 'CATEGORIAS'; ids: string[] } | { tipo: 'ITENS'; ids: string[] };
+  diasSemana: number[];
+  horaInicio?: string;
+  horaFim?: string;
+  ate?: string;
+}
 
 export interface EntradaConversa {
   estado: Estado;
@@ -63,6 +76,8 @@ export interface EntradaConversa {
   segmento?: SegmentoLoja;
   /** O plano inclui a entrega por distância (faixas). false: só a taxa fixa. Ausente = inclui. */
   entregaPorDistancia?: boolean;
+  /** "2026-10-27 (terça)": para a IA calcular "até domingo" nas promoções. */
+  hoje?: string;
 }
 
 export interface RespostaConversa {

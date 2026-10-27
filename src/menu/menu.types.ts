@@ -34,8 +34,21 @@ export interface Sku {
   ativo: boolean;
 }
 
+/** Promoção que vale agora para o item (a vencedora, sem acumular). Só na leitura do cardápio. */
+export interface PromocaoDoItem {
+  promocaoId: string;
+  tipo: 'PRECO_FIXO' | 'PERCENTUAL';
+  valor: number;
+  /** "Promoção de quarta", "-10%". */
+  rotulo: string;
+  /** O precoBase com a promoção (as variações somam por cima, como sempre). */
+  precoPromocional: number;
+}
+
 export interface ItemCardapio extends ItemDraft {
   id: string;
+  /** Promoção valendo no momento da leitura; o precoBase continua o normal. */
+  promocao?: PromocaoDoItem;
   cardapioId: string;
   categoriaId?: string;
   ativo: boolean;

@@ -21,6 +21,8 @@ import { cadastroCompleto, type LojaParaCadastro } from './cadastro-da-loja.js';
 import { fotosDoItem } from './fotos-do-produto.js';
 import { freteConfigurado, type FreteFixo } from '../orders/domain/envio.js';
 import { cardapioNoPlano, regrasNoPlano } from './plano-na-vitrine.js';
+import { comPromocoes } from './promocoes-na-vitrine.js';
+import { promocaoDoRegistro } from '../promocoes/domain/promocao.js';
 
 /** Os dados da loja salva que contam para o cadastro obrigatório. */
 function lojaParaCadastro(loja: Loja, entregaPorDistancia: boolean): LojaParaCadastro {
@@ -197,12 +199,22 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
           include: DETALHES_DO_ITEM,
           orderBy: { criadoEm: 'asc' },
         }),
-        prisma.loja.findUnique({ where: { empreendedorId } }),
+        prisma.loja.findUnique({
+          where: { empreendedorId },
+          include: { promocoes: { where: { ativa: true }, include: { alvos: true } } },
+        }),
         prisma.assinatura.findUnique({ where: { empreendedorId }, select: { plano: true, status: true } }),
       ]);
 
       const segmento = loja?.segmento ?? 'COMIDA';
-      const disponiveis = itens.map((item) => doTipoDaLoja(paraItemCardapio(item), segmento));
+      // Promoção calculada agora: a vitrine e o preço do pedido (que lê este mesmo cardápio) usam o preço do momento.
+      const disponiveis = comPromocoes(
+        itens.map((item) => doTipoDaLoja(paraItemCardapio(item), segmento)),
+        (loja?.promocoes ?? []).map(promocaoDoRegistro),
+        plano ?? undefined,
+        new Date(),
+        loja?.fuso ?? 'America/Sao_Paulo',
+      );
       const secoes = [
         ...categorias.map((categoria) => ({
           id: categoria.id as string | null,

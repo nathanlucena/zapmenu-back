@@ -126,3 +126,48 @@ export function reconhecerComandoDePlano(texto: string): ComandoDePlano | undefi
   }
   return undefined;
 }
+
+/** Comandos das promoções, sem IA. `numero` é a posição em "minhas promoções". */
+export type ComandoDePromocao =
+  | { tipo: 'LISTAR' }
+  | { tipo: 'PAUSAR' | 'REATIVAR' | 'REMOVER'; numero: number };
+
+const LISTAR_PROMOCOES = /^(?:(?:ver|listar|mostrar?|quais)\s+)?(?:as\s+)?(?:minhas\s+)?promocoes(?:\s+ativas)?$/;
+const ACAO_PROMOCAO = /^(pausar|parar|suspender|reativar|ativar|voltar|remover|apagar|excluir|cancelar)\s+(?:a\s+)?promocao\s+(?:n(?:umero|o|º)?\s*)?(\d+)$/;
+
+export function reconhecerComandoDePromocao(texto: string): ComandoDePromocao | undefined {
+  const normalizado = normalizar(texto);
+  if (LISTAR_PROMOCOES.test(normalizado)) {
+    return { tipo: 'LISTAR' };
+  }
+  const acao = normalizado.match(ACAO_PROMOCAO);
+  if (!acao) {
+    return undefined;
+  }
+  const [, verbo = '', numero = '0'] = acao;
+  const tipo = ['pausar', 'parar', 'suspender'].includes(verbo)
+    ? 'PAUSAR'
+    : ['reativar', 'ativar', 'voltar'].includes(verbo)
+      ? 'REATIVAR'
+      : 'REMOVER';
+  return { tipo, numero: Number(numero) };
+}
+
+/** Relatório de vendas pedido na conversa, e o liga/desliga do diário. */
+export type ComandoDeRelatorio = 'SEMANA' | 'MES' | 'HOJE' | 'ONTEM' | 'PARAR_DIARIO' | 'LIGAR_DIARIO';
+
+const PALAVRAS_DE_RELATORIO: Record<ComandoDeRelatorio, string[]> = {
+  SEMANA: ['relatorio', 'meu relatorio', 'relatorio da semana', 'relatorio semanal', 'vendas da semana', 'relatorio de vendas'],
+  MES: ['relatorio do mes', 'relatorio mensal', 'vendas do mes'],
+  HOJE: ['vendas de hoje', 'vendas hoje', 'relatorio de hoje', 'quanto vendi hoje'],
+  ONTEM: ['vendas de ontem', 'relatorio de ontem'],
+  PARAR_DIARIO: ['parar relatorio diario', 'desligar relatorio diario', 'nao quero relatorio diario', 'parar o relatorio diario'],
+  LIGAR_DIARIO: ['voltar relatorio diario', 'ligar relatorio diario', 'quero relatorio diario', 'voltar o relatorio diario'],
+};
+
+export function reconhecerComandoDeRelatorio(texto: string): ComandoDeRelatorio | undefined {
+  const normalizado = normalizar(texto);
+  return (Object.entries(PALAVRAS_DE_RELATORIO) as [ComandoDeRelatorio, string[]][]).find(([, palavras]) =>
+    palavras.includes(normalizado),
+  )?.[0];
+}

@@ -57,3 +57,18 @@ export function diaEMes(data: Date, fuso: string): string {
   const { mes, dia } = partesNoFuso(data, fuso);
   return `${String(dia).padStart(2, '0')}/${String(mes).padStart(2, '0')}`;
 }
+
+/** Instante da meia-noite que começa o dia "2026-11-30" no fuso. */
+export function inicioDoDiaNoFuso(dia: string, fuso: string): Date {
+  const [ano = 0, mes = 1, d = 1] = dia.split('-').map(Number);
+  const comoUtc = Date.UTC(ano, mes - 1, d);
+  const palpite = new Date(comoUtc - deslocamentoMs(new Date(comoUtc), fuso));
+  return new Date(comoUtc - deslocamentoMs(palpite, fuso));
+}
+
+/** Último milissegundo do dia "2026-11-30" no fuso ("até o dia 30" inclui o dia 30). */
+export function fimDoDiaNoFuso(dia: string, fuso: string): Date {
+  const [ano = 0, mes = 1, d = 1] = dia.split('-').map(Number);
+  const seguinte = new Date(Date.UTC(ano, mes - 1, d + 1)).toISOString().slice(0, 10);
+  return new Date(inicioDoDiaNoFuso(seguinte, fuso).getTime() - 1);
+}

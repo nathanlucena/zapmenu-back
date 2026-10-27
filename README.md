@@ -30,6 +30,8 @@ Roda como processo de longa duração (não serverless) porque usa o Baileys, qu
 | [`src/menu/`](src/menu) | Cardápio público agrupado por categoria, preço calculado no servidor com variações |
 | [`src/orders/`](src/orders) | Carrinho → pedido com código curto (`PED-XXXX`), transições de status, expiração por prazo, aviso de pedido pago. Em camadas: `domain/`, `application/` (use cases e ports) e `infra/` |
 | [`src/payments/`](src/payments) | Cobrança PIX no Mercado Pago, webhook assinado e polling de reserva, reaproveitando a mesma rotina de confirmação (idempotente). Mesmas camadas de `orders/` |
+| [`src/promocoes/`](src/promocoes) | Promoções da loja (preço fixo ou %, por dia da semana e horário, com fim opcional): regras de quando valem e do preço (o menor, sem acumular), resumo, lista e o job que desliga as vencidas. Mesmas camadas de `orders/` |
+| [`src/relatorios/`](src/relatorios) | Relatório de vendas pelo WhatsApp: cálculos (total, pedidos, ticket, mais vendidos, divisões, pico, variação), períodos no fuso da loja e o envio semanal/diário. Mesmas camadas de `orders/` |
 | [`src/planos/`](src/planos) | Planos do ZapMenu (Básico e Profissional): catálogo único de preços, limites e recursos ([`domain/catalogo.ts`](src/planos/domain/catalogo.ts)), `podeUsar`/`limite`, teste de 14 dias, assinatura no Mercado Pago Assinaturas (conta do ZapMenu), webhook, job diário e avisos de 80%/100% dos pedidos. Mesmas camadas de `orders/` |
 | [`src/whatsapp/`](src/whatsapp) | Interface `WhatsAppClient` (com fake para testes), routers das duas sessões, implementação Baileys com reconexão e modo autoteste |
 | [`src/http/`](src/http) | API Fastify: `GET /v1/menu/:empreendedorId`, `POST /v1/orders`, `POST /v1/webhooks/mercado-pago` |
@@ -127,6 +129,8 @@ src/
 │   └── infra/        # Prisma e job de expiração
 ├── payments/     # cobrança PIX (mesmas camadas de orders/)
 ├── planos/       # planos, assinatura do ZapMenu e limites (mesmas camadas de orders/)
+├── promocoes/    # promoções e descontos (mesmas camadas de orders/)
+├── relatorios/   # relatório de vendas (mesmas camadas de orders/)
 ├── whatsapp/     # interface WhatsAppClient, routers, Baileys
 ├── http/         # API Fastify v1 + webhook
 └── main.ts       # bootstrap

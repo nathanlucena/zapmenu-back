@@ -21,6 +21,11 @@ import type { PlanosDeps } from '../../planos/application/dependencias.js';
 import { assinaturaNaGestao } from '../../planos/application/situacao-do-plano.js';
 import { mensagemLojaSuspensa, mensagemRecursoDoPlano } from '../../planos/application/mensagens.js';
 import { conversaDoPlano } from './conversa-do-plano.js';
+import { conversaDosRelatorios } from './conversa-dos-relatorios.js';
+import type { RelatoriosDeps } from '../../relatorios/application/relatorios.js';
+import { conversaDasPromocoes, proporPromocao, type ConversaDasPromocoes, type PromocoesDeps } from './conversa-das-promocoes.js';
+import { diaNoFuso } from '../../planos/domain/calendario.js';
+import { NOMES_DOS_DIAS, diaEMinutoNoFuso } from '../../promocoes/domain/promocao.js';
 import {
   ehOpcaoDaEnquete,
   oQueMudaNaTroca,
@@ -78,6 +83,10 @@ export interface GestaoDeps {
   previas?: { repo: PreviasRepository; urlDaImagem: (id: string) => string };
   /** Planos e assinatura. Sem isso, a gestão não limita nada (como antes dos planos). */
   planos?: PlanosDeps;
+  /** Promoções da loja. Sem isso, a gestão responde que ainda não estão disponíveis. */
+  promocoes?: PromocoesDeps;
+  /** Relatórios de vendas pedidos na conversa. Sem isso, "relatório" vai para a IA. */
+  relatorios?: RelatoriosDeps;
 }
 
 export interface MensagemGestao {
@@ -198,6 +207,12 @@ async function tratar(rodada: Rodada): Promise<void> {
   if (await tratarPlano(rodada)) {
     return;
   }
+  if (await tratarPromocoes(rodada)) {
+    return;
+  }
+  if (await tratarRelatorios(rodada)) {
+    return;
+  }
   if (rodada.snapshot.lojaSalva.tipoPendente) {
     await escolherTipoNoCadastro(rodada);
     return;
@@ -304,6 +319,54 @@ async function tratarPlano(rodada: Rodada): Promise<boolean> {
     return true;
   }
   return false;
+}
+
+/** Dados que a conversa das promoções precisa de uma rodada. */
+function conversaDasPromocoesDa(rodada: Rodada, promocoes: PromocoesDeps): ConversaDasPromocoes {
+  return {
+    promocoes,
+    telefone: rodada.mensagem.telefone,
+    texto: rodada.mensagem.texto,
+    contexto: rodada.contexto,
+    snapshot: rodada.snapshot,
+    plano: rodada.assinatura,
+    linkDosPlanos: rodada.deps.planos?.linkDosPlanos,
+    previas: recursoLiberado(rodada, 'PREVIA_IMAGEM') ? rodada.deps.previas : undefined,
+  };
+}
+
+/** "minhas promoções", pausar/reativar/remover e o "sim" de uma promoção mostrada. */
+async function tratarPromocoes(rodada: Rodada): Promise<boolean> {
+  const { promocoes } = rodada.deps;
+  if (!promocoes || rodada.mensagem.imagemUrl) {
+    return false;
+  }
+  const respostas = await conversaDasPromocoes(conversaDasPromocoesDa(rodada, promocoes));
+  respostas?.forEach((resposta) => rodada.respostas.push(resposta));
+  return Boolean(respostas);
+}
+
+/** "relatório", "vendas de hoje"… e o liga/desliga do relatório diário. */
+async function tratarRelatorios(rodada: Rodada): Promise<boolean> {
+  const { relatorios } = rodada.deps;
+  if (!relatorios || rodada.mensagem.imagemUrl) {
+    return false;
+  }
+  const respostas = await conversaDosRelatorios({
+    relatorios,
+    telefone: rodada.mensagem.telefone,
+    texto: rodada.mensagem.texto,
+    plano: rodada.assinatura,
+    linkDosPlanos: rodada.deps.planos?.linkDosPlanos,
+  });
+  respostas?.forEach((resposta) => responder(rodada, resposta));
+  return Boolean(respostas);
+}
+
+/** "2026-10-27 (terça)", para a IA calcular datas como "até domingo". */
+function hojeParaIA(agora = new Date()): string {
+  const fuso = 'America/Sao_Paulo';
+  return `${diaNoFuso(agora, fuso)} (${NOMES_DOS_DIAS[diaEMinutoNoFuso(agora, fuso).dia]})`;
 }
 
 /** Fotos seguidas sem legenda, até este tempo depois da anterior, vão para o mesmo produto. */
@@ -455,6 +518,7 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
         .map((item) => `${item.rotulo}: ${item.comoPedir}`),
       segmento: rodada.snapshot.segmento,
       entregaPorDistancia: entregaPorDistancia(rodada),
+      hoje: hojeParaIA(),
     });
   } catch (erro) {
     logger.warn({ err: erro }, 'falha ao conversar com a IA');
@@ -494,6 +558,9 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
     { salvos: rodada.snapshot.itens.length, noRascunho: rodada.contexto.rascunho.novosItens.length },
     rodada.deps.planos?.linkDosPlanos,
   );
+  // Promoção não entra no rascunho: tem resumo e "sim" próprios.
+  const promocoesPropostas = doPlano.operacoes.flatMap((operacao) => (operacao.tipo === 'NOVA_PROMOCAO' ? [operacao.promocao] : []));
+  const paraORascunho = doPlano.operacoes.filter((operacao) => operacao.tipo !== 'NOVA_PROMOCAO');
   const avisos = [
     ...doTipo.avisos,
     ...doPlano.avisos,
@@ -504,7 +571,7 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
         fotoAtual: rodada.mensagem.imagemUrl,
         segmento: rodada.snapshot.segmento,
       },
-      doPlano.operacoes,
+      paraORascunho,
     ),
   ];
   if (saida.operacoesMalformadas.length > 0) {
@@ -529,7 +596,17 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
     await procurarEndereco(rodada);
   }
 
-  const mudouRascunho = doPlano.operacoes.length > 0;
+  const proposta = promocoesPropostas[0];
+  if (proposta) {
+    if (rodada.deps.promocoes) {
+      const respostas = await proporPromocao(conversaDasPromocoesDa(rodada, rodada.deps.promocoes), proposta);
+      respostas.forEach((resposta) => rodada.respostas.push(resposta));
+    } else {
+      responder(rodada, 'As promoções ainda não estão disponíveis por aqui.');
+    }
+  }
+
+  const mudouRascunho = paraORascunho.length > 0;
   if (estadoAnterior === 'CONFIRMANDO' && !mudouRascunho) {
     if (saida.decisao === 'CONFIRMAR') {
       await salvar(rodada);
@@ -543,7 +620,8 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
 
   rodada.estado = 'CONVERSANDO';
   // Com um endereço acabando de ser encontrado, a pergunta "é aqui?" vem antes do resumo.
-  if (saida.finalizou && !rodada.contexto.enderecoPendente) {
+  // Com uma promoção esperando o "sim", o resumo dela vem antes do resumo do rascunho.
+  if (saida.finalizou && !rodada.contexto.enderecoPendente && !rodada.contexto.promocaoPendente) {
     await finalizar(rodada);
   }
 }
