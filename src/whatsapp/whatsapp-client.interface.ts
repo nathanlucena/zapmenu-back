@@ -26,6 +26,8 @@ export interface WhatsAppClient {
   sendImage(telefone: string, imagemUrlOuBase64: string, legenda?: string): Promise<void>;
   /** Envia uma enquete de escolha única; devolve o id dela, ou undefined se o envio foi bloqueado. */
   sendPoll(telefone: string, pergunta: string, opcoes: string[]): Promise<string | undefined>;
+  /** Arquivo (ex.: a etiqueta em PDF). Opcional: nem todo cliente tem. */
+  sendDocument?(telefone: string, dados: Uint8Array, nomeArquivo: string, mimetype: string, legenda?: string): Promise<void>;
   onMessage(manipulador: ManipuladorMensagem): void;
   onPollVote(manipulador: ManipuladorVoto): void;
 }

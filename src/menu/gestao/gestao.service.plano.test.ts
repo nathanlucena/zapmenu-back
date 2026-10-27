@@ -58,7 +58,7 @@ function criarCenario(assinatura: Partial<Assinatura> | null, itens: ItemSnapsho
     },
   };
   const enviar = (texto: string, imagemUrl?: string) => processarMensagemGestao({ telefone: TELEFONE, texto, imagemUrl }, deps);
-  return { ia, enviar, assinaturas, gestaoRepo, conversa: () => conversa };
+  return { ia, enviar, assinaturas, gestaoRepo, deps, conversa: () => conversa };
 }
 
 const BASICO = { plano: 'ESSENCIAL', status: 'ATIVA' } as const;
@@ -154,6 +154,13 @@ describe('gestão: recursos por plano', () => {
     cenario.ia.responder(ia({ operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { usaMelhorEnvio: true } }] }));
     expect(textos(await cenario.enviar('quero enviar pelo melhor envio'))).toContain('Isso faz parte do plano *Profissional*');
     expect(cenario.conversa().contexto.rascunho.loja?.usaMelhorEnvio).toBeUndefined();
+  });
+
+  it('Profissional: "conectar melhor envio" manda o link de autorização', async () => {
+    const cenario = criarCenario(PROFISSIONAL);
+    cenario.gestaoRepo.snapshot.segmento = 'VAREJO';
+    cenario.deps.melhorEnvio = { linkParaConectar: async () => 'https://sandbox.melhorenvio.test/oauth', conectada: async () => false };
+    expect(textos(await cenario.enviar('conectar melhor envio'))).toContain('https://sandbox.melhorenvio.test/oauth');
   });
 
   it('Básico: desligar a entrega continua liberado', async () => {

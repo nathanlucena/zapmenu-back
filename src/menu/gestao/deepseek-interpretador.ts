@@ -121,6 +121,7 @@ TIPO DA LOJA: LOJA (produtos: roupas, acessórios…)
 - Fotos: cada produto pode ter várias. Cada anexar_foto ACRESCENTA uma foto à galeria (não troca a anterior). Se a legenda disser a cor da peça na foto ("essa é a azul", "preta"), mande "cor": "Azul" no anexar_foto.
 - NUNCA use variacoes (adicionais com preço) neste tipo. Se a pessoa pedir adicional, explique numa frase que adicionais são do tipo *Cardápio* e que ela pode mandar *mudar tipo da loja*.
 - COMO A LOJA ENTREGA: (1) envio próprio, com as mesmas regras da entrega (taxa_entrega_fixa com raio_entrega_km, ou faixas_entrega por distância) e "faz_entrega"; (2) transportadora pelo Melhor Envio, em atualizar_loja "melhor_envio": true/false, com "cep_origem" (CEP de onde saem as encomendas; se não disser, vale o do endereço da loja). Os dois podem estar ligados juntos, além da retirada. Se a pessoa perguntar "como você entrega?" ou quiser configurar envio, explique essas opções. Frete fixo por estado não existe mais: se pedirem, ofereça as opções acima.
+- Peso e medidas para o frete por transportadora: em novo_item/editar_item, "peso_g" (gramas) e "altura_cm", "largura_cm", "comprimento_cm" (centímetros do pacote). Para a categoria inteira: {"tipo": "medidas_da_categoria", "categoria_id": "...", "peso_g": 300, "altura_cm": 4, "largura_cm": 20, "comprimento_cm": 30}. "camiseta pesa 200g" → peso_g 200; "1,2 kg" → 1200. Nunca invente medidas.
 - Política de troca em atualizar_loja: "politica_troca": texto curto e claro com o que a pessoa disse ("troco em 7 dias com etiqueta" → "Troca em até 7 dias, com a etiqueta."). Não invente prazo nem regra que ela não disse. Lembre que compra online tem 7 dias de arrependimento (CDC) se ela perguntar.
 
 EXEMPLO
@@ -212,12 +213,20 @@ const horarios = z
   .nullish()
   .transform((valor) => valor ?? undefined);
 
+const medidas = {
+  peso_g: numero,
+  altura_cm: numero,
+  largura_cm: numero,
+  comprimento_cm: numero,
+};
+
 const camposItem = {
   nome: texto,
   descricao: texto,
   preco: numero,
   categoria: z.string().trim().nullish(),
   variacoes,
+  ...medidas,
 };
 
 function dadosItem(campos: {
@@ -226,6 +235,10 @@ function dadosItem(campos: {
   preco?: number;
   categoria?: string | null;
   variacoes?: Variacao[];
+  peso_g?: number;
+  altura_cm?: number;
+  largura_cm?: number;
+  comprimento_cm?: number;
 }): DadosItemOperacao {
   return {
     nome: campos.nome,
@@ -233,6 +246,10 @@ function dadosItem(campos: {
     precoBase: campos.preco,
     categoria: campos.categoria === '' ? null : campos.categoria,
     variacoes: campos.variacoes,
+    pesoGramas: campos.peso_g,
+    alturaCm: campos.altura_cm,
+    larguraCm: campos.largura_cm,
+    comprimentoCm: campos.comprimento_cm,
   };
 }
 
@@ -398,6 +415,18 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
   z.object({ tipo: z.literal('confirmar_endereco') }).transform((): Operacao => ({ tipo: 'CONFIRMAR_ENDERECO' })),
   z.object({ tipo: z.literal('recusar_endereco') }).transform((): Operacao => ({ tipo: 'RECUSAR_ENDERECO' })),
   z.object({ tipo: z.literal('descartar_tudo') }).transform((): Operacao => ({ tipo: 'DESCARTAR_TUDO' })),
+  z
+    .object({ tipo: z.literal('medidas_da_categoria'), categoria_id: idObrigatorio, ...medidas })
+    .transform(
+      (op): Operacao => ({
+        tipo: 'MEDIDAS_DA_CATEGORIA',
+        categoriaId: op.categoria_id,
+        pesoGramas: op.peso_g,
+        alturaCm: op.altura_cm,
+        larguraCm: op.largura_cm,
+        comprimentoCm: op.comprimento_cm,
+      }),
+    ),
   z
     .object({
       tipo: z.literal('nova_promocao'),

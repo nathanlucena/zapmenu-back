@@ -8,7 +8,7 @@ import type {
 
 export interface MensagemEnviada {
   telefone: string;
-  tipo: 'texto' | 'imagem' | 'enquete';
+  tipo: 'texto' | 'imagem' | 'enquete' | 'documento';
   conteudo: string;
   legenda?: string;
   /** Só nas enquetes. */
@@ -36,6 +36,9 @@ export function criarWhatsAppClientFake(): WhatsAppClientFake {
     },
     async sendImage(telefone, imagemUrlOuBase64, legenda) {
       mensagensEnviadas.push({ telefone, tipo: 'imagem', conteudo: imagemUrlOuBase64, legenda });
+    },
+    async sendDocument(telefone, _dados, nomeArquivo, _mimetype, legenda) {
+      mensagensEnviadas.push({ telefone, tipo: 'documento', conteudo: nomeArquivo, legenda });
     },
     async sendPoll(telefone, pergunta, opcoes) {
       const enqueteId = `enquete-${proximaEnquete++}`;

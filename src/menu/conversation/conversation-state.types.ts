@@ -127,6 +127,11 @@ export interface NovoItem {
   grade?: LinhaGrade[];
   /** Galeria (só loja), na ordem em que as fotos chegaram. */
   fotos?: FotoNova[];
+  /** Para o frete do Melhor Envio (sem eles, vale o padrão da categoria). */
+  pesoGramas?: number;
+  alturaCm?: number;
+  larguraCm?: number;
+  comprimentoCm?: number;
 }
 
 /** Alterações num item existente; só os campos presentes mudam. */
@@ -143,6 +148,11 @@ export interface EdicaoItem {
   grade?: LinhaGrade[];
   /** Fotos que entram no fim da galeria (só loja). */
   fotos?: FotoNova[];
+  /** Para o frete do Melhor Envio (sem eles, vale o padrão da categoria). */
+  pesoGramas?: number;
+  alturaCm?: number;
+  larguraCm?: number;
+  comprimentoCm?: number;
 }
 
 export type AcaoStatus = 'PAUSAR' | 'REATIVAR' | 'REMOVER';
@@ -155,6 +165,8 @@ export interface Rascunho {
   categoriasRenomeadas: { categoriaId: string; novoNome: string }[];
   categoriasRemovidas: string[];
   loja?: DadosLoja;
+  /** Peso e medidas padrão dos produtos de uma categoria (frete do Melhor Envio). */
+  medidasDasCategorias?: { categoriaId: string; pesoGramas?: number; alturaCm?: number; larguraCm?: number; comprimentoCm?: number }[];
 }
 
 export interface MensagemHistorico {

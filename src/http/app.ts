@@ -5,6 +5,8 @@ import type { MenuRepository } from '../menu/menu.repository.js';
 import type { OrdersRepository } from '../orders/application/ports/orders.repository.js';
 import type { PaymentsServiceDeps } from '../payments/application/dependencias.js';
 import type { CotadorDeFrete } from '../orders/application/ports/cotador-de-frete.js';
+import type { MelhorEnvioDeps } from '../envio/application/dependencias.js';
+import { registerMelhorEnvioRoutes } from './v1/melhor-envio.routes.js';
 import { criarCardapioDePrecos } from '../menu/cardapio-de-precos.js';
 import { criarLocalizadorEntrega } from '../menu/endereco/localizador-entrega.js';
 import type { EnderecoDeps } from '../menu/endereco/endereco.types.js';
@@ -33,6 +35,8 @@ export interface AppDeps {
   consultaCep?: EnderecoDeps['consultaCep'];
   /** Melhor Envio. Sem ele, não há envio por transportadora. */
   cotadorDeFrete?: CotadorDeFrete;
+  /** Conta do Melhor Envio das lojas (retorno do OAuth). */
+  melhorEnvio?: MelhorEnvioDeps;
   paymentsDeps?: PaymentsServiceDeps;
   /** Obrigatório junto com paymentsDeps: o webhook só aceita notificações assinadas. */
   mercadoPagoWebhookSecret?: string;
@@ -68,6 +72,9 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       });
       if (deps.previas) {
         registerPreviasRoutes(v1, deps.previas);
+      }
+      if (deps.melhorEnvio) {
+        registerMelhorEnvioRoutes(v1, deps.melhorEnvio);
       }
       if (deps.paymentsDeps) {
         if (!deps.mercadoPagoWebhookSecret) {

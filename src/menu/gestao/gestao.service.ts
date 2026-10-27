@@ -83,6 +83,11 @@ export interface GestaoDeps {
   previas?: { repo: PreviasRepository; urlDaImagem: (id: string) => string };
   /** Planos e assinatura. Sem isso, a gestão não limita nada (como antes dos planos). */
   planos?: PlanosDeps;
+  /** Conta do Melhor Envio da loja (link de conexão). Sem isso, o envio por transportadora fica indisponível. */
+  melhorEnvio?: {
+    linkParaConectar(telefone: string): Promise<string | undefined>;
+    conectada(telefone: string): Promise<boolean>;
+  };
   /** Promoções da loja. Sem isso, a gestão responde que ainda não estão disponíveis. */
   promocoes?: PromocoesDeps;
   /** Relatórios de vendas pedidos na conversa. Sem isso, "relatório" vai para a IA. */
@@ -270,6 +275,9 @@ async function tratar(rodada: Rodada): Promise<void> {
       return;
     case 'MUDAR_TIPO':
       comecarTrocaDeTipo(rodada);
+      return;
+    case 'CONECTAR_MELHOR_ENVIO':
+      responder(rodada, await textoDeConexaoDoMelhorEnvio(rodada));
       return;
     case 'NAO_LEMBRAR':
       await rodada.deps.gestaoRepo.registrarLembreteOpcionais(rodada.empreendedorId, { desligar: true });
@@ -930,6 +938,25 @@ async function salvar(rodada: Rodada): Promise<void> {
     `✅ Pronto! ${total === 1 ? '1 alteração salva' : `${total} alterações salvas`} no ${vocabulario(rodada.snapshot.segmento).lista}.`,
   );
   await avisarSituacaoDoCadastro(rodada, completoAntes);
+  // Ligou o envio por transportadora sem a conta conectada: manda o link.
+  if (rascunho.loja?.usaMelhorEnvio && rodada.deps.melhorEnvio && !(await rodada.deps.melhorEnvio.conectada(rodada.empreendedorId))) {
+    responder(rodada, await textoDeConexaoDoMelhorEnvio(rodada));
+  }
+}
+
+/** Link para conectar a conta do Melhor Envio (Profissional, tipo Loja). */
+async function textoDeConexaoDoMelhorEnvio(rodada: Rodada): Promise<string> {
+  if (!recursoLiberado(rodada, 'MELHOR_ENVIO')) {
+    return mensagemRecursoDoPlano('MELHOR_ENVIO', rodada.deps.planos?.linkDosPlanos);
+  }
+  if (rodada.snapshot.segmento !== 'VAREJO') {
+    return 'O envio por transportadora é do tipo *Loja*. Para trocar, mande *mudar tipo da loja*.';
+  }
+  const link = rodada.deps.melhorEnvio && (await rodada.deps.melhorEnvio.linkParaConectar(rodada.empreendedorId));
+  if (!link) {
+    return 'O envio pelo Melhor Envio ainda não está disponível por aqui.';
+  }
+  return `📦 Para enviar por transportadora, conecte sua conta do Melhor Envio (é grátis criar): ${link}\nDepois de autorizar, eu aviso aqui. As etiquetas são pagas com o saldo da sua conta.`;
 }
 
 function reiniciar(rodada: Rodada): void {

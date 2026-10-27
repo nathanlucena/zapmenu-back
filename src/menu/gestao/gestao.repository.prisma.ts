@@ -170,6 +170,9 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
         for (const { categoriaId, novoNome } of rascunho.categoriasRenomeadas) {
           await tx.categoria.updateMany({ where: { id: categoriaId, cardapioId }, data: { nome: novoNome } });
         }
+        for (const { categoriaId, ...medidas } of rascunho.medidasDasCategorias ?? []) {
+          await tx.categoria.updateMany({ where: { id: categoriaId, cardapioId }, data: definidos(medidas) });
+        }
         if (rascunho.categoriasRemovidas.length > 0) {
           // Os itens dessas categorias ficam sem categoria (onDelete: SetNull).
           await tx.categoria.deleteMany({ where: { id: { in: rascunho.categoriasRemovidas }, cardapioId } });
@@ -189,6 +192,10 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
               descricao: novo.descricao,
               precoBase: novo.precoBase,
               imagemUrl: novo.imagemUrl,
+              pesoGramas: novo.pesoGramas,
+              alturaCm: novo.alturaCm,
+              larguraCm: novo.larguraCm,
+              comprimentoCm: novo.comprimentoCm,
               categoriaId: novo.categoria ? await idCategoria(novo.categoria) : undefined,
               variacoes: { create: (novo.variacoes ?? []).map(paraVariacaoPrisma) },
             },
@@ -207,6 +214,10 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
             descricao: edicao.descricao,
             precoBase: edicao.precoBase,
             imagemUrl: edicao.imagemUrl,
+            pesoGramas: edicao.pesoGramas,
+            alturaCm: edicao.alturaCm,
+            larguraCm: edicao.larguraCm,
+            comprimentoCm: edicao.comprimentoCm,
           });
           if (edicao.categoria !== undefined) {
             dados.categoriaId = edicao.categoria === null ? null : await idCategoria(edicao.categoria);

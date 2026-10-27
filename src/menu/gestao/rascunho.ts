@@ -199,6 +199,18 @@ export function aplicarOperacoes(aplicacao: AplicacaoOperacoes, operacoes: Opera
         }
         break;
       }
+      case 'MEDIDAS_DA_CATEGORIA': {
+        if (!snapshot.categorias.some((categoria) => categoria.id === operacao.categoriaId)) {
+          avisos.add('⚠️ Não achei essa categoria. Confere o nome?');
+          break;
+        }
+        const { tipo: _tipo, ...medidas } = operacao;
+        rascunho.medidasDasCategorias = [
+          ...(rascunho.medidasDasCategorias ?? []).filter((anotada) => anotada.categoriaId !== operacao.categoriaId),
+          definidos(medidas) as typeof medidas,
+        ];
+        break;
+      }
       case 'NOVA_CATEGORIA':
         garantirCategoria(rascunho, snapshot, operacao.nome);
         break;
@@ -434,6 +446,7 @@ export function contarAlteracoes(rascunho: Rascunho): number {
     rascunho.novasCategorias.length +
     rascunho.categoriasRenomeadas.length +
     rascunho.categoriasRemovidas.length +
+    (rascunho.medidasDasCategorias?.length ?? 0) +
     (rascunho.loja && Object.keys(definidos(rascunho.loja)).length > 0 ? 1 : 0)
   );
 }
@@ -529,6 +542,11 @@ export function descreverAlteracoes(rascunho: Rascunho, snapshot: SnapshotCardap
     if (edicao.variacoes !== undefined) {
       linhas.push(...(edicao.variacoes.length ? descreverVariacoes(edicao.variacoes) : ['   (sem variações)']));
     }
+  }
+
+  for (const medidas of rascunho.medidasDasCategorias ?? []) {
+    const nome = snapshot.categorias.find((categoria) => categoria.id === medidas.categoriaId)?.nome ?? 'categoria';
+    linhas.push(`📏 *${nome}* (padrão para o frete): ${descreverMedidas(medidas)}`);
   }
 
   const iconeStatus = { PAUSAR: '⏸️', REATIVAR: '▶️', REMOVER: '🗑️' } as const;
@@ -637,4 +655,15 @@ export function formatarPreco(valor: number): string {
 /** Remove chaves com valor undefined (para merges não apagarem dados). */
 export function definidos<T extends object>(dados: T): Partial<T> {
   return Object.fromEntries(Object.entries(dados).filter(([, valor]) => valor !== undefined)) as Partial<T>;
+}
+
+/** "500 g · 4 × 20 × 30 cm" (altura × largura × comprimento). */
+export function descreverMedidas(medidas: { pesoGramas?: number; alturaCm?: number; larguraCm?: number; comprimentoCm?: number }): string {
+  const partes: string[] = [];
+  if (medidas.pesoGramas !== undefined) partes.push(`${medidas.pesoGramas} g`);
+  const dimensoes = [medidas.alturaCm, medidas.larguraCm, medidas.comprimentoCm];
+  if (dimensoes.some((valor) => valor !== undefined)) {
+    partes.push(`${dimensoes.map((valor) => (valor === undefined ? '?' : String(valor).replace('.', ','))).join(' × ')} cm`);
+  }
+  return partes.join(' · ');
 }
