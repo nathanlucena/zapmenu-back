@@ -26,6 +26,8 @@ export interface WhatsAppClient {
   sendImage(telefone: string, imagemUrlOuBase64: string, legenda?: string): Promise<void>;
   /** Envia uma enquete de escolha única; devolve o id dela, ou undefined se o envio foi bloqueado. */
   sendPoll(telefone: string, pergunta: string, opcoes: string[]): Promise<string | undefined>;
+  /** Mostra "digitando..." para a pessoa. Opcional: nem todo cliente tem. */
+  sendTyping?(telefone: string): Promise<void>;
   onMessage(manipulador: ManipuladorMensagem): void;
   onPollVote(manipulador: ManipuladorVoto): void;
 }

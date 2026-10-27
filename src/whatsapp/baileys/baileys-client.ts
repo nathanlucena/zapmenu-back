@@ -257,6 +257,13 @@ export function criarBaileysClient(socket: WASocket, options: BaileysClientOptio
       logger.info({ para: telefone, conteudo: trecho(texto) }, '🤖 BOT RESPONDEU');
     },
 
+    async sendTyping(telefone) {
+      if (!destinoPermitido(telefone)) {
+        return;
+      }
+      await socket.sendPresenceUpdate('composing', await jidDeDestino(telefone));
+    },
+
     async sendImage(telefone, imagemUrlOuBase64, legenda) {
       if (!destinoPermitido(telefone)) {
         return;

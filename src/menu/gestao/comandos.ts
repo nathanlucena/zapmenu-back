@@ -171,3 +171,13 @@ export function reconhecerComandoDeRelatorio(texto: string): ComandoDeRelatorio 
     palavras.includes(normalizado),
   )?.[0];
 }
+
+/** Mensagem que a gestão responde sem IA (sim, cancelar, o que falta, meu plano…): sozinha, responde na hora. */
+export function ehComandoSemIA(texto: string): boolean {
+  return Boolean(
+    reconhecerComando(texto) ||
+      reconhecerComandoDePlano(texto) ||
+      reconhecerComandoDePromocao(texto) ||
+      reconhecerComandoDeRelatorio(texto),
+  );
+}

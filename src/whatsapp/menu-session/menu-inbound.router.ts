@@ -2,7 +2,9 @@ import { processarMensagemGestao, type GestaoDeps, type RespostaGestao } from '.
 import { ehOpcaoDaEnquete } from '../../menu/gestao/tipo-da-loja.js';
 import type { IdempotencyRepository } from '../../shared/idempotency/idempotency.repository.js';
 import { logger } from '../../shared/logger/logger.js';
-import type { WhatsAppClient } from '../whatsapp-client.interface.js';
+import type { MensagemRecebida, WhatsAppClient } from '../whatsapp-client.interface.js';
+import { ehComandoSemIA } from '../../menu/gestao/comandos.js';
+import { criarAgrupador, type OpcoesAgrupamento } from './agrupador.js';
 import { criarAvisoDeFalha } from '../falhas.js';
 import { registrarVotosDaLoja, tratarRespostaDaLojaEmTexto, type DecisaoPedidoDeps } from './decisao-pedido.js';
 
@@ -14,6 +16,25 @@ export interface MenuInboundRouterDeps extends GestaoDeps {
   idempotency: IdempotencyRepository;
   /** Aceite e recusa de pedidos pela loja (enquete ou "aceitar PED-XXXX"). Sem isso, só a conversa de gestão. */
   decisoes?: Omit<DecisaoPedidoDeps, 'idempotency'>;
+  /**
+   * Junta mensagens seguidas do mesmo telefone numa rodada só (ex.: 3 s de
+   * silêncio, teto de 10 s). Sem isso, cada mensagem é uma rodada.
+   */
+  agrupamento?: OpcoesAgrupamento;
+}
+
+/** Várias mensagens viram uma: os textos em linhas, a primeira foto junto; as outras fotos vão depois. */
+function juntar(mensagens: MensagemRecebida[]): { principal: MensagemRecebida; fotosExtras: MensagemRecebida[] } {
+  const comFoto = mensagens.filter((mensagem) => mensagem.imagemUrl);
+  const texto = mensagens
+    .map((mensagem) => mensagem.corpo.trim())
+    .filter(Boolean)
+    .join('\n');
+  const ultima = mensagens[mensagens.length - 1]!;
+  return {
+    principal: { ...ultima, corpo: texto, imagemUrl: comFoto[0]?.imagemUrl },
+    fotosExtras: comFoto.slice(1).map((mensagem) => ({ ...mensagem, corpo: '' })),
+  };
 }
 
 /**
@@ -66,29 +87,63 @@ export function registrarMenuInboundRouter(deps: MenuInboundRouterDeps): void {
 
   const avisarFalha = criarAvisoDeFalha('mensagem de gestão');
 
-  deps.whatsapp.onMessage((mensagem) => enfileirar(mensagem.telefone, async () => {
+  /** Uma rodada da gestão com uma ou mais mensagens; todas são marcadas como processadas juntas. */
+  const processarRodada = async (mensagens: MensagemRecebida[]) => {
+    const { principal, fotosExtras } = juntar(mensagens);
     try {
-      if (await deps.idempotency.jaProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id)) {
-        logger.info({ mensagemId: mensagem.id }, 'mensagem de gestão já processada (reentrega), ignorando');
-        return;
-      }
-
-      if (decisoes && (await tratarRespostaDaLojaEmTexto(decisoes, deps.whatsapp, mensagem))) {
-        await deps.idempotency.marcarProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id);
-        return;
-      }
-
       const respostas = await processarMensagemGestao(
-        { telefone: mensagem.telefone, texto: mensagem.corpo, imagemUrl: mensagem.imagemUrl },
+        { telefone: principal.telefone, texto: principal.corpo, imagemUrl: principal.imagemUrl },
         deps,
       );
-      await enviarRespostas(deps.whatsapp, mensagem.telefone, respostas);
-      await deps.idempotency.marcarProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id);
+      await enviarRespostas(deps.whatsapp, principal.telefone, respostas);
+      // Mais de uma foto na mesma leva: cada uma a mais é uma rodada logo depois (na loja, vão para a mesma galeria).
+      for (const foto of fotosExtras) {
+        const extras = await processarMensagemGestao({ telefone: foto.telefone, texto: '', imagemUrl: foto.imagemUrl }, deps);
+        await enviarRespostas(deps.whatsapp, foto.telefone, extras);
+      }
+      for (const mensagem of mensagens) {
+        await deps.idempotency.marcarProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id);
+      }
     } catch (erro) {
-      // Sem marcar como processada: a reentrega (ou a pessoa mandando de novo) tenta outra vez.
-      await avisarFalha(deps.whatsapp, mensagem.telefone, mensagem.id, erro);
+      // Sem marcar como processadas: a reentrega (ou a pessoa mandando de novo) tenta outra vez.
+      await avisarFalha(deps.whatsapp, principal.telefone, principal.id, erro);
     }
-  }));
+  };
+
+  const agrupador =
+    deps.agrupamento &&
+    criarAgrupador<MensagemRecebida>(deps.agrupamento, (telefone, mensagens) => {
+      void enfileirar(telefone, () => processarRodada(mensagens));
+    });
+
+  deps.whatsapp.onMessage(async (mensagem) => {
+    if (await deps.idempotency.jaProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id)) {
+      logger.info({ mensagemId: mensagem.id }, 'mensagem de gestão já processada (reentrega), ignorando');
+      return;
+    }
+    // Aceite/recusa de pedido e comandos curtos sozinhos (sim, cancelar, o que falta…) respondem na hora.
+    const agora =
+      !agrupador ||
+      /PED-/i.test(mensagem.corpo) ||
+      (!agrupador.pendente(mensagem.telefone) && !mensagem.imagemUrl && ehComandoSemIA(mensagem.corpo));
+    if (!agora) {
+      agrupador.adicionar(mensagem.telefone, mensagem);
+      await deps.whatsapp.sendTyping?.(mensagem.telefone).catch(() => undefined);
+      return;
+    }
+    return enfileirar(mensagem.telefone, async () => {
+      try {
+        if (decisoes && (await tratarRespostaDaLojaEmTexto(decisoes, deps.whatsapp, mensagem))) {
+          await deps.idempotency.marcarProcessado(ORIGEM_IDEMPOTENCIA, mensagem.id);
+          return;
+        }
+      } catch (erro) {
+        await avisarFalha(deps.whatsapp, mensagem.telefone, mensagem.id, erro);
+        return;
+      }
+      await processarRodada([mensagem]);
+    });
+  });
 
   // Voto na enquete do tipo da loja: entra na conversa como se a pessoa tivesse escrito a opção.
   deps.whatsapp.onPollVote((voto) => {

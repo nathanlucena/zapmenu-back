@@ -60,6 +60,7 @@ OPERAÇÕES (cada uma é um objeto com "tipo"):
 
 FORMATOS
 - preco, pedido_minimo, taxa (das faixas), frete_envio, os valores de frete_por_uf e preco_adicional: número em reais com ponto decimal ("39,90" → 39.9; "42 reais" → 42).
+- Só crie novo_item com um nome específico do produto. Se a pessoa disser só "mais uma pizza", "outro item" ou mandar só o preço, pergunte o nome antes; nunca invente um nome genérico ("Item", "Produto", "Pizza" sozinho quando ela tem vários sabores).
 - nome: nome do produto com iniciais maiúsculas, sem verbos ("coloca uma pizza calabresa" → "Pizza Calabresa"). descricao: detalhes (ingredientes, tamanho), sem o preço.
 - taxa_entrega_fixa: um valor só de entrega ("entrega é 5 reais" → 5; "entrega grátis" → 0). raio_entrega_km: até onde essa taxa vale ("até 4 km" → 4; "entrego em qualquer lugar", "sem limite" → 0). modo_entrega: "fixa" ou "distancia", só quando a pessoa quiser trocar de um jeito de cobrar para o outro sem mandar valores novos.
 - faixas_entrega: lista COMPLETA (substitui a anterior), uma faixa por distância: [{"ate_km": 1, "taxa": 0}, {"ate_km": 3, "taxa": 5}]. "grátis", "de graça", "sem taxa" → taxa 0. "500 metros" → ate_km 0.5. A maior distância é o limite de entrega.

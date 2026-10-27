@@ -20,12 +20,15 @@ export interface MensagemEnviada {
 export interface WhatsAppClientFake {
   client: WhatsAppClient;
   mensagensEnviadas: MensagemEnviada[];
+  /** Telefones que receberam o "digitando...". */
+  digitando: string[];
   emitirMensagem(mensagem: MensagemRecebida): Promise<void>;
   emitirVoto(voto: VotoRecebido): Promise<void>;
 }
 
 export function criarWhatsAppClientFake(): WhatsAppClientFake {
   const mensagensEnviadas: MensagemEnviada[] = [];
+  const digitando: string[] = [];
   const manipuladores: ManipuladorMensagem[] = [];
   const manipuladoresVoto: ManipuladorVoto[] = [];
   let proximaEnquete = 1;
@@ -42,6 +45,9 @@ export function criarWhatsAppClientFake(): WhatsAppClientFake {
       mensagensEnviadas.push({ telefone, tipo: 'enquete', conteudo: pergunta, opcoes, enqueteId });
       return enqueteId;
     },
+    async sendTyping(telefone) {
+      digitando.push(telefone);
+    },
     onMessage(h) {
       manipuladores.push(h);
     },
@@ -53,6 +59,7 @@ export function criarWhatsAppClientFake(): WhatsAppClientFake {
   return {
     client,
     mensagensEnviadas,
+    digitando,
     async emitirMensagem(mensagem) {
       if (manipuladores.length === 0) {
         throw new Error('Nenhum manipulador de mensagens registrado.');

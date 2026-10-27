@@ -184,6 +184,8 @@ async function main(): Promise<void> {
         urlDaImagem: (id) => `${(env.FRONTEND_URL_INTERNA ?? env.FRONTEND_ALLOWED_ORIGIN).replace(/\/$/, '')}/api/previa/${id}`,
       },
       urlDoCardapio: (slug) => `${urlPublica}/${slug}`,
+      // Mensagens seguidas viram uma rodada: 3 s de silêncio, no máximo 10 s desde a primeira.
+      agrupamento: { silencioMs: 3_000, maximoMs: 10_000 },
       planos,
       promocoes,
       relatorios,
