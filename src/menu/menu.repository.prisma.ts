@@ -5,7 +5,8 @@ import type { RegrasDaLoja } from '../orders/application/ports/loja-para-pedidos
 import { empreendedorPorIdentificador } from '../shared/db/identificador-loja.js';
 import type { MenuRepository } from './menu.repository.js';
 import type { FaixaEntrega } from './conversation/conversation-state.types.js';
-import { entregaConfigurada, raioMaximoKm } from './entrega.js';
+import { entregaEmUso, raioMaximoKm, type ConfigEntrega } from './entrega.js';
+import { podeUsar, type SituacaoDoPlano } from '../planos/domain/assinatura.js';
 import { enderecoVerificadoDaLoja } from './gestao/gestao.repository.prisma.js';
 import type {
   CardapioPublico,
@@ -22,17 +23,7 @@ import { freteConfigurado, type FreteFixo } from '../orders/domain/envio.js';
 import { cardapioNoPlano, regrasNoPlano } from './plano-na-vitrine.js';
 
 /** Os dados da loja salva que contam para o cadastro obrigatório. */
-function lojaParaCadastro(loja: {
-  nome: string | null;
-  slug: string | null;
-  aceitaRetirada: boolean;
-  fazEntrega: boolean;
-  aceitaEnvio: boolean;
-  latitude: unknown;
-  longitude: unknown;
-  faixasEntrega: unknown;
-  horarios: unknown;
-}): LojaParaCadastro {
+function lojaParaCadastro(loja: Loja, entregaPorDistancia: boolean): LojaParaCadastro {
   return {
     nome: loja.nome ?? undefined,
     slug: loja.slug ?? undefined,
@@ -41,7 +32,22 @@ function lojaParaCadastro(loja: {
     aceitaEnvio: loja.aceitaEnvio,
     enderecoConfirmado: loja.latitude !== null && loja.longitude !== null,
     faixasEntrega: Array.isArray(loja.faixasEntrega) ? loja.faixasEntrega : [],
+    taxaEntrega: loja.taxaEntrega === null ? undefined : Number(loja.taxaEntrega),
+    modoEntrega: loja.modoEntrega,
+    entregaPorDistancia,
     horarios: Array.isArray(loja.horarios) ? loja.horarios : [],
+  };
+}
+
+/** A entrega configurada na loja salva. */
+function configDeEntrega(loja: Loja): ConfigEntrega {
+  return {
+    fazEntrega: loja.fazEntrega,
+    faixasEntrega: loja.faixasEntrega as unknown as FaixaEntrega[],
+    taxaEntrega: loja.taxaEntrega === null ? undefined : Number(loja.taxaEntrega),
+    raioEntregaKm: loja.raioEntregaKm === null ? undefined : Number(loja.raioEntregaKm),
+    modoEntrega: loja.modoEntrega,
+    enderecoVerificado: enderecoVerificadoDaLoja(loja),
   };
 }
 
@@ -68,9 +74,15 @@ function freteDaLoja(loja: Pick<Loja, 'aceitaEnvio' | 'freteEnvio' | 'fretePorUf
   return freteConfigurado(frete) ? frete : undefined;
 }
 
-/** A loja salva como o app do cliente vê. */
-export function paraLojaPublica(loja: Loja): LojaPublica {
-  const faixasEntrega = loja.faixasEntrega as unknown as FaixaEntrega[];
+/**
+ * A loja salva como o app do cliente vê. A entrega é a que vale no plano: por
+ * distância só no Profissional; fora dele, a taxa fixa (ou só retirada, se a
+ * loja ainda não informou o valor).
+ */
+export function paraLojaPublica(loja: Loja, plano?: SituacaoDoPlano): LojaPublica {
+  const distancia = podeUsar(plano, 'ENTREGA_POR_DISTANCIA');
+  const entrega = entregaEmUso(configDeEntrega(loja), distancia);
+  const faixasEntrega = entrega?.tipo === 'DISTANCIA' ? entrega.faixas : [];
   return {
     nome: loja.nome ?? undefined,
     descricao: loja.descricao ?? undefined,
@@ -78,12 +90,12 @@ export function paraLojaPublica(loja: Loja): LojaPublica {
     endereco: loja.endereco ?? undefined,
     aceitaRetirada: loja.aceitaRetirada,
     aceitaPagamentoNaEntrega: loja.aceitaPagamentoNaEntrega,
-    emMontagem: !cadastroCompleto(lojaParaCadastro(loja)),
-    // Loja antiga (taxa fixa, sem endereço verificado ou faixas) não entrega até configurar.
-    fazEntrega: loja.fazEntrega && entregaConfigurada({ enderecoVerificado: enderecoVerificadoDaLoja(loja), faixasEntrega }),
+    emMontagem: !cadastroCompleto(lojaParaCadastro(loja, distancia)),
+    fazEntrega: Boolean(entrega),
     faixasEntrega,
-    raioMaximoKm: raioMaximoKm(faixasEntrega),
-    taxaEntrega: loja.taxaEntrega === null ? undefined : Number(loja.taxaEntrega),
+    raioMaximoKm: entrega?.tipo === 'FIXA' ? entrega.raioKm : raioMaximoKm(faixasEntrega),
+    // Só a taxa fixa em uso: valor antigo guardado numa loja por distância não aparece.
+    taxaEntrega: entrega?.tipo === 'FIXA' ? entrega.taxa : undefined,
     pedidoMinimo: loja.pedidoMinimo === null ? undefined : Number(loja.pedidoMinimo),
     horarios: loja.horarios as unknown as HorarioLoja[],
     slug: loja.slug ?? undefined,
@@ -201,7 +213,7 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
       ].filter((secao) => secao.itens.length > 0);
 
       const cardapio: CardapioPublico = {
-        loja: loja && paraLojaPublica(loja),
+        loja: loja && paraLojaPublica(loja, plano ?? undefined),
         secoes,
         itens: disponiveis,
       };
@@ -232,16 +244,19 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
           plano,
         );
       }
+      const distancia = podeUsar(plano, 'ENTREGA_POR_DISTANCIA');
+      const entrega = entregaEmUso(configDeEntrega(loja), distancia);
       const regras: RegrasDaLoja = {
         aceitaRetirada: loja.aceitaRetirada,
-        fazEntrega: loja.fazEntrega,
+        fazEntrega: Boolean(entrega),
+        taxaFixa: entrega?.tipo === 'FIXA' ? { taxa: entrega.taxa, raioKm: entrega.raioKm } : undefined,
         aceitaPagamentoNaEntrega: loja.aceitaPagamentoNaEntrega,
-        cadastroCompleto: cadastroCompleto(lojaParaCadastro(loja)),
+        cadastroCompleto: cadastroCompleto(lojaParaCadastro(loja, distancia)),
         origem:
           loja.latitude === null || loja.longitude === null
             ? undefined
             : { latitude: Number(loja.latitude), longitude: Number(loja.longitude) },
-        faixasEntrega: loja.faixasEntrega as unknown as FaixaEntrega[],
+        faixasEntrega: entrega?.tipo === 'DISTANCIA' ? entrega.faixas : [],
         pedidoMinimo: loja.pedidoMinimo === null ? undefined : Number(loja.pedidoMinimo),
         horarios: loja.horarios as unknown as HorarioFuncionamento[],
         fuso: loja.fuso,

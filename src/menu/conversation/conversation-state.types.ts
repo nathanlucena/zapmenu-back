@@ -71,8 +71,12 @@ export interface DadosLoja {
   aceitaRetirada?: boolean;
   fazEntrega?: boolean;
   faixasEntrega?: FaixaEntrega[];
-  /** Depreciada: taxa fixa antiga. Só leitura (identifica lojas que precisam configurar as faixas). */
+  /** Taxa fixa de entrega (todos os planos). */
   taxaEntrega?: number;
+  /** Até onde a taxa fixa vale (opcional). */
+  raioEntregaKm?: number;
+  /** FIXA ou DISTANCIA. Fora do Profissional, vale sempre a taxa fixa. */
+  modoEntrega?: 'FIXA' | 'DISTANCIA';
   pedidoMinimo?: number;
   horarios?: Horario[];
   /** Endereço curto do cardápio. Sem ele, um é gerado pelo nome da loja ao salvar. */

@@ -13,6 +13,7 @@ export const RECURSOS = [
   'PROMOCOES',
   'DESCONTO_PERCENTUAL',
   'CORES_CAPA',
+  'ENTREGA_TAXA_FIXA',
   'ENTREGA_POR_DISTANCIA',
   'MELHOR_ENVIO',
   'GUIA_MEDIDAS',
@@ -60,7 +61,7 @@ export const CATALOGO_PLANOS: Record<PlanoId, Plano> = {
     precoMensalCentavos: 2999,
     precoAnualPorMesCentavos: 2499,
     limites: { pedidosMes: 100, produtos: 30, minutosAudioMes: 0, sugestoesIaMes: 0 },
-    recursos: recursos('NENHUM'),
+    recursos: { ...recursos('NENHUM'), ENTREGA_TAXA_FIXA: true },
   },
   PROFISSIONAL: {
     id: 'PROFISSIONAL',

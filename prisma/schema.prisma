@@ -50,6 +50,12 @@ enum SegmentoLoja {
   SERVICOS
 }
 
+/// Entrega com um valor só (todos os planos) ou por faixas de distância (Profissional).
+enum ModoEntrega {
+  FIXA
+  DISTANCIA
+}
+
 /// Dados exibidos no cardápio público. Separada do Empreendedor para permitir
 /// mais de uma loja por empreendedor no futuro.
 model Loja {
@@ -82,8 +88,12 @@ model Loja {
   aceitaPagamentoNaEntrega Boolean      @default(true)
   /// [{ "ateKm": 1, "taxa": 0 }, { "ateKm": 3, "taxa": 5 }], ordenada por ateKm.
   faixasEntrega            Json         @default("[]")
-  /// Depreciada: taxa fixa antiga. Loja com ela e sem faixas fica com a entrega indisponível.
+  /// Taxa fixa de entrega (qualquer plano). Vale quando modoEntrega é FIXA, ou quando o plano não tem a entrega por distância.
   taxaEntrega              Decimal?     @db.Decimal(10, 2)
+  /// Até onde a taxa fixa vale, em km (opcional).
+  raioEntregaKm            Decimal?     @db.Decimal(5, 2)
+  /// Como a loja quer cobrar a entrega. Fora do plano Profissional, sempre a taxa fixa.
+  modoEntrega              ModoEntrega  @default(DISTANCIA)
   pedidoMinimo             Decimal?     @db.Decimal(10, 2)
   /// [{ "dia": "seg", "abre": "18:00", "fecha": "23:00" }]
   horarios                 Json         @default("[]")

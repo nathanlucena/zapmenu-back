@@ -20,9 +20,9 @@ const BASICO = { plano: 'ESSENCIAL', status: 'ATIVA' } as const;
 const PROFISSIONAL = { plano: 'PROFISSIONAL', status: 'ATIVA' } as const;
 
 describe('vitrine no plano da loja', () => {
-  it('Básico: com o selo, sem cor, capa e entrega por distância (o logo fica)', () => {
+  it('Básico: com o selo, sem cor e capa (o logo fica)', () => {
     const loja = lojaNoPlano(LOJA, BASICO);
-    expect(loja).toMatchObject({ mostrarSelo: true, fazEntrega: false, logoUrl: LOJA.logoUrl });
+    expect(loja).toMatchObject({ mostrarSelo: true, logoUrl: LOJA.logoUrl });
     expect(loja.corDestaque).toBeUndefined();
     expect(loja.capaUrl).toBeUndefined();
     expect(loja.indisponivel).toBeUndefined();
@@ -32,7 +32,6 @@ describe('vitrine no plano da loja', () => {
     for (const plano of [PROFISSIONAL, { plano: 'ESSENCIAL', status: 'TESTE' } as const, undefined]) {
       expect(lojaNoPlano(LOJA, plano)).toMatchObject({
         mostrarSelo: false,
-        fazEntrega: true,
         corDestaque: '#C62828',
         capaUrl: LOJA.capaUrl,
       });
@@ -56,10 +55,9 @@ describe('vitrine no plano da loja', () => {
     }
   });
 
-  it('regras de pedido: entrega por distância só no plano, e suspensa não recebe pedido', () => {
+  it('regras de pedido: suspensa não recebe pedido', () => {
     const regras = { ...REGRAS_PADRAO, fazEntrega: true };
-    expect(regrasNoPlano(regras, BASICO).fazEntrega).toBe(false);
-    expect(regrasNoPlano(regras, PROFISSIONAL).fazEntrega).toBe(true);
+    expect(regrasNoPlano(regras, PROFISSIONAL).indisponivel).toBeUndefined();
     expect(regrasNoPlano(regras, { plano: 'ESSENCIAL', status: 'SUSPENSA' }).indisponivel).toBe(true);
   });
 });

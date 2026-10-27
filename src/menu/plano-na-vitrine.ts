@@ -5,12 +5,12 @@ import type { CardapioPublico, LojaPublica } from './menu.types.js';
 /**
  * A loja como o plano deixa aparecer. Nada é apagado: o que a loja configurou
  * num plano maior (ou no teste) só fica oculto, e volta se ela assinar de novo.
+ * A entrega (distância ou taxa fixa) já vem resolvida pelo plano na leitura da loja.
  */
 export function lojaNoPlano(loja: LojaPublica, plano: SituacaoDoPlano | undefined): LojaPublica {
   const coresECapa = podeUsar(plano, 'CORES_CAPA');
   return {
     ...loja,
-    fazEntrega: loja.fazEntrega && podeUsar(plano, 'ENTREGA_POR_DISTANCIA'),
     corDestaque: coresECapa ? loja.corDestaque : undefined,
     capaUrl: coresECapa ? loja.capaUrl : undefined,
     mostrarSelo: !podeUsar(plano, 'SEM_SELO'),
@@ -30,7 +30,6 @@ export function cardapioNoPlano(cardapio: CardapioPublico, plano: SituacaoDoPlan
 export function regrasNoPlano(regras: RegrasDaLoja, plano: SituacaoDoPlano | undefined): RegrasDaLoja {
   return {
     ...regras,
-    fazEntrega: regras.fazEntrega && podeUsar(plano, 'ENTREGA_POR_DISTANCIA'),
     ...(!lojaDisponivel(plano) && { indisponivel: true }),
   };
 }

@@ -18,6 +18,8 @@ export interface RegrasDaLoja {
   /** Coordenada do endereço verificado da loja; sem ela não há entrega. */
   origem?: { latitude: number; longitude: number };
   faixasEntrega: FaixaTaxaEntrega[];
+  /** Entrega com um valor só (raio opcional). Quando presente, vale no lugar das faixas. */
+  taxaFixa?: { taxa: number; raioKm?: number };
   pedidoMinimo?: number;
   horarios: HorarioFuncionamento[];
   fuso?: string;

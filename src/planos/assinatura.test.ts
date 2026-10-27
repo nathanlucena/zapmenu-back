@@ -37,10 +37,10 @@ function ativa(dados: Partial<Assinatura> = {}): Assinatura {
 }
 
 describe('recursos e limites por plano', () => {
-  it('Básico: nenhum recurso pago, 100 pedidos, 30 produtos e sem cotas', () => {
+  it('Básico: só a entrega com taxa fixa, 100 pedidos, 30 produtos e sem cotas', () => {
     const basico = { plano: 'ESSENCIAL', status: 'ATIVA' } as const;
     for (const recurso of RECURSOS) {
-      expect(podeUsar(basico, recurso), recurso).toBe(false);
+      expect(podeUsar(basico, recurso), recurso).toBe(recurso === 'ENTREGA_TAXA_FIXA');
     }
     expect(limite(basico, 'pedidosMes')).toBe(100);
     expect(limite(basico, 'produtos')).toBe(30);
