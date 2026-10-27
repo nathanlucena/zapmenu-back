@@ -199,6 +199,18 @@ export function aplicarOperacoes(aplicacao: AplicacaoOperacoes, operacoes: Opera
         }
         break;
       }
+      case 'MEDIDAS_DA_CATEGORIA': {
+        if (!snapshot.categorias.some((categoria) => categoria.id === operacao.categoriaId)) {
+          avisos.add('⚠️ Não achei essa categoria. Confere o nome?');
+          break;
+        }
+        const { tipo: _tipo, ...medidas } = operacao;
+        rascunho.medidasDasCategorias = [
+          ...(rascunho.medidasDasCategorias ?? []).filter((anotada) => anotada.categoriaId !== operacao.categoriaId),
+          definidos(medidas) as typeof medidas,
+        ];
+        break;
+      }
       case 'NOVA_CATEGORIA':
         garantirCategoria(rascunho, snapshot, operacao.nome);
         break;
@@ -256,6 +268,13 @@ export function aplicarOperacoes(aplicacao: AplicacaoOperacoes, operacoes: Opera
           if (validacao.faixas && dados.fazEntrega === undefined && !fazEntregaAtual) {
             dados.fazEntrega = true;
           }
+        }
+        if (dados.cepOrigem !== undefined) {
+          const cep = dados.cepOrigem.replace(/\D/g, '');
+          if (cep.length !== 8) {
+            avisos.add(`⚠️ O CEP ${dados.cepOrigem} não tem 8 números. Confere pra mim?`);
+          }
+          dados.cepOrigem = cep.length === 8 ? cep : undefined;
         }
         if (dados.taxaEntrega !== undefined) {
           if (!Number.isFinite(dados.taxaEntrega) || dados.taxaEntrega < 0) {
@@ -427,6 +446,7 @@ export function contarAlteracoes(rascunho: Rascunho): number {
     rascunho.novasCategorias.length +
     rascunho.categoriasRenomeadas.length +
     rascunho.categoriasRemovidas.length +
+    (rascunho.medidasDasCategorias?.length ?? 0) +
     (rascunho.loja && Object.keys(definidos(rascunho.loja)).length > 0 ? 1 : 0)
   );
 }
@@ -524,6 +544,11 @@ export function descreverAlteracoes(rascunho: Rascunho, snapshot: SnapshotCardap
     }
   }
 
+  for (const medidas of rascunho.medidasDasCategorias ?? []) {
+    const nome = snapshot.categorias.find((categoria) => categoria.id === medidas.categoriaId)?.nome ?? 'categoria';
+    linhas.push(`📏 *${nome}* (padrão para o frete): ${descreverMedidas(medidas)}`);
+  }
+
   const iconeStatus = { PAUSAR: '⏸️', REATIVAR: '▶️', REMOVER: '🗑️' } as const;
   const verboStatus = { PAUSAR: 'pausar', REATIVAR: 'reativar', REMOVER: 'remover' } as const;
   for (const { itemId, acao } of rascunho.status) {
@@ -592,12 +617,8 @@ function descreverLoja(loja: DadosLoja, atual: DadosLoja): string[] {
   if (loja.aceitaPagamentoNaEntrega !== undefined) {
     linhas.push(`💵 Pagamento na entrega (dinheiro ou cartão): *${simNao(loja.aceitaPagamentoNaEntrega)}*`);
   }
-  if (loja.aceitaEnvio !== undefined) linhas.push(`📦 Envia pelos Correios: *${simNao(loja.aceitaEnvio)}*`);
-  if (loja.freteEnvio !== undefined) linhas.push(`📦 Frete para o Brasil: *${formatarPreco(loja.freteEnvio)}*`);
-  if (loja.fretePorUf !== undefined) {
-    const porUf = Object.entries(loja.fretePorUf).map(([uf, frete]) => `${uf} ${formatarPreco(frete)}`);
-    linhas.push(`📦 Frete por estado: *${porUf.length ? porUf.join(' · ') : 'nenhum'}*`);
-  }
+  if (loja.usaMelhorEnvio !== undefined) linhas.push(`📦 Envio por transportadora (Melhor Envio): *${simNao(loja.usaMelhorEnvio)}*`);
+  if (loja.cepOrigem !== undefined) linhas.push(`📦 CEP de onde saem as encomendas: *${loja.cepOrigem.replace(/^(\d{5})(\d{3})$/, '$1-$2')}*`);
   if (loja.politicaTroca !== undefined) linhas.push(`🔁 Política de troca: _${loja.politicaTroca}_`);
   return linhas;
 }
@@ -635,4 +656,15 @@ export function formatarPreco(valor: number): string {
 /** Remove chaves com valor undefined (para merges não apagarem dados). */
 export function definidos<T extends object>(dados: T): Partial<T> {
   return Object.fromEntries(Object.entries(dados).filter(([, valor]) => valor !== undefined)) as Partial<T>;
+}
+
+/** "500 g · 4 × 20 × 30 cm" (altura × largura × comprimento). */
+export function descreverMedidas(medidas: { pesoGramas?: number; alturaCm?: number; larguraCm?: number; comprimentoCm?: number }): string {
+  const partes: string[] = [];
+  if (medidas.pesoGramas !== undefined) partes.push(`${medidas.pesoGramas} g`);
+  const dimensoes = [medidas.alturaCm, medidas.larguraCm, medidas.comprimentoCm];
+  if (dimensoes.some((valor) => valor !== undefined)) {
+    partes.push(`${dimensoes.map((valor) => (valor === undefined ? '?' : String(valor).replace('.', ','))).join(' × ')} cm`);
+  }
+  return partes.join(' · ');
 }

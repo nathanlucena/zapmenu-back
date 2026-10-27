@@ -264,6 +264,19 @@ export function criarBaileysClient(socket: WASocket, options: BaileysClientOptio
       await socket.sendPresenceUpdate('composing', await jidDeDestino(telefone));
     },
 
+    async sendDocument(telefone, dados, nomeArquivo, mimetype, legenda) {
+      if (!destinoPermitido(telefone)) {
+        return;
+      }
+      await socket.sendMessage(await jidDeDestino(telefone), {
+        document: Buffer.from(dados),
+        mimetype,
+        fileName: nomeArquivo,
+        caption: legenda ? marcar(legenda) : undefined,
+      });
+      logger.info({ para: telefone, conteudo: `[documento] ${nomeArquivo}` }, '🤖 BOT RESPONDEU');
+    },
+
     async sendImage(telefone, imagemUrlOuBase64, legenda) {
       if (!destinoPermitido(telefone)) {
         return;

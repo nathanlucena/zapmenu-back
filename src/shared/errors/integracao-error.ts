@@ -1,4 +1,4 @@
-export type ServicoExterno = 'mercado_pago' | 'viacep' | 'google' | 'transcricao' | 'deepseek';
+export type ServicoExterno = 'mercado_pago' | 'viacep' | 'google' | 'transcricao' | 'deepseek' | 'melhor_envio';
 
 /**
  * Falha ao falar com um serviço de fora (Mercado Pago, ViaCEP, Google). Diz

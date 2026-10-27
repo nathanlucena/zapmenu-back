@@ -1,5 +1,4 @@
 import type { HorarioFuncionamento } from '../../domain/horario-loja.js';
-import type { FreteFixo } from '../../domain/envio.js';
 import type { EnderecoEntrega } from '../../domain/pedido.js';
 
 export interface FaixaTaxaEntrega {
@@ -23,8 +22,8 @@ export interface RegrasDaLoja {
   pedidoMinimo?: number;
   horarios: HorarioFuncionamento[];
   fuso?: string;
-  /** Envio pelos Correios com frete fixo. Ausente = não envia (lojas antigas). */
-  envio?: FreteFixo;
+  /** Envio por transportadora (Melhor Envio), com o CEP de onde saem as encomendas. Ausente = não envia. */
+  melhorEnvio?: { cepOrigem: string };
   /** Ramo da loja; muda as etapas oferecidas à loja (varejo tem "Separado"). */
   segmento?: 'COMIDA' | 'VAREJO' | 'SERVICOS';
   /** Assinatura do ZapMenu suspensa: não recebe pedidos. */

@@ -11,6 +11,7 @@ export type AlteracoesPedido = Partial<
     | 'enqueteAndamentoId'
     | 'codigoRastreio'
     | 'transportadora'
+    | 'etiquetaId'
   >
 >;
 

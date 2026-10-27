@@ -96,6 +96,26 @@ const envSchema = z.object({
     .transform((valor) => valor?.trim() || undefined),
   TRANSCRICAO_MODELO: z.string().default('whisper-1'),
 
+  // Melhor Envio (envio por transportadora, Profissional): app criado no painel do Melhor Envio.
+  // Sem client id, o envio por transportadora fica desligado. Use o sandbox até ir para produção.
+  MELHOR_ENVIO_CLIENT_ID: z
+    .string()
+    .optional()
+    .transform((valor) => valor?.trim() || undefined),
+  MELHOR_ENVIO_CLIENT_SECRET: z
+    .string()
+    .optional()
+    .transform((valor) => valor?.trim() || undefined),
+  MELHOR_ENVIO_SANDBOX: z.stringbool().default(true),
+  // Para onde o Melhor Envio volta depois da autorização: <API>/v1/melhor-envio/retorno
+  // (com o ngrok, https://<dominio>/api/melhor-envio/retorno: o front repassa). Igual ao cadastrado no app.
+  MELHOR_ENVIO_URL_RETORNO: z
+    .string()
+    .optional()
+    .transform((valor) => valor?.trim() || undefined),
+  // Contato que vai no User-Agent (o Melhor Envio pede).
+  MELHOR_ENVIO_EMAIL_CONTATO: z.string().default('contato@zapmenu.com.br'),
+
   PEDIDO_TTL_MINUTOS: z.coerce.number().default(20),
   // Quanto tempo a loja tem para aceitar ou recusar um pedido depois que o cliente manda o código.
   PEDIDO_ACEITE_MINUTOS: z.coerce.number().int().positive().default(15),

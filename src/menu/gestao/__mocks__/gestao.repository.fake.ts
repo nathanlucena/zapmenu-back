@@ -60,6 +60,9 @@ export function criarGestaoRepositoryFake(snapshotInicial?: Partial<SnapshotCard
       fake.snapshot.segmento = segmento;
       fake.snapshot.lojaSalva = { ...fake.snapshot.lojaSalva, existe: true, tipoPendente: false };
     },
+    async limparAvisoDoFreteFixo() {
+      fake.snapshot.lojaSalva.avisarFimDoFreteFixo = false;
+    },
     async registrarLembreteOpcionais(_empreendedorId, registro) {
       if (registro.em) fake.snapshot.lojaSalva.lembreteOpcionaisEm = registro.em;
       if (registro.desligar) fake.snapshot.lojaSalva.naoLembrarOpcionais = true;

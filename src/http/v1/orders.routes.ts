@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { consultarPedido } from '../../orders/application/consultar-pedido.js';
 import { cotarEntrega } from '../../orders/application/cotar-entrega.js';
-import { cotarEnvio } from '../../orders/application/cotar-envio.js';
+import { enderecoDeEnvio } from '../../orders/application/endereco-de-envio.js';
 import { criarPedidoDoCarrinho, type CriarPedidoDoCarrinhoDeps } from '../../orders/application/criar-pedido.js';
 import { DomainError } from '../../shared/errors/domain-error.js';
 import { detalhesDaValidacao } from '../validacao/mensagens-zod.js';
@@ -39,7 +39,10 @@ const carrinhoInputSchema = z
       )
       .min(1),
     // Padrão RETIRADA: o app antigo não manda a modalidade.
-    modalidade: z.enum(['RETIRADA', 'ENTREGA', 'ENVIO']).default('RETIRADA'),
+    // ENVIO (frete fixo por região) foi removido: ainda é aceito aqui para responder com um erro claro.
+    modalidade: z.enum(['RETIRADA', 'ENTREGA', 'MELHOR_ENVIO', 'ENVIO']).default('RETIRADA'),
+    /** Só no Melhor Envio: o serviço escolhido na cotação. */
+    servicoEnvioId: z.string().min(1).optional(),
     endereco: enderecoSchema.optional(),
     nomeCliente: texto(80).optional(),
     observacao: texto(280).optional(),
@@ -53,6 +56,22 @@ const carrinhoInputSchema = z
   });
 
 const cotacaoInputSchema = z.object({ empreendedorId: z.string().min(1), endereco: enderecoSchema });
+
+/** Cotação do Melhor Envio: precisa dos itens (peso, medidas e valor). */
+const freteInputSchema = z.object({
+  empreendedorId: z.string().min(1),
+  endereco: enderecoSchema,
+  itens: z
+    .array(
+      z.object({
+        itemCardapioId: z.string().min(1),
+        skuId: z.string().min(1).optional(),
+        quantidade: z.number().int().positive(),
+        variacaoEscolhida: z.record(z.string(), z.unknown()).optional(),
+      }),
+    )
+    .min(1),
+});
 
 export function registerOrdersRoutes(app: FastifyInstance, deps: CriarPedidoDoCarrinhoDeps): void {
   app.post('/orders', async (request, reply) => {
@@ -102,22 +121,34 @@ export function registerOrdersRoutes(app: FastifyInstance, deps: CriarPedidoDoCa
     };
   });
 
-  /** Frete fixo do envio pelos Correios, para o app mostrar o total antes de criar o pedido. */
-  app.post('/envio/cotacao', async (request, reply) => {
-    const parseResult = cotacaoInputSchema.safeParse(request.body);
+  /**
+   * Fretes do Melhor Envio para o CEP do cliente (PAC, SEDEX, transportadoras),
+   * com preço e prazo. O pedido recalcula o escolhido: este valor é só para mostrar.
+   */
+  app.post('/frete/cotacao', async (request, reply) => {
+    const parseResult = freteInputSchema.safeParse(request.body);
     if (!parseResult.success) {
       return reply
         .status(400)
         .send({ erro: 'Endereço inválido.', codigo: 'ENDERECO_INVALIDO', detalhes: detalhesDaValidacao(parseResult.error) });
     }
 
-    const { empreendedorId, endereco } = parseResult.data;
+    const { empreendedorId, endereco, itens } = parseResult.data;
     const regras = await deps.lojaParaPedidos.regrasDe(empreendedorId);
     if (!regras) {
       throw new DomainError('Loja não encontrada.', 'LOJA_NAO_ENCONTRADA', 'NAO_ENCONTRADO');
     }
-    const cotacao = await cotarEnvio(regras, deps.consultaCep, endereco);
-    return { envio: { enderecoFormatado: cotacao.endereco.enderecoFormatado, uf: cotacao.endereco.uf, frete: cotacao.frete } };
+    if (!regras.melhorEnvio || !deps.cotadorDeFrete) {
+      throw new DomainError('Esta loja não envia por transportadora.', 'ENVIO_INDISPONIVEL');
+    }
+    const precificados = await deps.cardapioDePrecos.precificar(empreendedorId, itens);
+    const destino = await enderecoDeEnvio(deps.consultaCep, endereco);
+    const servicos = await deps.cotadorDeFrete.cotar(empreendedorId, {
+      cepOrigem: regras.melhorEnvio.cepOrigem,
+      cepDestino: destino.cep!,
+      itens: precificados.map((item) => ({ itemCardapioId: item.itemCardapioId, quantidade: item.quantidade, precoUnitario: item.precoUnitario })),
+    });
+    return { frete: { enderecoFormatado: destino.enderecoFormatado, servicos } };
   });
 
   app.get('/orders/:codigoCurto', async (request) => {

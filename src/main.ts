@@ -36,6 +36,13 @@ import { iniciarSessaoWhatsApp } from './whatsapp/baileys/session-manager.js';
 import { dividirMensagens } from './whatsapp/numero-unico/dividir-mensagens.js';
 import { identificarBot, ROTULO_GESTAO, ROTULO_PEDIDOS } from './whatsapp/identificacao/identificar-bot.js';
 import { chaveTelefone } from './shared/telefone/telefone.js';
+import { criarMelhorEnvioClient } from './envio/infra/melhor-envio.client.js';
+import { criarContasMelhorEnvioRepositoryPrisma } from './envio/infra/contas-melhor-envio.repository.prisma.js';
+import { contaConectada, linkParaConectar } from './envio/application/conexao.js';
+import { criarCotadorMelhorEnvio } from './envio/application/cotador.js';
+import { gerarEtiqueta } from './envio/application/etiqueta.js';
+import { criarGuiasRepositoryPrisma } from './menu/guia-medidas/guias.repository.prisma.js';
+import type { MelhorEnvioDeps } from './envio/application/dependencias.js';
 import { criarAssinaturasRepositoryPrisma } from './planos/infra/assinaturas.repository.prisma.js';
 import { avisarLimiteDePedidos } from './planos/application/avisar-limite-de-pedidos.js';
 import type { PlanosDeps } from './planos/application/dependencias.js';
@@ -115,6 +122,26 @@ async function main(): Promise<void> {
     },
   };
   const avisoPedidoPago = { contatos, mensageiro: mensageiroLoja };
+  const urlPublicaDoApp = (env.FRONTEND_URL_PUBLICA ?? env.FRONTEND_ALLOWED_ORIGIN).replace(/\/$/, '');
+  const melhorEnvio: MelhorEnvioDeps | undefined =
+    env.MELHOR_ENVIO_CLIENT_ID && env.MELHOR_ENVIO_CLIENT_SECRET
+      ? {
+          gateway: criarMelhorEnvioClient({
+            clientId: env.MELHOR_ENVIO_CLIENT_ID,
+            clientSecret: env.MELHOR_ENVIO_CLIENT_SECRET,
+            urlDeRetorno: env.MELHOR_ENVIO_URL_RETORNO ?? `${urlPublicaDoApp}/api/melhor-envio/retorno`,
+            sandbox: env.MELHOR_ENVIO_SANDBOX,
+            emailDeContato: env.MELHOR_ENVIO_EMAIL_CONTATO,
+          }),
+          contas: criarContasMelhorEnvioRepositoryPrisma(prisma),
+          mensageiro: mensageiroLoja,
+          // O state do OAuth é assinado com o segredo do app (não sai do servidor).
+          segredo: env.MELHOR_ENVIO_CLIENT_SECRET,
+        }
+      : undefined;
+  if (!melhorEnvio) {
+    logger.warn('MELHOR_ENVIO_CLIENT_ID/SECRET não definidos: o envio por transportadora fica desligado');
+  }
   const urlPublica = (env.FRONTEND_URL_PUBLICA ?? env.FRONTEND_ALLOWED_ORIGIN).replace(/\/$/, '');
   const tokenAssinaturas = env.MERCADO_PAGO_ASSINATURAS_ACCESS_TOKEN;
   if (!tokenAssinaturas) {
@@ -202,6 +229,11 @@ async function main(): Promise<void> {
       agrupamento: { silencioMs: 3_000, maximoMs: 10_000 },
       planos,
       promocoes,
+      guias: criarGuiasRepositoryPrisma(prisma),
+      melhorEnvio: melhorEnvio && {
+        linkParaConectar: (telefone: string) => linkParaConectar(melhorEnvio, telefone),
+        conectada: (telefone: string) => contaConectada(melhorEnvio, telefone),
+      },
       relatorios,
       audio,
       imagens: criarImagensDaLojaSharp(),
@@ -223,6 +255,7 @@ async function main(): Promise<void> {
         clientePedidos: () => pedidosWhatsAppClient,
         lojaParaPedidos,
         aoVirarVenda,
+        gerarEtiqueta: melhorEnvio && ((pedido: Pedido) => gerarEtiqueta(melhorEnvio, pedido)),
       },
     });
   };
@@ -312,6 +345,10 @@ async function main(): Promise<void> {
     previas,
     planos,
     assinaturasWebhookSecret: env.MERCADO_PAGO_ASSINATURAS_WEBHOOK_SECRET,
+    // O CEP do envio por transportadora só precisa do ViaCEP (não do Google).
+    consultaCep: criarViaCepClient(),
+    cotadorDeFrete: melhorEnvio && criarCotadorMelhorEnvio(melhorEnvio),
+    melhorEnvio,
   });
 
   await app.listen({ port: env.PORT, host: '0.0.0.0' });

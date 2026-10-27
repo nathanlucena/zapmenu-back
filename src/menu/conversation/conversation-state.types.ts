@@ -90,12 +90,10 @@ export interface DadosLoja {
   /** Foto de capa (data URI), vinda de uma foto mandada na conversa. */
   capaUrl?: string;
   aceitaPagamentoNaEntrega?: boolean;
-  /** Envia pelos Correios com frete fixo (varejo). */
-  aceitaEnvio?: boolean;
-  /** Frete para qualquer UF sem valor próprio. */
-  freteEnvio?: number;
-  /** Exceções por UF: { "PE": 12 }. Substitui a lista anterior inteira. */
-  fretePorUf?: Record<string, number>;
+  /** Envia por transportadora com o Melhor Envio (loja, Profissional). */
+  usaMelhorEnvio?: boolean;
+  /** CEP de onde saem as encomendas (8 números). Sem ele, vale o CEP do endereço da loja. */
+  cepOrigem?: string;
   /** Trocas e devoluções, em texto livre (loja). */
   politicaTroca?: string;
 }
@@ -129,6 +127,11 @@ export interface NovoItem {
   grade?: LinhaGrade[];
   /** Galeria (só loja), na ordem em que as fotos chegaram. */
   fotos?: FotoNova[];
+  /** Para o frete do Melhor Envio (sem eles, vale o padrão da categoria). */
+  pesoGramas?: number;
+  alturaCm?: number;
+  larguraCm?: number;
+  comprimentoCm?: number;
 }
 
 /** Alterações num item existente; só os campos presentes mudam. */
@@ -145,6 +148,11 @@ export interface EdicaoItem {
   grade?: LinhaGrade[];
   /** Fotos que entram no fim da galeria (só loja). */
   fotos?: FotoNova[];
+  /** Para o frete do Melhor Envio (sem eles, vale o padrão da categoria). */
+  pesoGramas?: number;
+  alturaCm?: number;
+  larguraCm?: number;
+  comprimentoCm?: number;
 }
 
 export type AcaoStatus = 'PAUSAR' | 'REATIVAR' | 'REMOVER';
@@ -157,6 +165,8 @@ export interface Rascunho {
   categoriasRenomeadas: { categoriaId: string; novoNome: string }[];
   categoriasRemovidas: string[];
   loja?: DadosLoja;
+  /** Peso e medidas padrão dos produtos de uma categoria (frete do Melhor Envio). */
+  medidasDasCategorias?: { categoriaId: string; pesoGramas?: number; alturaCm?: number; larguraCm?: number; comprimentoCm?: number }[];
 }
 
 export interface MensagemHistorico {
@@ -185,6 +195,11 @@ export interface Contexto {
   proximaRef: number;
   /** Produto que recebeu a última foto (loja): a próxima foto sem legenda logo em seguida vai para ele. */
   ultimaFoto?: { ref?: string; itemId?: string; em: string };
+  /** Guia de medidas mostrado, esperando o "sim". */
+  guiaPendente?: {
+    alvo: { tipo: 'CATEGORIA' | 'ITEM'; id: string };
+    guia: { nome: string; colunas: string[]; linhas: { tamanho: string; medidas: number[] }[] };
+  };
   /** "mudar tipo da loja" em andamento: sem `para`, esperando a escolha; com `para`, esperando o sim. */
   trocaDeTipo?: { para?: 'COMIDA' | 'VAREJO' };
   /** Conversa da assinatura em andamento: esperando o e-mail do Mercado Pago ou o "sim" de uma mudança. */

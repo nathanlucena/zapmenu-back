@@ -41,9 +41,8 @@ function lojaSalva(dados: Partial<Loja> = {}): Loja {
     fuso: 'America/Sao_Paulo',
     politicaTroca: null,
     cepOrigem: null,
-    aceitaEnvio: false,
-    freteEnvio: null,
-    fretePorUf: {},
+    usaMelhorEnvio: false,
+    avisarFimDoFreteFixo: false,
     relatorioDiario: true,
     atualizadoEm: new Date('2026-10-23T12:00:00Z'),
     ...dados,
@@ -68,17 +67,18 @@ describe('paraLojaPublica', () => {
     expect(JSON.stringify(loja)).not.toContain('50000-000');
   });
 
-  it('no tipo Cardápio, política de troca e envio ficam ocultos (sem apagar)', () => {
-    const loja = paraLojaPublica(
-      lojaSalva({ politicaTroca: 'Troca em 7 dias.', aceitaEnvio: true, freteEnvio: new Prisma.Decimal(25) }),
-    );
+  it('no tipo Cardápio, política de troca e Melhor Envio ficam ocultos (sem apagar)', () => {
+    const ligado = { politicaTroca: 'Troca em 7 dias.', usaMelhorEnvio: true, cepOrigem: '50050000' };
+    const profissional = { plano: 'PROFISSIONAL', status: 'ATIVA' } as const;
 
-    expect(loja.politicaTroca).toBeUndefined();
-    expect(loja.envio).toBeUndefined();
-    expect(paraLojaPublica(lojaSalva({ segmento: 'VAREJO', aceitaEnvio: true, freteEnvio: new Prisma.Decimal(25) })).envio).toEqual({
-      padrao: 25,
-      porUf: {},
-    });
+    const cardapio = paraLojaPublica(lojaSalva(ligado), profissional, true);
+    expect(cardapio.politicaTroca).toBeUndefined();
+    expect(cardapio.melhorEnvio).toBe(false);
+
+    expect(paraLojaPublica(lojaSalva({ ...ligado, segmento: 'VAREJO' }), profissional, true).melhorEnvio).toBe(true);
+    // Sem a conta conectada ou fora do Profissional, não oferece.
+    expect(paraLojaPublica(lojaSalva({ ...ligado, segmento: 'VAREJO' }), profissional, false).melhorEnvio).toBe(false);
+    expect(paraLojaPublica(lojaSalva({ ...ligado, segmento: 'VAREJO' }), { plano: 'ESSENCIAL', status: 'ATIVA' }, true).melhorEnvio).toBe(false);
   });
 });
 

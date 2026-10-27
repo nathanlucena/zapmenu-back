@@ -12,7 +12,8 @@ export type Comando =
   | 'PREVIA'
   | 'MUDAR_TIPO'
   | 'TIRAR_CAPA'
-  | 'TIRAR_LOGO';
+  | 'TIRAR_LOGO'
+  | 'CONECTAR_MELHOR_ENVIO';
 
 const PALAVRAS: Record<Comando, string[]> = {
   CANCELAR: ['cancelar', 'cancela'],
@@ -54,6 +55,7 @@ const PALAVRAS: Record<Comando, string[]> = {
   ],
   TIRAR_CAPA: ['tirar a capa', 'tirar capa', 'remover a capa', 'remover capa', 'apagar a capa', 'sem capa'],
   TIRAR_LOGO: ['tirar o logo', 'tirar a logo', 'tirar logo', 'remover o logo', 'remover a logo', 'remover logo', 'apagar o logo', 'sem logo'],
+  CONECTAR_MELHOR_ENVIO: ['conectar melhor envio', 'conectar o melhor envio', 'conectar conta do melhor envio', 'ligar melhor envio'],
   NAO_LEMBRAR: ['nao lembrar mais', 'nao quero lembrete', 'para de lembrar', 'pare de lembrar', 'sem lembrete'],
 };
 

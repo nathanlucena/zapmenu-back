@@ -19,6 +19,11 @@ export interface DadosItemOperacao {
   /** Nome da categoria; null = tirar da categoria. */
   categoria?: string | null;
   variacoes?: Variacao[];
+  /** Para o frete do Melhor Envio (loja). */
+  pesoGramas?: number;
+  alturaCm?: number;
+  larguraCm?: number;
+  comprimentoCm?: number;
 }
 
 /**
@@ -37,6 +42,10 @@ export type Operacao =
   | { tipo: 'DEFINIR_GRADE'; ref?: string; itemId?: string; grade: LinhaGrade[] }
   | { tipo: 'ANEXAR_FOTO_LOJA'; destino: 'LOGO' | 'CAPA' }
   | { tipo: 'NOVA_CATEGORIA'; nome: string }
+  /** Guia de medidas (loja): não entra no rascunho; o código mostra a tabela e grava depois do "sim". */
+  | { tipo: 'DEFINIR_GUIA_MEDIDAS'; alvo: { tipo: 'CATEGORIA' | 'ITEM'; id: string }; guia: { nome: string; colunas: string[]; linhas: { tamanho: string; medidas: number[] }[] } }
+  /** Peso e medidas padrão dos produtos da categoria (loja, frete do Melhor Envio). */
+  | { tipo: 'MEDIDAS_DA_CATEGORIA'; categoriaId: string; pesoGramas?: number; alturaCm?: number; larguraCm?: number; comprimentoCm?: number }
   | { tipo: 'RENOMEAR_CATEGORIA'; categoriaId: string; novoNome: string }
   | { tipo: 'REMOVER_CATEGORIA'; categoriaId: string }
   /** Endereço e taxa fixa não entram aqui: endereço só por DEFINIR_ENDERECO. */

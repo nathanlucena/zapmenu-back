@@ -60,6 +60,12 @@ export function filtrarPorPlano(
         }
         break;
       }
+      case 'DEFINIR_GUIA_MEDIDAS':
+        if (!podeUsar(loja, 'GUIA_MEDIDAS')) {
+          bloquear('GUIA_MEDIDAS');
+          continue;
+        }
+        break;
       case 'ANEXAR_FOTO_LOJA':
         if (operacao.destino === 'CAPA' && !podeUsar(loja, 'CORES_CAPA')) {
           bloquear('CORES_CAPA');
@@ -78,6 +84,10 @@ export function filtrarPorPlano(
           avisos.add(AVISO_TAXA_FIXA);
           delete dados.faixasEntrega;
           delete dados.modoEntrega;
+        }
+        if (dados.usaMelhorEnvio === true && !podeUsar(loja, 'MELHOR_ENVIO')) {
+          bloquear('MELHOR_ENVIO');
+          delete dados.usaMelhorEnvio;
         }
         if (Object.values(dados).some((valor) => valor !== undefined)) {
           permitidas.push({ ...operacao, dados });

@@ -30,6 +30,8 @@ export interface WhatsAppClient {
   sendPoll(telefone: string, pergunta: string, opcoes: string[]): Promise<string | undefined>;
   /** Mostra "digitando..." para a pessoa. Opcional: nem todo cliente tem. */
   sendTyping?(telefone: string): Promise<void>;
+  /** Arquivo (ex.: a etiqueta em PDF). Opcional: nem todo cliente tem. */
+  sendDocument?(telefone: string, dados: Uint8Array, nomeArquivo: string, mimetype: string, legenda?: string): Promise<void>;
   onMessage(manipulador: ManipuladorMensagem): void;
   onPollVote(manipulador: ManipuladorVoto): void;
 }

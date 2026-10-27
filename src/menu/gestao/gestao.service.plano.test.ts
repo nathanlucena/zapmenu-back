@@ -58,7 +58,7 @@ function criarCenario(assinatura: Partial<Assinatura> | null, itens: ItemSnapsho
     },
   };
   const enviar = (texto: string, imagemUrl?: string) => processarMensagemGestao({ telefone: TELEFONE, texto, imagemUrl }, deps);
-  return { ia, enviar, assinaturas, gestaoRepo, conversa: () => conversa };
+  return { ia, enviar, assinaturas, gestaoRepo, deps, conversa: () => conversa };
 }
 
 const BASICO = { plano: 'ESSENCIAL', status: 'ATIVA' } as const;
@@ -146,6 +146,45 @@ describe('gestão: recursos por plano', () => {
     const texto = textos(await cenario.enviar('melhor por distância: até 3 km 5 reais'));
     expect(texto).not.toContain('Isso faz parte do plano');
     expect(cenario.conversa().contexto.rascunho.loja).toMatchObject({ modoEntrega: 'DISTANCIA', faixasEntrega: [{ ateKm: 3, taxa: 5 }] });
+  });
+
+  it('Básico: Melhor Envio é do Profissional', async () => {
+    const cenario = criarCenario(BASICO);
+    cenario.gestaoRepo.snapshot.segmento = 'VAREJO';
+    cenario.ia.responder(ia({ operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { usaMelhorEnvio: true } }] }));
+    expect(textos(await cenario.enviar('quero enviar pelo melhor envio'))).toContain('Isso faz parte do plano *Profissional*');
+    expect(cenario.conversa().contexto.rascunho.loja?.usaMelhorEnvio).toBeUndefined();
+  });
+
+  it('Profissional: "conectar melhor envio" manda o link de autorização', async () => {
+    const cenario = criarCenario(PROFISSIONAL);
+    cenario.gestaoRepo.snapshot.segmento = 'VAREJO';
+    cenario.deps.melhorEnvio = { linkParaConectar: async () => 'https://sandbox.melhorenvio.test/oauth', conectada: async () => false };
+    expect(textos(await cenario.enviar('conectar melhor envio'))).toContain('https://sandbox.melhorenvio.test/oauth');
+  });
+
+  it('guia de medidas (loja, Profissional): mostra a tabela e grava com o "sim"; no Básico, convite', async () => {
+    const guia = { nome: 'Camisetas', colunas: ['Busto'], linhas: [{ tamanho: 'P', medidas: [96] }] };
+    const operacao = { tipo: 'DEFINIR_GUIA_MEDIDAS' as const, alvo: { tipo: 'ITEM' as const, id: 'item-1' }, guia };
+
+    const profissional = criarCenario(PROFISSIONAL, [item(1)]);
+    profissional.gestaoRepo.snapshot.segmento = 'VAREJO';
+    const salvos: unknown[] = [];
+    profissional.deps.guias = { salvar: async (...args) => void salvos.push(args), remover: async () => true };
+    profissional.ia.responder(ia({ operacoes: [operacao] }));
+    const tabela = textos(await profissional.enviar('o guia da camiseta: P busto 96'));
+    expect(tabela).toContain('📏 *Camisetas* (Produto 1)');
+    expect(tabela).toContain('P     96');
+    expect(salvos).toHaveLength(0);
+    expect(textos(await profissional.enviar('sim'))).toContain('Guia de medidas salvo');
+    expect(salvos).toEqual([[TELEFONE, operacao.alvo, guia]]);
+
+    const basico = criarCenario(BASICO, [item(1)]);
+    basico.gestaoRepo.snapshot.segmento = 'VAREJO';
+    basico.deps.guias = { salvar: async () => undefined, remover: async () => true };
+    basico.ia.responder(ia({ operacoes: [operacao] }));
+    expect(textos(await basico.enviar('o guia da camiseta: P busto 96'))).toContain('Isso faz parte do plano *Profissional*');
+    expect(basico.conversa().contexto.guiaPendente).toBeUndefined();
   });
 
   it('Básico: desligar a entrega continua liberado', async () => {

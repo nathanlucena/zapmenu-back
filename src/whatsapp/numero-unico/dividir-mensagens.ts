@@ -12,6 +12,7 @@ function comFiltro(client: WhatsAppClient, aceita: (texto: string) => boolean, r
     sendImage: (telefone, imagem, legenda) => client.sendImage(telefone, imagem, legenda),
     sendPoll: (telefone, pergunta, opcoes) => client.sendPoll(telefone, pergunta, opcoes),
     sendTyping: async (telefone) => client.sendTyping?.(telefone),
+    sendDocument: async (telefone, dados, nome, mimetype, legenda) => client.sendDocument?.(telefone, dados, nome, mimetype, legenda),
     onMessage(manipulador: ManipuladorMensagem) {
       client.onMessage((mensagem) => (aceita(mensagem.corpo) ? manipulador(mensagem) : undefined));
     },

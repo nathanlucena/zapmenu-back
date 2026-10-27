@@ -24,6 +24,7 @@ export function opcoesDeAndamento(pedido: Pick<Pedido, 'modalidade'>): { aCaminh
     case 'ENTREGA':
       return { aCaminho: 'Saiu para entrega', concluido: 'Entregue' };
     case 'ENVIO':
+    case 'MELHOR_ENVIO':
       return { aCaminho: 'Enviado', concluido: 'Entregue' };
     default:
       return { aCaminho: 'Pronto para retirar', concluido: 'Retirado' };

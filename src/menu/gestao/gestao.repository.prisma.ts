@@ -117,9 +117,8 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
               corDestaque: loja.corDestaque ?? undefined,
               instagram: loja.instagram ?? undefined,
               aceitaPagamentoNaEntrega: loja.aceitaPagamentoNaEntrega,
-              aceitaEnvio: loja.aceitaEnvio,
-              freteEnvio: loja.freteEnvio === null ? undefined : Number(loja.freteEnvio),
-              fretePorUf: loja.fretePorUf as Record<string, number>,
+              usaMelhorEnvio: loja.usaMelhorEnvio,
+              cepOrigem: loja.cepOrigem ?? undefined,
               politicaTroca: loja.politicaTroca ?? undefined,
             }
           : {},
@@ -131,6 +130,7 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
           capaUrl: loja?.capaUrl ?? undefined,
           lembreteOpcionaisEm: loja?.lembreteOpcionaisEm ?? undefined,
           naoLembrarOpcionais: loja?.naoLembrarOpcionais ?? false,
+          avisarFimDoFreteFixo: loja?.avisarFimDoFreteFixo ?? false,
           tipoPendente: !loja?.segmentoDefinido,
         },
         segmento: loja?.segmento,
@@ -145,6 +145,10 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
         update: { segmento, segmentoDefinido: true },
         create: { empreendedorId, segmento, segmentoDefinido: true },
       });
+    },
+
+    async limparAvisoDoFreteFixo(telefone) {
+      await prisma.loja.updateMany({ where: { empreendedor: { telefone } }, data: { avisarFimDoFreteFixo: false } });
     },
 
     async registrarLembreteOpcionais(telefone, registro) {
@@ -166,6 +170,9 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
         for (const { categoriaId, novoNome } of rascunho.categoriasRenomeadas) {
           await tx.categoria.updateMany({ where: { id: categoriaId, cardapioId }, data: { nome: novoNome } });
         }
+        for (const { categoriaId, ...medidas } of rascunho.medidasDasCategorias ?? []) {
+          await tx.categoria.updateMany({ where: { id: categoriaId, cardapioId }, data: definidos(medidas) });
+        }
         if (rascunho.categoriasRemovidas.length > 0) {
           // Os itens dessas categorias ficam sem categoria (onDelete: SetNull).
           await tx.categoria.deleteMany({ where: { id: { in: rascunho.categoriasRemovidas }, cardapioId } });
@@ -185,6 +192,10 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
               descricao: novo.descricao,
               precoBase: novo.precoBase,
               imagemUrl: novo.imagemUrl,
+              pesoGramas: novo.pesoGramas,
+              alturaCm: novo.alturaCm,
+              larguraCm: novo.larguraCm,
+              comprimentoCm: novo.comprimentoCm,
               categoriaId: novo.categoria ? await idCategoria(novo.categoria) : undefined,
               variacoes: { create: (novo.variacoes ?? []).map(paraVariacaoPrisma) },
             },
@@ -203,6 +214,10 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
             descricao: edicao.descricao,
             precoBase: edicao.precoBase,
             imagemUrl: edicao.imagemUrl,
+            pesoGramas: edicao.pesoGramas,
+            alturaCm: edicao.alturaCm,
+            larguraCm: edicao.larguraCm,
+            comprimentoCm: edicao.comprimentoCm,
           });
           if (edicao.categoria !== undefined) {
             dados.categoriaId = edicao.categoria === null ? null : await idCategoria(edicao.categoria);
@@ -332,9 +347,8 @@ async function salvarLoja(tx: Tx, empreendedorId: string, loja: DadosLoja): Prom
     logoUrl: loja.logoUrl === '' ? null : loja.logoUrl,
     capaUrl: loja.capaUrl === '' ? null : loja.capaUrl,
     aceitaPagamentoNaEntrega: loja.aceitaPagamentoNaEntrega,
-    aceitaEnvio: loja.aceitaEnvio,
-    freteEnvio: loja.freteEnvio,
-    fretePorUf: loja.fretePorUf as Prisma.InputJsonValue | undefined,
+    usaMelhorEnvio: loja.usaMelhorEnvio,
+    cepOrigem: loja.cepOrigem,
     politicaTroca: loja.politicaTroca,
   });
   // O endereço é gravado inteiro (null limpa o que não veio), para não misturar com o anterior.

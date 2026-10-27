@@ -49,6 +49,8 @@ export interface ItemCardapio extends ItemDraft {
   id: string;
   /** Promoção valendo no momento da leitura; o precoBase continua o normal. */
   promocao?: PromocaoDoItem;
+  /** Guia de medidas (loja, Profissional): o do produto, ou o da categoria. */
+  guiaMedidas?: { nome: string; colunas: string[]; linhas: { tamanho: string; medidas: number[] }[] };
   cardapioId: string;
   categoriaId?: string;
   ativo: boolean;
@@ -97,8 +99,8 @@ export interface LojaPublica {
   fuso: string;
   /** Trocas e devoluções, em texto livre (varejo). */
   politicaTroca?: string;
-  /** Envio pelos Correios com frete fixo; ausente quando a loja não envia. */
-  envio?: { padrao?: number; porUf: Record<string, number> };
+  /** Envia por transportadora (Melhor Envio): o app cota com o CEP do cliente. */
+  melhorEnvio?: boolean;
   /** Rodapé "Feito com ZapMenu": o plano da loja não inclui tirar o selo. Só o cardápio público preenche. */
   mostrarSelo?: boolean;
   /** Assinatura suspensa: o app mostra "Loja temporariamente indisponível" e não aceita pedidos. */

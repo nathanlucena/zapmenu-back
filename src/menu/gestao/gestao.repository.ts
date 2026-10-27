@@ -42,6 +42,8 @@ export interface SnapshotCardapio {
     capaUrl?: string;
     lembreteOpcionaisEm?: Date;
     naoLembrarOpcionais: boolean;
+    /** Usava o frete fixo por região (removido): recebe o aviso uma vez. */
+    avisarFimDoFreteFixo?: boolean;
     /** Loja nova que ainda não escolheu entre cardápio e loja: é a primeira pergunta. */
     tipoPendente?: boolean;
   };
@@ -55,4 +57,6 @@ export interface GestaoRepository {
   definirSegmento(empreendedorId: string, segmento: SegmentoLoja): Promise<void>;
   /** Anota o lembrete dos opcionais (data) ou que a loja não quer mais ser lembrada. */
   registrarLembreteOpcionais(empreendedorId: string, registro: { em?: Date; desligar?: boolean }): Promise<void>;
+  /** O aviso do fim do frete fixo já foi dado. */
+  limparAvisoDoFreteFixo(empreendedorId: string): Promise<void>;
 }

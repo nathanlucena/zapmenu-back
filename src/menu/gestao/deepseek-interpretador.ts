@@ -59,7 +59,7 @@ OPERAÇÕES (cada uma é um objeto com "tipo"):
 - {"tipo": "nova_promocao", "preco": 39.9, "itens": ["id"], "dias": ["qua", "qui"], "hora_inicio": "18:00", "hora_fim": "23:00", "ate": "2026-11-30"} ou {"tipo": "nova_promocao", "percentual": 10, "categorias": ["id"]} — promoção ou desconto. Mande "preco" (preço fixo, só com "itens") OU "percentual" (1 a 90). Alvo: "itens" (ids), "categorias" (ids) ou nenhum dos dois = a loja toda. "dias" vazio ou ausente = todos os dias. "ate": último dia da promoção (AAAA-MM-DD), só se a pessoa disser; use a data de hoje (hoje) para calcular "até domingo". Promoção NUNCA muda o preço do item: não use editar_item para promoção. O sistema mostra o resumo e pede confirmação: não use "finalizou" por causa da promoção.
 
 FORMATOS
-- preco, pedido_minimo, taxa (das faixas), frete_envio, os valores de frete_por_uf e preco_adicional: número em reais com ponto decimal ("39,90" → 39.9; "42 reais" → 42).
+- preco, pedido_minimo, taxa (das faixas), taxa_entrega_fixa e preco_adicional: número em reais com ponto decimal ("39,90" → 39.9; "42 reais" → 42).
 - Só crie novo_item com um nome específico do produto. Se a pessoa disser só "mais uma pizza", "outro item" ou mandar só o preço, pergunte o nome antes; nunca invente um nome genérico ("Item", "Produto", "Pizza" sozinho quando ela tem vários sabores).
 - nome: nome do produto com iniciais maiúsculas, sem verbos ("coloca uma pizza calabresa" → "Pizza Calabresa"). descricao: detalhes (ingredientes, tamanho), sem o preço.
 - taxa_entrega_fixa: um valor só de entrega ("entrega é 5 reais" → 5; "entrega grátis" → 0). raio_entrega_km: até onde essa taxa vale ("até 4 km" → 4; "entrego em qualquer lugar", "sem limite" → 0). modo_entrega: "fixa" ou "distancia", só quando a pessoa quiser trocar de um jeito de cobrar para o outro sem mandar valores novos.
@@ -107,7 +107,7 @@ const BLOCO_CARDAPIO = `
 TIPO DA LOJA: CARDÁPIO (comida)
 - Fale em *cardápio* e *itens*.
 - variacoes (adicionais, tamanhos com preço): lista COMPLETA de variações do item (substitui as anteriores): [{"nome": "Tamanho", "opcoes": [{"nome": "P", "preco_adicional": 0}, {"nome": "G", "preco_adicional": 15}]}]. O preço do item é o da opção mais barata; preco_adicional é a diferença.
-- NÃO EXISTE neste tipo: grade de tamanhos e cores com estoque, envio pelos Correios e política de troca. Nunca use definir_grade, aceita_envio, frete_envio, frete_por_uf ou politica_troca. Se a pessoa pedir algo assim, explique numa frase que isso é do tipo *Loja* e que ela pode mandar *mudar tipo da loja*.
+- NÃO EXISTE neste tipo: grade de tamanhos e cores com estoque, envio por transportadora (Melhor Envio) e política de troca. Nunca use definir_grade, melhor_envio, cep_origem ou politica_troca. Se a pessoa pedir algo assim, explique numa frase que isso é do tipo *Loja* e que ela pode mandar *mudar tipo da loja*.
 
 EXEMPLO
 mensagem: "entrou pizza calabresa 39,90 e a coca agora é 15" (com a Coca 2L no cardápio com id "abc")
@@ -121,7 +121,9 @@ TIPO DA LOJA: LOJA (produtos: roupas, acessórios…)
 - Estoque é número inteiro. Se a pessoa não disser quantas peças tem, PERGUNTE: nunca invente estoque. Para mudar só o estoque ("chegaram mais 3 M azul", "acabou o G preto"), mande a grade completa atual (cardapio.itens[].grade) com o número novo.
 - Fotos: cada produto pode ter várias. Cada anexar_foto ACRESCENTA uma foto à galeria (não troca a anterior). Se a legenda disser a cor da peça na foto ("essa é a azul", "preta"), mande "cor": "Azul" no anexar_foto.
 - NUNCA use variacoes (adicionais com preço) neste tipo. Se a pessoa pedir adicional, explique numa frase que adicionais são do tipo *Cardápio* e que ela pode mandar *mudar tipo da loja*.
-- Envio pelos Correios em atualizar_loja: "aceita_envio": true, "frete_envio": 25 (frete fixo para o Brasil todo), "frete_por_uf": {"PE": 12} (só os estados com valor diferente). "envio pra todo o Brasil por 25, aqui em PE é 12" → aceita_envio true, frete_envio 25, frete_por_uf {"PE": 12}; "só envio pra PE e PB por 15" → frete_por_uf {"PE": 15, "PB": 15}, sem frete_envio.
+- COMO A LOJA ENTREGA: (1) envio próprio, com as mesmas regras da entrega (taxa_entrega_fixa com raio_entrega_km, ou faixas_entrega por distância) e "faz_entrega"; (2) transportadora pelo Melhor Envio, em atualizar_loja "melhor_envio": true/false, com "cep_origem" (CEP de onde saem as encomendas; se não disser, vale o do endereço da loja). Os dois podem estar ligados juntos, além da retirada. Se a pessoa perguntar "como você entrega?" ou quiser configurar envio, explique essas opções. Frete fixo por estado não existe mais: se pedirem, ofereça as opções acima.
+- Peso e medidas para o frete por transportadora: em novo_item/editar_item, "peso_g" (gramas) e "altura_cm", "largura_cm", "comprimento_cm" (centímetros do pacote). Para a categoria inteira: {"tipo": "medidas_da_categoria", "categoria_id": "...", "peso_g": 300, "altura_cm": 4, "largura_cm": 20, "comprimento_cm": 30}. "camiseta pesa 200g" → peso_g 200; "1,2 kg" → 1200. Nunca invente medidas.
+- Guia de medidas (tabela de tamanhos em cm) de uma categoria ou de um produto: {"tipo": "guia_de_medidas", "categoria_id": "..." (ou "item_id"), "nome": "Camisetas", "colunas": ["Busto", "Comprimento"], "linhas": [{"tamanho": "P", "medidas": [96, 68]}, {"tamanho": "M", "medidas": [100, 70]}]}. Uma medida por coluna, em centímetros, na mesma ordem. Use só os números que a pessoa mandou; se faltar algum, pergunte. O sistema mostra a tabela e pede confirmação.
 - Política de troca em atualizar_loja: "politica_troca": texto curto e claro com o que a pessoa disse ("troco em 7 dias com etiqueta" → "Troca em até 7 dias, com a etiqueta."). Não invente prazo nem regra que ela não disse. Lembre que compra online tem 7 dias de arrependimento (CDC) se ela perguntar.
 
 EXEMPLO
@@ -172,14 +174,6 @@ const faixasEntrega = z
   .nullish()
   .transform((valor) => valor?.map((faixa) => ({ ateKm: faixa.ate_km, taxa: faixa.taxa })));
 
-/** { "pe": "12,50" } → { PE: 12.5 }; UF com 2 letras. */
-const fretePorUf = z
-  .record(z.string().trim().regex(/^[a-z]{2}$/i), numeroLivre.pipe(z.number().nonnegative()))
-  .nullish()
-  .transform((valor) =>
-    valor ? Object.fromEntries(Object.entries(valor).map(([uf, frete]) => [uf.toUpperCase(), frete])) : undefined,
-  );
-
 /** CEP e número podem vir como número no json. */
 const textoOuNumero = z
   .union([z.string(), z.number()])
@@ -221,12 +215,20 @@ const horarios = z
   .nullish()
   .transform((valor) => valor ?? undefined);
 
+const medidas = {
+  peso_g: numero,
+  altura_cm: numero,
+  largura_cm: numero,
+  comprimento_cm: numero,
+};
+
 const camposItem = {
   nome: texto,
   descricao: texto,
   preco: numero,
   categoria: z.string().trim().nullish(),
   variacoes,
+  ...medidas,
 };
 
 function dadosItem(campos: {
@@ -235,6 +237,10 @@ function dadosItem(campos: {
   preco?: number;
   categoria?: string | null;
   variacoes?: Variacao[];
+  peso_g?: number;
+  altura_cm?: number;
+  largura_cm?: number;
+  comprimento_cm?: number;
 }): DadosItemOperacao {
   return {
     nome: campos.nome,
@@ -242,6 +248,10 @@ function dadosItem(campos: {
     precoBase: campos.preco,
     categoria: campos.categoria === '' ? null : campos.categoria,
     variacoes: campos.variacoes,
+    pesoGramas: campos.peso_g,
+    alturaCm: campos.altura_cm,
+    larguraCm: campos.largura_cm,
+    comprimentoCm: campos.comprimento_cm,
   };
 }
 
@@ -349,9 +359,8 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
       link: texto,
       cor_destaque: texto,
       aceita_pagamento_na_entrega: booleano,
-      aceita_envio: booleano,
-      frete_envio: numero,
-      frete_por_uf: fretePorUf,
+      melhor_envio: booleano,
+      cep_origem: textoOuNumero,
       politica_troca: texto,
       instagram: texto,
     })
@@ -371,9 +380,8 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
         slug: op.link,
         corDestaque: op.cor_destaque,
         aceitaPagamentoNaEntrega: op.aceita_pagamento_na_entrega,
-        aceitaEnvio: op.aceita_envio,
-        freteEnvio: op.frete_envio,
-        fretePorUf: op.frete_por_uf,
+        usaMelhorEnvio: op.melhor_envio,
+        cepOrigem: op.cep_origem,
         politicaTroca: op.politica_troca,
         instagram: op.instagram,
       },
@@ -409,6 +417,35 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
   z.object({ tipo: z.literal('confirmar_endereco') }).transform((): Operacao => ({ tipo: 'CONFIRMAR_ENDERECO' })),
   z.object({ tipo: z.literal('recusar_endereco') }).transform((): Operacao => ({ tipo: 'RECUSAR_ENDERECO' })),
   z.object({ tipo: z.literal('descartar_tudo') }).transform((): Operacao => ({ tipo: 'DESCARTAR_TUDO' })),
+  z
+    .object({
+      tipo: z.literal('guia_de_medidas'),
+      item_id: z.string().trim().min(1).nullish(),
+      categoria_id: z.string().trim().min(1).nullish(),
+      nome: texto,
+      colunas: z.array(z.string().trim().min(1)).min(1),
+      linhas: z.array(z.object({ tamanho: z.union([z.string(), z.number()]).transform(String), medidas: z.array(numeroLivre) })).min(1),
+    })
+    .refine((op) => Boolean(op.item_id) !== Boolean(op.categoria_id), 'mande item_id OU categoria_id')
+    .transform(
+      (op): Operacao => ({
+        tipo: 'DEFINIR_GUIA_MEDIDAS',
+        alvo: op.item_id ? { tipo: 'ITEM', id: op.item_id } : { tipo: 'CATEGORIA', id: op.categoria_id! },
+        guia: { nome: op.nome ?? 'Guia de medidas', colunas: op.colunas, linhas: op.linhas.map((linha) => ({ tamanho: linha.tamanho.trim(), medidas: linha.medidas })) },
+      }),
+    ),
+  z
+    .object({ tipo: z.literal('medidas_da_categoria'), categoria_id: idObrigatorio, ...medidas })
+    .transform(
+      (op): Operacao => ({
+        tipo: 'MEDIDAS_DA_CATEGORIA',
+        categoriaId: op.categoria_id,
+        pesoGramas: op.peso_g,
+        alturaCm: op.altura_cm,
+        larguraCm: op.largura_cm,
+        comprimentoCm: op.comprimento_cm,
+      }),
+    ),
   z
     .object({
       tipo: z.literal('nova_promocao'),

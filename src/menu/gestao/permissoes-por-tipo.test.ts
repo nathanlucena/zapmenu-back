@@ -11,8 +11,8 @@ describe('filtrarPorTipo', () => {
   it('cardápio: recusa grade, envio e política de troca, mantendo o resto da operação', () => {
     const saida = filtrarPorTipo('COMIDA', [
       GRADE,
-      { tipo: 'ATUALIZAR_LOJA', dados: { nome: 'Pizzaria', aceitaEnvio: true, freteEnvio: 25, politicaTroca: 'troca' } },
-      { tipo: 'ATUALIZAR_LOJA', dados: { fretePorUf: { PE: 12 } } },
+      { tipo: 'ATUALIZAR_LOJA', dados: { nome: 'Pizzaria', usaMelhorEnvio: true, politicaTroca: 'troca' } },
+      { tipo: 'ATUALIZAR_LOJA', dados: { cepOrigem: '50050000' } },
       { tipo: 'NOVO_ITEM', ref: 'n2', dados: { nome: 'Pizza', variacoes: TAMANHOS } },
     ]);
 
@@ -32,14 +32,14 @@ describe('filtrarPorTipo', () => {
       { tipo: 'NOVO_ITEM', ref: 'n1', dados: { nome: 'Camiseta', precoBase: 59.9, variacoes: TAMANHOS } },
       { tipo: 'EDITAR_ITEM', itemId: 'i1', dados: { variacoes: TAMANHOS } },
       GRADE,
-      { tipo: 'ATUALIZAR_LOJA', dados: { aceitaEnvio: true, freteEnvio: 25, politicaTroca: 'Troca em 7 dias' } },
+      { tipo: 'ATUALIZAR_LOJA', dados: { usaMelhorEnvio: true, cepOrigem: '50050000', politicaTroca: 'Troca em 7 dias' } },
     ]);
 
     expect(saida.operacoes).toEqual([
       { tipo: 'NOVO_ITEM', ref: 'n1', dados: { nome: 'Camiseta', precoBase: 59.9 } },
       { tipo: 'EDITAR_ITEM', itemId: 'i1', dados: {} },
       GRADE,
-      { tipo: 'ATUALIZAR_LOJA', dados: { aceitaEnvio: true, freteEnvio: 25, politicaTroca: 'Troca em 7 dias' } },
+      { tipo: 'ATUALIZAR_LOJA', dados: { usaMelhorEnvio: true, cepOrigem: '50050000', politicaTroca: 'Troca em 7 dias' } },
     ]);
     expect(saida.avisos).toEqual([AVISO_SO_DO_CARDAPIO]);
   });

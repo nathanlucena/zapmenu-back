@@ -25,6 +25,8 @@ import { conversaDosRelatorios } from './conversa-dos-relatorios.js';
 import { conversaDasDescricoes, oferecerDescricoes, type DescricoesDeps } from './conversa-das-descricoes.js';
 import { destinoDaLegenda, destinoDaResposta, OPCOES_DESTINO_FOTO, PERGUNTA_DESTINO_FOTO } from './foto-da-loja.js';
 import type { ImagensDaLoja } from '../imagens/imagens-da-loja.js';
+import { problemasDoGuia, tabelaEmTexto } from '../guia-medidas/guia-medidas.js';
+import type { GuiasRepository } from '../guia-medidas/guias.repository.js';
 import type { RelatoriosDeps } from '../../relatorios/application/relatorios.js';
 import { conversaDasPromocoes, proporPromocao, type ConversaDasPromocoes, type PromocoesDeps } from './conversa-das-promocoes.js';
 import { diaNoFuso } from '../../planos/domain/calendario.js';
@@ -86,6 +88,13 @@ export interface GestaoDeps {
   previas?: { repo: PreviasRepository; urlDaImagem: (id: string) => string };
   /** Planos e assinatura. Sem isso, a gestão não limita nada (como antes dos planos). */
   planos?: PlanosDeps;
+  /** Guias de medidas (loja, Profissional). Sem isso, a gestão diz que não está disponível. */
+  guias?: GuiasRepository;
+  /** Conta do Melhor Envio da loja (link de conexão). Sem isso, o envio por transportadora fica indisponível. */
+  melhorEnvio?: {
+    linkParaConectar(telefone: string): Promise<string | undefined>;
+    conectada(telefone: string): Promise<boolean>;
+  };
   /** Promoções da loja. Sem isso, a gestão responde que ainda não estão disponíveis. */
   promocoes?: PromocoesDeps;
   /** Relatórios de vendas pedidos na conversa. Sem isso, "relatório" vai para a IA. */
@@ -164,6 +173,8 @@ export async function processarMensagemGestao(mensagem: MensagemGestao, deps: Ge
     }
   }
 
+  await avisarFimDoFreteFixo(rodada);
+
   rodada.contexto.atualizadoEm = new Date().toISOString();
   logger.info(
     {
@@ -221,6 +232,9 @@ async function tratar(rodada: Rodada): Promise<void> {
     return;
   }
   if (await tratarDescricoes(rodada)) {
+    return;
+  }
+  if (await tratarGuiaPendente(rodada)) {
     return;
   }
   if (rodada.snapshot.lojaSalva.tipoPendente) {
@@ -293,6 +307,9 @@ async function tratar(rodada: Rodada): Promise<void> {
       await finalizar(rodada);
       return;
     }
+    case 'CONECTAR_MELHOR_ENVIO':
+      responder(rodada, await textoDeConexaoDoMelhorEnvio(rodada));
+      return;
     case 'NAO_LEMBRAR':
       await rodada.deps.gestaoRepo.registrarLembreteOpcionais(rodada.empreendedorId, { desligar: true });
       responder(rodada, 'Combinado, não lembro mais dos dados opcionais. Se quiser ver o que falta, mande *o que falta*. 🙂');
@@ -388,6 +405,54 @@ async function tratarDescricoes(rodada: Rodada): Promise<boolean> {
   });
   respostas?.forEach((resposta) => responder(rodada, resposta));
   return Boolean(respostas);
+}
+
+/** Mostra a tabela que a IA montou e guarda para o "sim". */
+function proporGuia(
+  rodada: Rodada,
+  alvo: NonNullable<Contexto['guiaPendente']>['alvo'],
+  guia: NonNullable<Contexto['guiaPendente']>['guia'],
+): void {
+  if (!rodada.deps.guias) {
+    responder(rodada, 'O guia de medidas ainda não está disponível por aqui.');
+    return;
+  }
+  const existe =
+    alvo.tipo === 'ITEM'
+      ? rodada.snapshot.itens.some((item) => item.id === alvo.id)
+      : rodada.snapshot.categorias.some((categoria) => categoria.id === alvo.id);
+  const problemas = existe ? problemasDoGuia(guia) : ['não achei o produto ou a categoria do guia'];
+  if (problemas.length > 0) {
+    responder(rodada, `Não consegui montar o guia de medidas: ${problemas.join('; ')}. Pode mandar de novo?`);
+    return;
+  }
+  const nomeDoAlvo =
+    alvo.tipo === 'ITEM'
+      ? rodada.snapshot.itens.find((item) => item.id === alvo.id)?.nome
+      : `categoria ${rodada.snapshot.categorias.find((categoria) => categoria.id === alvo.id)?.nome}`;
+  rodada.contexto.guiaPendente = { alvo, guia };
+  responder(rodada, [`📏 *${guia.nome}* (${nomeDoAlvo})`, tabelaEmTexto(guia), '', 'Confirma? (*sim*/*não*)'].join('\n'));
+}
+
+/** "sim" grava o guia mostrado; "não"/"cancelar" descarta; outra mensagem deixa de lado e segue a conversa. */
+async function tratarGuiaPendente(rodada: Rodada): Promise<boolean> {
+  const pendente = rodada.contexto.guiaPendente;
+  if (!pendente || !rodada.deps.guias) {
+    return false;
+  }
+  const comando = rodada.mensagem.imagemUrl ? undefined : reconhecerComando(rodada.mensagem.texto);
+  rodada.contexto.guiaPendente = undefined;
+  if (comando === 'NAO' || comando === 'CANCELAR') {
+    responder(rodada, 'Ok, descartei o guia de medidas.');
+    return true;
+  }
+  if (comando !== 'SIM') {
+    return false;
+  }
+  await rodada.deps.guias.salvar(rodada.empreendedorId, pendente.alvo, pendente.guia);
+  logger.info({ telefone: rodada.mensagem.telefone, alvo: pendente.alvo.tipo }, '📏 guia de medidas salvo');
+  responder(rodada, '✅ Guia de medidas salvo! Na vitrine, aparece o link *Guia de medidas* ao lado dos tamanhos.');
+  return true;
 }
 
 /** "relatório", "vendas de hoje"… e o liga/desliga do relatório diário. */
@@ -684,7 +749,10 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
   );
   // Promoção não entra no rascunho: tem resumo e "sim" próprios.
   const promocoesPropostas = doPlano.operacoes.flatMap((operacao) => (operacao.tipo === 'NOVA_PROMOCAO' ? [operacao.promocao] : []));
-  const paraORascunho = doPlano.operacoes.filter((operacao) => operacao.tipo !== 'NOVA_PROMOCAO');
+  const guiaProposto = doPlano.operacoes.find((operacao) => operacao.tipo === 'DEFINIR_GUIA_MEDIDAS');
+  const paraORascunho = doPlano.operacoes.filter(
+    (operacao) => operacao.tipo !== 'NOVA_PROMOCAO' && operacao.tipo !== 'DEFINIR_GUIA_MEDIDAS',
+  );
   const avisos = [
     ...doTipo.avisos,
     ...doPlano.avisos,
@@ -732,6 +800,10 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
     }
   }
 
+  if (guiaProposto?.tipo === 'DEFINIR_GUIA_MEDIDAS') {
+    proporGuia(rodada, guiaProposto.alvo, guiaProposto.guia);
+  }
+
   const mudouRascunho = paraORascunho.length > 0;
   if (estadoAnterior === 'CONFIRMANDO' && !mudouRascunho) {
     if (saida.decisao === 'CONFIRMAR') {
@@ -747,7 +819,7 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
   rodada.estado = 'CONVERSANDO';
   // Com um endereço acabando de ser encontrado, a pergunta "é aqui?" vem antes do resumo.
   // Com uma promoção esperando o "sim", o resumo dela vem antes do resumo do rascunho.
-  if (saida.finalizou && !rodada.contexto.enderecoPendente && !rodada.contexto.promocaoPendente) {
+  if (saida.finalizou && !rodada.contexto.enderecoPendente && !rodada.contexto.promocaoPendente && !rodada.contexto.guiaPendente) {
     await finalizar(rodada);
   }
 }
@@ -844,7 +916,7 @@ function lojaParaCadastro(rodada: Rodada, rascunho?: DadosLoja): LojaParaCadastr
     slug: loja.slug,
     aceitaRetirada: loja.aceitaRetirada,
     fazEntrega: loja.fazEntrega,
-    aceitaEnvio: loja.aceitaEnvio,
+    usaMelhorEnvio: loja.usaMelhorEnvio,
     enderecoConfirmado: Boolean(loja.enderecoVerificado),
     faixasEntrega: loja.faixasEntrega,
     taxaEntrega: loja.taxaEntrega,
@@ -936,6 +1008,18 @@ async function avisarSituacaoDoCadastro(rodada: Rodada, completoAntes: boolean):
  * usando a distância (pede a taxa fixa) e a antiga sem endereço ou faixas.
  * Até a loja responder, só retirada; nada do que estava configurado é apagado.
  */
+export const AVISO_FIM_DO_FRETE_FIXO =
+  '📦 Mudou o envio: o frete fixo por estado saiu. Agora você pode entregar com *envio próprio* (um valor só ou por distância, com raio máximo) e, no plano Profissional, *por transportadora com o Melhor Envio*. Seu envio está desligado até você configurar: é só me dizer como quer entregar.';
+
+/** Loja que usava o frete fixo por região (removido): avisa uma vez. */
+async function avisarFimDoFreteFixo(rodada: Rodada): Promise<void> {
+  if (!rodada.snapshot.lojaSalva.avisarFimDoFreteFixo) {
+    return;
+  }
+  responder(rodada, AVISO_FIM_DO_FRETE_FIXO);
+  await rodada.deps.gestaoRepo.limparAvisoDoFreteFixo(rodada.empreendedorId);
+}
+
 function avisarEntregaPorConfigurar(rodada: Rodada): void {
   const loja = { ...rodada.snapshot.loja, ...rodada.contexto.rascunho.loja };
   const distancia = entregaPorDistancia(rodada);
@@ -1051,6 +1135,25 @@ async function salvar(rodada: Rodada): Promise<void> {
     );
     if (oferta) responder(rodada, oferta);
   }
+  // Ligou o envio por transportadora sem a conta conectada: manda o link.
+  if (rascunho.loja?.usaMelhorEnvio && rodada.deps.melhorEnvio && !(await rodada.deps.melhorEnvio.conectada(rodada.empreendedorId))) {
+    responder(rodada, await textoDeConexaoDoMelhorEnvio(rodada));
+  }
+}
+
+/** Link para conectar a conta do Melhor Envio (Profissional, tipo Loja). */
+async function textoDeConexaoDoMelhorEnvio(rodada: Rodada): Promise<string> {
+  if (!recursoLiberado(rodada, 'MELHOR_ENVIO')) {
+    return mensagemRecursoDoPlano('MELHOR_ENVIO', rodada.deps.planos?.linkDosPlanos);
+  }
+  if (rodada.snapshot.segmento !== 'VAREJO') {
+    return 'O envio por transportadora é do tipo *Loja*. Para trocar, mande *mudar tipo da loja*.';
+  }
+  const link = rodada.deps.melhorEnvio && (await rodada.deps.melhorEnvio.linkParaConectar(rodada.empreendedorId));
+  if (!link) {
+    return 'O envio pelo Melhor Envio ainda não está disponível por aqui.';
+  }
+  return `📦 Para enviar por transportadora, conecte sua conta do Melhor Envio (é grátis criar): ${link}\nDepois de autorizar, eu aviso aqui. As etiquetas são pagas com o saldo da sua conta.`;
 }
 
 function reiniciar(rodada: Rodada): void {

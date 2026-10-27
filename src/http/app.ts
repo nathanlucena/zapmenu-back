@@ -4,6 +4,9 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type { MenuRepository } from '../menu/menu.repository.js';
 import type { OrdersRepository } from '../orders/application/ports/orders.repository.js';
 import type { PaymentsServiceDeps } from '../payments/application/dependencias.js';
+import type { CotadorDeFrete } from '../orders/application/ports/cotador-de-frete.js';
+import type { MelhorEnvioDeps } from '../envio/application/dependencias.js';
+import { registerMelhorEnvioRoutes } from './v1/melhor-envio.routes.js';
 import { criarCardapioDePrecos } from '../menu/cardapio-de-precos.js';
 import { criarLocalizadorEntrega } from '../menu/endereco/localizador-entrega.js';
 import type { EnderecoDeps } from '../menu/endereco/endereco.types.js';
@@ -28,6 +31,12 @@ export interface AppDeps {
   whatsappPedidos?: string;
   /** ViaCEP + Google. Sem isso, os pedidos só podem ser de retirada. */
   endereco?: EnderecoDeps;
+  /** Só o ViaCEP, para o envio por transportadora (não precisa do mapa). Sem ele, usa o de `endereco`. */
+  consultaCep?: EnderecoDeps['consultaCep'];
+  /** Melhor Envio. Sem ele, não há envio por transportadora. */
+  cotadorDeFrete?: CotadorDeFrete;
+  /** Conta do Melhor Envio das lojas (retorno do OAuth). */
+  melhorEnvio?: MelhorEnvioDeps;
   paymentsDeps?: PaymentsServiceDeps;
   /** Obrigatório junto com paymentsDeps: o webhook só aceita notificações assinadas. */
   mercadoPagoWebhookSecret?: string;
@@ -57,11 +66,15 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         cardapioDePrecos: criarCardapioDePrecos(deps.menuRepo),
         lojaParaPedidos: criarLojaParaPedidos(deps.menuRepo),
         localizador: deps.endereco && criarLocalizadorEntrega(deps.endereco),
-        consultaCep: deps.endereco?.consultaCep,
+        consultaCep: deps.consultaCep ?? deps.endereco?.consultaCep,
+        cotadorDeFrete: deps.cotadorDeFrete,
         pedidoTtlMinutos: deps.pedidoTtlMinutos,
       });
       if (deps.previas) {
         registerPreviasRoutes(v1, deps.previas);
+      }
+      if (deps.melhorEnvio) {
+        registerMelhorEnvioRoutes(v1, deps.melhorEnvio);
       }
       if (deps.paymentsDeps) {
         if (!deps.mercadoPagoWebhookSecret) {

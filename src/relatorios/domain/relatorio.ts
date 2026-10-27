@@ -8,7 +8,7 @@ export interface PedidoParaRelatorio {
   /** Itens + entrega. */
   valorTotal: number;
   criadoEm: Date;
-  modalidade: 'RETIRADA' | 'ENTREGA' | 'ENVIO';
+  modalidade: 'RETIRADA' | 'ENTREGA' | 'ENVIO' | 'MELHOR_ENVIO';
   formaPagamento: 'PIX' | 'DINHEIRO' | 'CARTAO';
   itens: { nome: string; quantidade: number; precoUnitario: number }[];
 }
@@ -98,7 +98,7 @@ function partes<T extends string>(contagem: Partial<Record<T, number>>, nomes: R
     .join(' · ');
 }
 
-const MODALIDADES = { ENTREGA: 'Entrega', RETIRADA: 'Retirada', ENVIO: 'Correios' } as const;
+const MODALIDADES = { ENTREGA: 'Entrega', RETIRADA: 'Retirada', MELHOR_ENVIO: 'Transportadora', ENVIO: 'Correios' } as const;
 const PAGAMENTOS = { PIX: 'PIX', CARTAO: 'Cartão na entrega', DINHEIRO: 'Dinheiro na entrega' } as const;
 
 /**

@@ -31,8 +31,26 @@ export const ROTULO_STATUS_PEDIDO: Record<StatusPedido, string> = {
   CANCELADO: 'Cancelado',
 };
 
-/** ENVIO: pelos Correios/transportadora, com frete fixo (varejo). */
-export type ModalidadePedido = 'RETIRADA' | 'ENTREGA' | 'ENVIO';
+/**
+ * ENTREGA: envio próprio da loja (taxa fixa ou por distância), no restaurante e
+ * no varejo. MELHOR_ENVIO: transportadora cotada no Melhor Envio. ENVIO: o
+ * antigo frete fixo por região, removido; só aparece em pedidos antigos.
+ */
+export type ModalidadePedido = 'RETIRADA' | 'ENTREGA' | 'ENVIO' | 'MELHOR_ENVIO';
+
+/** Despachado por transportadora (com rastreio): o Melhor Envio e o antigo frete fixo. */
+export function porTransportadora(modalidade: ModalidadePedido | undefined): boolean {
+  return modalidade === 'MELHOR_ENVIO' || modalidade === 'ENVIO';
+}
+
+/** Serviço do Melhor Envio escolhido no checkout (o preço é o do momento do pedido). */
+export interface ServicoEnvio {
+  id: string;
+  nome: string;
+  empresa: string;
+  preco: number;
+  prazoDias?: number;
+}
 
 /** PIX antes; dinheiro ou cartão na maquininha, na entrega ou no balcão. */
 export type FormaPagamento = 'PIX' | 'DINHEIRO' | 'CARTAO';
@@ -69,7 +87,7 @@ export interface EnderecoEntrega {
   distanciaKm: number;
 }
 
-/** Endereço de envio pelos Correios: vem do CEP, sem mapa nem distância. */
+/** Endereço de envio por transportadora: vem do CEP, sem mapa nem distância. */
 export type EnderecoEnvio = Omit<EnderecoEntrega, 'latitude' | 'longitude' | 'distanciaKm'>;
 
 /** O que o cliente informou além dos itens. Pedidos antigos não têm esses campos. */
@@ -84,6 +102,8 @@ export interface DetalhesPedido {
   formaPagamento?: FormaPagamento;
   /** Só no dinheiro: quanto o cliente vai entregar. */
   trocoPara?: number;
+  /** Só no Melhor Envio. */
+  servicoEnvio?: ServicoEnvio;
 }
 
 export interface ItemPedidoInput {
@@ -146,6 +166,8 @@ export interface Pedido extends DetalhesPedido {
   faltaEstoque?: FaltaEstoque[];
   codigoRastreio?: string;
   transportadora?: string;
+  /** Etiqueta comprada no Melhor Envio. */
+  etiquetaId?: string;
 }
 
 /** O que o app do cliente vê de um pedido: sem telefone, endereço do cliente nem ids internos. */
@@ -331,6 +353,7 @@ export function statusACaminho(modalidade: ModalidadePedido | undefined): Status
     case 'ENTREGA':
       return 'SAIU_PARA_ENTREGA';
     case 'ENVIO':
+    case 'MELHOR_ENVIO':
       return 'ENVIADO';
     default:
       return 'PRONTO_PARA_RETIRADA';

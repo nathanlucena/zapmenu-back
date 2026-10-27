@@ -1,4 +1,4 @@
-import { descreverPagamento, pagaNaEntrega, type Pedido } from '../domain/pedido.js';
+import { porTransportadora, descreverPagamento, pagaNaEntrega, type Pedido } from '../domain/pedido.js';
 
 /** Mensagem ao cliente quando o PIX é aprovado: a partir daqui a loja está preparando. */
 export function mensagemPagamentoConfirmado(pedido: Pick<Pedido, 'codigoCurto'>): string {
@@ -18,7 +18,7 @@ export function mensagemAndamento(
   switch (pedido.status) {
     case 'SEPARADO':
       return `Seu pedido ${pedido.codigoCurto} foi separado 📦 Avisamos quando ${
-        pedido.modalidade === 'ENTREGA' ? 'sair' : pedido.modalidade === 'ENVIO' ? 'for enviado' : 'estiver pronto para retirar'
+        pedido.modalidade === 'ENTREGA' ? 'sair' : porTransportadora(pedido.modalidade) ? 'for enviado' : 'estiver pronto para retirar'
       }.`;
     case 'ENVIADO': {
       const por = !pedido.transportadora
