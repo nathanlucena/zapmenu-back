@@ -1,6 +1,7 @@
 import { DomainError } from '../shared/errors/domain-error.js';
 import type { MenuRepository } from './menu.repository.js';
 import type { ItemCardapio, ItemDraft, Sku, VariacaoInput } from './menu.types.js';
+import { aplicarPromocao } from '../promocoes/domain/promocao.js';
 
 export function lojaNaoEncontrada(): DomainError {
   return new DomainError('Loja não encontrada.', 'LOJA_NAO_ENCONTRADA', 'NAO_ENCONTRADO');
@@ -87,8 +88,8 @@ export async function criarItem(
 /**
  * Preço de uma unidade do item com as opções escolhidas. `escolha` mapeia o
  * nome da variação para o nome da opção (ex.: { Tamanho: "G" }). O preço do
- * SKU, quando tem, substitui o precoBase. O preço vem sempre do cardápio —
- * nunca do que o cliente enviou.
+ * SKU, quando tem, substitui o precoBase, e a promoção que vale agora entra
+ * por cima dele. O preço vem sempre do cardápio — nunca do que o cliente enviou.
  */
 export function calcularPrecoUnitario(
   item: ItemCardapio,
@@ -103,6 +104,10 @@ export function calcularPrecoUnitario(
   }
 
   let preco = sku?.preco ?? item.precoBase;
+  // A promoção do momento vale sobre o preço do item (ou do tamanho/cor); as variações somam por cima.
+  if (item.promocao) {
+    preco = Math.min(preco, aplicarPromocao(preco, item.promocao));
+  }
   for (const variacao of item.variacoes) {
     const escolhida = escolha[variacao.nome];
     const opcao = variacao.opcoes.find((candidata) => candidata.nome === escolhida);

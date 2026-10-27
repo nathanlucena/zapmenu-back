@@ -37,7 +37,8 @@ model Categoria {
   ordem      Int      @default(0)
   criadoEm   DateTime @default(now())
 
-  itens ItemCardapio[]
+  itens     ItemCardapio[]
+  promocoes PromocaoAlvo[]
 
   @@unique([cardapioId, nome])
   @@index([cardapioId])
@@ -122,6 +123,8 @@ model Loja {
   /// Exceções por UF: { "PE": 12, "SP": 30 }.
   fretePorUf               Json         @default("{}")
   atualizadoEm             DateTime     @updatedAt
+
+  promocoes Promocao[]
 }
 
 model ItemCardapio {
@@ -144,6 +147,7 @@ model ItemCardapio {
   itensPedido ItemPedido[]
   fotos       FotoProduto[]
   skus        Sku[]
+  promocoes   PromocaoAlvo[]
 
   @@index([cardapioId])
   @@index([categoriaId])
@@ -406,4 +410,48 @@ model Assinatura {
   atualizadoEm       DateTime          @updatedAt
 
   @@index([status])
+}
+
+enum TipoPromocao {
+  /// Preço fixo em reais (ex.: calabresa por 39,90).
+  PRECO_FIXO
+  /// Desconto em % (1 a 90), arredondado para baixo no centavo.
+  PERCENTUAL
+}
+
+/// Promoção da loja. Nunca altera o precoBase: vale na vitrine e no preço do pedido enquanto estiver no dia e horário.
+model Promocao {
+  id         String         @id @default(cuid())
+  lojaId     String
+  loja       Loja           @relation(fields: [lojaId], references: [id])
+  tipo       TipoPromocao
+  /// Reais (PRECO_FIXO) ou porcentagem (PERCENTUAL).
+  valor      Decimal        @db.Decimal(10, 2)
+  /// 0 = domingo … 6 = sábado. Vazio = todos os dias.
+  diasSemana Int[]
+  /// "HH:MM" no fuso da loja; sem horário = o dia inteiro.
+  horaInicio String?
+  horaFim    String?
+  inicio     DateTime?
+  fim        DateTime?
+  ativa      Boolean        @default(true)
+  /// O lojista já foi avisado de que ela venceu.
+  avisoFimEm DateTime?
+  criadaEm   DateTime       @default(now())
+  alvos      PromocaoAlvo[]
+
+  @@index([lojaId])
+}
+
+/// Onde a promoção vale: um item, uma categoria, ou nenhuma linha = a loja toda.
+model PromocaoAlvo {
+  id          String        @id @default(cuid())
+  promocaoId  String
+  promocao    Promocao      @relation(fields: [promocaoId], references: [id], onDelete: Cascade)
+  itemId      String?
+  item        ItemCardapio? @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  categoriaId String?
+  categoria   Categoria?    @relation(fields: [categoriaId], references: [id], onDelete: Cascade)
+
+  @@index([promocaoId])
 }
