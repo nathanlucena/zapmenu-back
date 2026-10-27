@@ -42,6 +42,7 @@ import type { PlanosDeps } from './planos/application/dependencias.js';
 import { criarMercadoPagoAssinaturasClient } from './planos/infra/mercado-pago-assinaturas.client.js';
 import { iniciarJobAssinaturas } from './planos/infra/assinaturas.job.js';
 import { criarPromocoesRepositoryPrisma } from './promocoes/infra/promocoes.repository.prisma.js';
+import { iniciarJobPromocoes } from './promocoes/infra/promocoes.job.js';
 
 async function main(): Promise<void> {
   const env = getEnv();
@@ -243,6 +244,8 @@ async function main(): Promise<void> {
     env.PAGAMENTO_POLLING_INTERVALO_SEGUNDOS,
   );
   iniciarJobAssinaturas(planos, env.ASSINATURAS_VERIFICACAO_INTERVALO_MINUTOS * 60_000);
+  // Promoção vencida desliga sozinha; o aviso ao lojista sai no dia seguinte. Mesmo ritmo do job das assinaturas.
+  iniciarJobPromocoes(promocoes, env.ASSINATURAS_VERIFICACAO_INTERVALO_MINUTOS * 60_000);
   // Prévias em imagem vencem em 1 h; limpa de hora em hora.
   setInterval(() => {
     previas.apagarVencidas().catch((erro: unknown) => logger.error({ err: erro }, 'falha ao apagar prévias vencidas'));

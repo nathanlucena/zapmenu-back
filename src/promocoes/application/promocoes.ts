@@ -103,7 +103,7 @@ export function descreverPromocao(
   const oQue =
     promocao.tipo === 'PRECO_FIXO'
       ? `${descreverAlvo(promocao, catalogo)} por ${reais(promocao.valor)}`
-      : `${promocao.valor}% de desconto em ${descreverAlvo(promocao, catalogo)}`;
+      : `${promocao.valor}% de desconto ${promocao.alvo.tipo === 'LOJA' ? 'na loja toda' : `em ${descreverAlvo(promocao, catalogo)}`}`;
   return [
     oQue,
     descreverDias(promocao.diasSemana),
@@ -192,7 +192,7 @@ export async function verificarPromocoesVencidas(
       const desconto = promocao.tipo === 'PERCENTUAL' ? `O desconto de ${promocao.valor}%` : 'A promoção';
       await deps.mensageiro.enviarTexto(
         loja.telefone,
-        `⌛ ${desconto} que ia até ${diaEMes(promocao.fim, loja.fuso)} terminou e foi desligada. Os preços voltaram ao normal. Quer criar outra? É só me dizer.`,
+        `⌛ ${desconto} que ia até ${diaEMes(promocao.fim, loja.fuso)} terminou. Os preços voltaram ao normal. Quer criar outra? É só me dizer.`,
       );
     } catch (erro) {
       logger.error({ err: erro, promocaoId: promocao.id }, 'falha ao encerrar a promoção vencida');
