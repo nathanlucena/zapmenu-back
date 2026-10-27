@@ -16,9 +16,9 @@ import {
   valorDaCobrancaCentavos,
   verificarAssinatura,
   type Assinatura,
-} from './assinatura.js';
-import { RECURSOS } from './catalogo.js';
-import { diaNoFuso, intervaloDoMes, mesNoFuso } from './calendario.js';
+} from './domain/assinatura.js';
+import { RECURSOS } from './domain/catalogo.js';
+import { diaNoFuso, intervaloDoMes, mesNoFuso } from './domain/calendario.js';
 
 const FUSO = 'America/Sao_Paulo';
 const DIA = 24 * 60 * 60_000;
@@ -140,8 +140,11 @@ describe('ciclo da assinatura', () => {
   });
 
   it('não muda de plano sem assinatura ativa nem para o mesmo plano', () => {
-    expect(() => mudarPlano(iniciarTeste('emp-1', INICIO), 'ESSENCIAL')).toThrow('assinatura ativa');
-    expect(() => mudarPlano(ativa(), 'PROFISSIONAL')).toThrow('já está no plano Profissional');
+    expect(() => mudarPlano(iniciarTeste('emp-1', INICIO), 'ESSENCIAL')).toThrow(
+      expect.objectContaining({ code: 'ASSINATURA_NAO_ATIVA' }),
+    );
+    expect(() => mudarPlano(ativa(), 'PROFISSIONAL')).toThrow(expect.objectContaining({ code: 'MESMO_PLANO' }));
+    expect(() => cancelarAssinatura(iniciarTeste('emp-1', INICIO), INICIO)).toThrow('Não há assinatura ativa');
   });
 
   it('cancelada segue no plano até o fim do período pago e depois é suspensa', () => {

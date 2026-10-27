@@ -16,6 +16,7 @@ model Empreendedor {
   loja            Loja?
   estadosConversa EstadoConversa[]
   pedidos         Pedido[]
+  assinatura      Assinatura?
 }
 
 model Cardapio {
@@ -341,4 +342,58 @@ model PreviaGestao {
   criadoEm DateTime @default(now())
 
   @@index([expiraEm])
+}
+
+enum PlanoAssinatura {
+  /// Exibido como "Básico".
+  ESSENCIAL
+  PROFISSIONAL
+}
+
+enum PeriodoAssinatura {
+  MENSAL
+  ANUAL
+}
+
+enum StatusAssinatura {
+  /// Loja nova: 14 dias no Profissional, sem cobrança.
+  TESTE
+  ATIVA
+  /// Última cobrança recusada; 5 dias até suspender.
+  PENDENTE
+  /// Vitrine fora do ar; a gestão só aceita assinar/regularizar.
+  SUSPENSA
+  /// Cancelada pela loja; vale até proximaCobranca.
+  CANCELADA
+}
+
+/// Assinatura do ZapMenu pelo empreendedor, cobrada no Mercado Pago (preapproval) na conta do ZapMenu.
+model Assinatura {
+  id                 String            @id @default(cuid())
+  empreendedorId     String            @unique
+  empreendedor       Empreendedor      @relation(fields: [empreendedorId], references: [id])
+  plano              PlanoAssinatura
+  periodo            PeriodoAssinatura @default(MENSAL)
+  status             StatusAssinatura
+  mpPreapprovalId    String?           @unique
+  /// E-mail da conta do Mercado Pago que paga.
+  emailCobranca      String?
+  fimTeste           DateTime?
+  /// Fim do período pago (próxima cobrança, ou até quando a cancelada vale).
+  proximaCobranca    DateTime?
+  canceladaEm        DateTime?
+  /// Downgrade marcado para a próxima cobrança.
+  planoProximoCiclo  PlanoAssinatura?
+  pendenteDesde      DateTime?
+  /// Último aviso do fim do teste já mandado (dia 10 ou 13).
+  avisoTesteDia      Int?
+  /// Dia ("2026-10-27") do último aviso de cobrança recusada.
+  avisoCobrancaDia   String?
+  /// Mês ("2026-10") em que os avisos de 80% e 100% dos pedidos já saíram.
+  avisoPedidos80Mes  String?
+  avisoPedidos100Mes String?
+  criadoEm           DateTime          @default(now())
+  atualizadoEm       DateTime          @updatedAt
+
+  @@index([status])
 }
