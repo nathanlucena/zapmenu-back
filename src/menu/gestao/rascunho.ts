@@ -586,8 +586,9 @@ function descreverLoja(loja: DadosLoja, atual: DadosLoja): string[] {
   if (loja.slug !== undefined) linhas.push(`🔗 Link do cardápio: ${atual.slug ? `${atual.slug} → ` : ''}*${loja.slug}*`);
   if (loja.corDestaque !== undefined) linhas.push(`🎨 Cor da loja: *${nomeDaCor(loja.corDestaque)}*`);
   if (loja.instagram !== undefined) linhas.push(`📸 Instagram: *@${loja.instagram}*`);
-  if (loja.logoUrl !== undefined) linhas.push('🖼️ Logo nova 📷');
-  if (loja.capaUrl !== undefined) linhas.push('🖼️ Foto de capa nova 📷');
+  // Vazio = tirar (a foto antiga sai e a vitrine volta às iniciais / à faixa na cor da loja).
+  if (loja.logoUrl !== undefined) linhas.push(loja.logoUrl ? '🖼️ Logo nova 📷' : '🖼️ Tirar o logo');
+  if (loja.capaUrl !== undefined) linhas.push(loja.capaUrl ? '🖼️ Foto de capa nova 📷' : '🖼️ Tirar a foto de capa');
   if (loja.aceitaPagamentoNaEntrega !== undefined) {
     linhas.push(`💵 Pagamento na entrega (dinheiro ou cartão): *${simNao(loja.aceitaPagamentoNaEntrega)}*`);
   }

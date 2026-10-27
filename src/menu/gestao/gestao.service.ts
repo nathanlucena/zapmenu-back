@@ -23,6 +23,8 @@ import { mensagemLojaSuspensa, mensagemRecursoDoPlano } from '../../planos/appli
 import { conversaDoPlano } from './conversa-do-plano.js';
 import { conversaDosRelatorios } from './conversa-dos-relatorios.js';
 import { conversaDasDescricoes, oferecerDescricoes, type DescricoesDeps } from './conversa-das-descricoes.js';
+import { destinoDaLegenda, destinoDaResposta, OPCOES_DESTINO_FOTO, PERGUNTA_DESTINO_FOTO } from './foto-da-loja.js';
+import type { ImagensDaLoja } from '../imagens/imagens-da-loja.js';
 import type { RelatoriosDeps } from '../../relatorios/application/relatorios.js';
 import { conversaDasPromocoes, proporPromocao, type ConversaDasPromocoes, type PromocoesDeps } from './conversa-das-promocoes.js';
 import { diaNoFuso } from '../../planos/domain/calendario.js';
@@ -38,7 +40,7 @@ import {
 } from './tipo-da-loja.js';
 import { montarPrevia, type PreviasRepository } from './previa.js';
 import type { GestaoRepository, SnapshotCardapio } from './gestao.repository.js';
-import type { InterpretadorMensagem, RespostaConversa } from './interpretador.js';
+import type { InterpretadorMensagem, Operacao, RespostaConversa } from './interpretador.js';
 import {
   aplicarOperacoes,
   confirmarEndereco,
@@ -90,6 +92,8 @@ export interface GestaoDeps {
   relatorios?: RelatoriosDeps;
   /** Descrições escritas pela IA (Profissional). Sem isso, nem oferece. */
   descricoes?: DescricoesDeps;
+  /** Recorte e compressão da capa e do logo. Sem isso, a foto vai como chegou. */
+  imagens?: ImagensDaLoja;
 }
 
 export interface MensagemGestao {
@@ -230,6 +234,9 @@ async function tratar(rodada: Rodada): Promise<void> {
   if (fotoDaSequencia(rodada)) {
     return;
   }
+  if (await fotoDaLoja(rodada)) {
+    return;
+  }
   if (ehOpcaoDaEnquete(texto)) {
     // Voto numa enquete antiga do tipo: sem passar pela IA.
     responder(rodada, `Sua loja está como *${vocabulario(rodada.snapshot.segmento).tipo}*. Para trocar, mande *mudar tipo da loja*.`);
@@ -275,6 +282,17 @@ async function tratar(rodada: Rodada): Promise<void> {
     case 'MUDAR_TIPO':
       comecarTrocaDeTipo(rodada);
       return;
+    case 'TIRAR_CAPA':
+    case 'TIRAR_LOGO': {
+      const temFoto = comando === 'TIRAR_CAPA' ? rodada.snapshot.lojaSalva.temCapa : rodada.snapshot.lojaSalva.temLogo;
+      if (!temFoto) {
+        responder(rodada, comando === 'TIRAR_CAPA' ? 'Sua loja não tem foto de capa.' : 'Sua loja não tem logo.');
+        return;
+      }
+      rodada.contexto.rascunho.loja = { ...rodada.contexto.rascunho.loja, ...(comando === 'TIRAR_CAPA' ? { capaUrl: '' } : { logoUrl: '' }) };
+      await finalizar(rodada);
+      return;
+    }
     case 'NAO_LEMBRAR':
       await rodada.deps.gestaoRepo.registrarLembreteOpcionais(rodada.empreendedorId, { desligar: true });
       responder(rodada, 'Combinado, não lembro mais dos dados opcionais. Se quiser ver o que falta, mande *o que falta*. 🙂');
@@ -393,6 +411,86 @@ async function tratarRelatorios(rodada: Rodada): Promise<boolean> {
 function hojeParaIA(agora = new Date()): string {
   const fuso = 'America/Sao_Paulo';
   return `${diaNoFuso(agora, fuso)} (${NOMES_DOS_DIAS[diaEMinutoNoFuso(agora, fuso).dia]})`;
+}
+
+/**
+ * Capa e logo pela conversa: foto com a legenda "essa é a capa"/"esse é o
+ * logo" vai direto; foto sem legenda, sem item esperando foto, pergunta para
+ * quê ela é. A foto é recortada e o resumo (com a prévia do topo) pede o "sim".
+ */
+async function fotoDaLoja(rodada: Rodada): Promise<boolean> {
+  const { imagemUrl, texto } = rodada.mensagem;
+  const pendente = rodada.contexto.fotoSemDestino;
+  if (pendente && !imagemUrl) {
+    rodada.contexto.fotoSemDestino = undefined;
+    const destino = destinoDaResposta(texto);
+    if (destino === 'CAPA' || destino === 'LOGO') {
+      await usarFotoNaLoja(rodada, destino, pendente);
+      return true;
+    }
+    // Item (ou outra coisa): a foto fica com a IA, que liga ao item quando a pessoa disser qual.
+    rodada.contexto.fotoPendente = pendente;
+    if (destino === 'ITEM') {
+      rodada.estado = 'CONVERSANDO';
+      falar(rodada, 'De qual item é essa foto? Me diz o nome (ou o número da lista).');
+      return true;
+    }
+    return false;
+  }
+  if (!imagemUrl) {
+    return false;
+  }
+  const destino = destinoDaLegenda(texto);
+  if (destino === 'CAPA' || destino === 'LOGO') {
+    await usarFotoNaLoja(rodada, destino, imagemUrl);
+    return true;
+  }
+  const itemEsperandoFoto = rodada.contexto.rascunho.novosItens.some((item) => !item.imagemUrl && !item.fotos?.length);
+  // Logo depois de uma foto de item, a próxima ainda é de item: a IA decide.
+  const { ultimaFoto } = rodada.contexto;
+  const fotoDeItemRecente = ultimaFoto && Date.now() - new Date(ultimaFoto.em).getTime() <= JANELA_FOTOS_EM_SEQUENCIA_MS;
+  if (!texto.trim() && !itemEsperandoFoto && !fotoDeItemRecente) {
+    rodada.contexto.fotoSemDestino = imagemUrl;
+    responder(rodada, 'Recebi a foto! Ela é de um item, a capa ou o logo da loja?');
+    rodada.respostas.push({ enquete: { pergunta: PERGUNTA_DESTINO_FOTO, opcoes: [...OPCOES_DESTINO_FOTO] } });
+    return true;
+  }
+  return false;
+}
+
+async function recortarFotosDaLoja(rodada: Rodada, operacoes: Operacao[]): Promise<void> {
+  const { imagens } = rodada.deps;
+  const loja = rodada.contexto.rascunho.loja;
+  if (!imagens || !loja) return;
+  for (const operacao of operacoes) {
+    if (operacao.tipo !== 'ANEXAR_FOTO_LOJA') continue;
+    try {
+      if (operacao.destino === 'CAPA' && loja.capaUrl) loja.capaUrl = await imagens.prepararCapa(loja.capaUrl);
+      if (operacao.destino === 'LOGO' && loja.logoUrl) loja.logoUrl = await imagens.prepararLogo(loja.logoUrl);
+    } catch (erro) {
+      logger.warn({ err: erro }, 'não foi possível recortar a foto da loja; vai como chegou');
+    }
+  }
+}
+
+async function usarFotoNaLoja(rodada: Rodada, destino: 'CAPA' | 'LOGO', foto: string): Promise<void> {
+  // O logo vale em todos os planos; a capa é do Profissional (cores e capa).
+  if (destino === 'CAPA' && !recursoLiberado(rodada, 'CORES_CAPA')) {
+    responder(rodada, mensagemRecursoDoPlano('CORES_CAPA', rodada.deps.planos?.linkDosPlanos));
+    return;
+  }
+  let preparada = foto;
+  try {
+    if (rodada.deps.imagens) {
+      preparada = destino === 'CAPA' ? await rodada.deps.imagens.prepararCapa(foto) : await rodada.deps.imagens.prepararLogo(foto);
+    }
+  } catch (erro) {
+    logger.warn({ err: erro }, 'não foi possível recortar a foto da loja');
+    responder(rodada, 'Não consegui usar essa foto 😕 Pode mandar outra (JPG ou PNG)?');
+    return;
+  }
+  rodada.contexto.rascunho.loja = { ...rodada.contexto.rascunho.loja, ...(destino === 'CAPA' ? { capaUrl: preparada } : { logoUrl: preparada }) };
+  await finalizar(rodada);
 }
 
 /** Fotos seguidas sem legenda, até este tempo depois da anterior, vão para o mesmo produto. */
@@ -603,6 +701,8 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
   if (saida.operacoesMalformadas.length > 0) {
     avisos.push('⚠️ Não consegui entender parte do que você pediu. Pode explicar de outro jeito?');
   }
+  // Capa e logo que a IA anexou também passam pelo recorte.
+  await recortarFotosDaLoja(rodada, paraORascunho);
 
   registrarHistorico(rodada, saida.resposta);
   if (saida.resposta) {

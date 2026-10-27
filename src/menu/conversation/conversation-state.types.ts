@@ -176,6 +176,8 @@ export interface Contexto {
   historico: MensagemHistorico[];
   /** Foto recebida que a IA ainda não associou a nenhum item. */
   fotoPendente?: string;
+  /** Foto sem legenda esperando a resposta "item, capa ou logo?". */
+  fotoSemDestino?: string;
   /** Partes do endereço já informadas; correções parciais ("o número é 132") se somam a isso. */
   consultaEndereco?: ConsultaEndereco;
   /** Endereço encontrado no mapa esperando o "sim" da pessoa para entrar no rascunho. */

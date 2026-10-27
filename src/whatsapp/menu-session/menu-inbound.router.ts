@@ -1,5 +1,6 @@
 import { processarMensagemGestao, type GestaoDeps, type RespostaGestao } from '../../menu/gestao/gestao.service.js';
 import { ehOpcaoDaEnquete } from '../../menu/gestao/tipo-da-loja.js';
+import { ehOpcaoDaFotoDaLoja } from '../../menu/gestao/foto-da-loja.js';
 import type { IdempotencyRepository } from '../../shared/idempotency/idempotency.repository.js';
 import { logger } from '../../shared/logger/logger.js';
 import type { MensagemRecebida, WhatsAppClient } from '../whatsapp-client.interface.js';
@@ -182,7 +183,7 @@ export function registrarMenuInboundRouter(deps: MenuInboundRouterDeps): void {
   // Voto na enquete do tipo da loja: entra na conversa como se a pessoa tivesse escrito a opção.
   deps.whatsapp.onPollVote((voto) => {
     const opcao = voto.opcoes[0];
-    if (!opcao || !ehOpcaoDaEnquete(opcao)) {
+    if (!opcao || (!ehOpcaoDaEnquete(opcao) && !ehOpcaoDaFotoDaLoja(opcao))) {
       return;
     }
     return enfileirar(voto.telefone, async () => {
