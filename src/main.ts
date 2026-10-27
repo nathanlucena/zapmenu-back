@@ -43,6 +43,8 @@ import { criarMercadoPagoAssinaturasClient } from './planos/infra/mercado-pago-a
 import { iniciarJobAssinaturas } from './planos/infra/assinaturas.job.js';
 import { criarPromocoesRepositoryPrisma } from './promocoes/infra/promocoes.repository.prisma.js';
 import { iniciarJobPromocoes } from './promocoes/infra/promocoes.job.js';
+import { criarRelatoriosRepositoryPrisma } from './relatorios/infra/relatorios.repository.prisma.js';
+import { iniciarJobRelatorios } from './relatorios/infra/relatorios.job.js';
 
 async function main(): Promise<void> {
   const env = getEnv();
@@ -129,6 +131,7 @@ async function main(): Promise<void> {
       : undefined,
   };
   const promocoes = { repo: criarPromocoesRepositoryPrisma(prisma), mensageiro: mensageiroLoja };
+  const relatorios = { repo: criarRelatoriosRepositoryPrisma(prisma), mensageiro: mensageiroLoja };
   // Cada venda confere o limite de pedidos do mês (aviso de 80% e 100%; o cliente nunca é barrado).
   const aoVirarVenda = (pedido: Pedido) => avisarLimiteDePedidos(planos, pedido.empreendedorId);
   // Pago: a loja recebe os dados completos e a enquete de andamento (saiu/pronto, entregue/retirado).
@@ -183,6 +186,7 @@ async function main(): Promise<void> {
       urlDoCardapio: (slug) => `${urlPublica}/${slug}`,
       planos,
       promocoes,
+      relatorios,
       decisoes: {
         ordersRepo,
         contatos,
@@ -246,6 +250,8 @@ async function main(): Promise<void> {
   iniciarJobAssinaturas(planos, env.ASSINATURAS_VERIFICACAO_INTERVALO_MINUTOS * 60_000);
   // Promoção vencida desliga sozinha; o aviso ao lojista sai no dia seguinte. Mesmo ritmo do job das assinaturas.
   iniciarJobPromocoes(promocoes, env.ASSINATURAS_VERIFICACAO_INTERVALO_MINUTOS * 60_000);
+  // Relatórios: confere a cada 10 min se chegou a hora (segunda 9h e todo dia 8h, no fuso de cada loja).
+  iniciarJobRelatorios(relatorios, 10 * 60_000);
   // Prévias em imagem vencem em 1 h; limpa de hora em hora.
   setInterval(() => {
     previas.apagarVencidas().catch((erro: unknown) => logger.error({ err: erro }, 'falha ao apagar prévias vencidas'));

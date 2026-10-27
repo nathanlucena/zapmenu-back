@@ -21,6 +21,8 @@ import type { PlanosDeps } from '../../planos/application/dependencias.js';
 import { assinaturaNaGestao } from '../../planos/application/situacao-do-plano.js';
 import { mensagemLojaSuspensa, mensagemRecursoDoPlano } from '../../planos/application/mensagens.js';
 import { conversaDoPlano } from './conversa-do-plano.js';
+import { conversaDosRelatorios } from './conversa-dos-relatorios.js';
+import type { RelatoriosDeps } from '../../relatorios/application/relatorios.js';
 import { conversaDasPromocoes, proporPromocao, type ConversaDasPromocoes, type PromocoesDeps } from './conversa-das-promocoes.js';
 import { diaNoFuso } from '../../planos/domain/calendario.js';
 import { NOMES_DOS_DIAS, diaEMinutoNoFuso } from '../../promocoes/domain/promocao.js';
@@ -83,6 +85,8 @@ export interface GestaoDeps {
   planos?: PlanosDeps;
   /** Promoções da loja. Sem isso, a gestão responde que ainda não estão disponíveis. */
   promocoes?: PromocoesDeps;
+  /** Relatórios de vendas pedidos na conversa. Sem isso, "relatório" vai para a IA. */
+  relatorios?: RelatoriosDeps;
 }
 
 export interface MensagemGestao {
@@ -204,6 +208,9 @@ async function tratar(rodada: Rodada): Promise<void> {
     return;
   }
   if (await tratarPromocoes(rodada)) {
+    return;
+  }
+  if (await tratarRelatorios(rodada)) {
     return;
   }
   if (rodada.snapshot.lojaSalva.tipoPendente) {
@@ -336,6 +343,23 @@ async function tratarPromocoes(rodada: Rodada): Promise<boolean> {
   }
   const respostas = await conversaDasPromocoes(conversaDasPromocoesDa(rodada, promocoes));
   respostas?.forEach((resposta) => rodada.respostas.push(resposta));
+  return Boolean(respostas);
+}
+
+/** "relatório", "vendas de hoje"… e o liga/desliga do relatório diário. */
+async function tratarRelatorios(rodada: Rodada): Promise<boolean> {
+  const { relatorios } = rodada.deps;
+  if (!relatorios || rodada.mensagem.imagemUrl) {
+    return false;
+  }
+  const respostas = await conversaDosRelatorios({
+    relatorios,
+    telefone: rodada.mensagem.telefone,
+    texto: rodada.mensagem.texto,
+    plano: rodada.assinatura,
+    linkDosPlanos: rodada.deps.planos?.linkDosPlanos,
+  });
+  respostas?.forEach((resposta) => responder(rodada, resposta));
   return Boolean(respostas);
 }
 

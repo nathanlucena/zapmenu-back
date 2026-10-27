@@ -151,6 +151,20 @@ TESTE ──cartão autorizado──▶ ATIVA ──cobrança recusada──▶ 
                               └────── cobrança aprovada / regularizar ◀────────────┘
 ```
 
+### Promoções e descontos (Profissional)
+
+- **Criar:** a IA lê "toda quarta e quinta a calabresa sai por 39,90" ou "10% em todas as pizzas até domingo" como `nova_promocao` (preço fixo só para itens; percentual de 1% a 90% para itens, categorias ou a loja toda; dias da semana, horário e data final opcionais). A promoção **não entra no rascunho**: o código valida, mostra o resumo com quantos itens são afetados e 2 ou 3 exemplos (`Calabresa ~R$ 50,00~ → R$ 45,00`), manda a prévia em imagem com o preço riscado e só grava depois do "sim" (duas vezes acima de 50%). Tabelas `Promocao` e `PromocaoAlvo` (sem alvo = loja toda).
+- **Valer:** a leitura do cardápio (`menu/promocoes-na-vitrine.ts`) aplica a promoção que vale agora no fuso da loja e devolve `item.promocao` (`rotulo` "Promoção de quarta"/"-10%" e `precoPromocional`). O preço do pedido sai da mesma leitura, no momento da criação; as variações somam o acréscimo normal; com mais de uma, vale a de menor preço, sem acumular; o percentual arredonda para baixo no centavo. O `precoBase` nunca muda.
+- **Comandos (sem IA):** *minhas promoções*, *pausar/reativar/remover promoção N*.
+- **Fim:** o job das promoções desliga a vencida e, no dia seguinte ao fim (8h no fuso da loja), avisa o lojista uma vez (`Promocao.avisoFimEm`).
+- **Plano:** preço fixo é `PROMOCOES` e percentual é `DESCONTO_PERCENTUAL`. Fora do plano, a IA não cria (convite para o Profissional) e as promoções gravadas ficam guardadas sem valer.
+
+### Relatório de vendas (Profissional)
+
+- **Na hora:** *relatório* (últimos 7 dias), *relatório do mês* (do dia 1 até agora), *vendas de hoje* e *vendas de ontem*, sempre comparados com o período anterior de mesmo tamanho (▲/▼ %).
+- **Automático:** semanal na segunda às 9h (segunda a domingo anteriores) e diário às 8h (ontem), no fuso da loja. O diário desliga com *parar relatório diário* (e volta com *voltar relatório diário*). `RelatorioEnviado` (loja, tipo, período) impede mandar duas vezes.
+- **Conteúdo:** total vendido, pedidos, ticket médio, os 5 mais vendidos, entrega/retirada/Correios, PIX/cartão/dinheiro na entrega, horário de pico. Só pedidos pagos ou confirmados (e o que veio depois). Período sem vendas: mensagem curta.
+
 ### Regras principais
 
 | Regra | Comportamento |
@@ -284,6 +298,8 @@ Os dois são `setInterval` dentro do mesmo processo (`main.ts`). Erros são loga
 |---|---|---|
 | Expiração de pedidos (`orders/infra/order-expiration.job.ts`) | `PEDIDO_TTL_MINUTOS` (padrão 20 min) | Marca como `EXPIRADO` os pedidos em `AGUARDANDO_CONFIRMACAO` ou `AGUARDANDO_ACEITE` com `expiraEm` no passado |
 | Polling de pagamentos (`payments/infra/payment-status-poller.job.ts`) | `PAGAMENTO_POLLING_INTERVALO_SEGUNDOS` (padrão 60 s) | Consulta no Mercado Pago cada pagamento `PENDENTE` criado há mais que esse mesmo intervalo e aplica o status |
+| Promoções vencidas (`promocoes/infra/promocoes.job.ts`) | O mesmo das assinaturas | Desliga a promoção com fim no passado e avisa o lojista no dia seguinte, às 8h (uma vez) |
+| Relatórios (`relatorios/infra/relatorios.job.ts`) | 10 min | Semanal (segunda 9h) e diário (8h) no fuso de cada loja do Profissional; o registro do envio evita repetir |
 | Assinaturas (`planos/infra/assinaturas.job.ts`) | `ASSINATURAS_VERIFICACAO_INTERVALO_MINUTOS` (padrão 60 min; a primeira rodada 2 min depois do boot) | Job diário: avisa no 10º e no 13º dia do teste, suspende o teste vencido, avisa todo dia a cobrança pendente e suspende depois de 5 dias, e encerra a cancelada no fim do período. Cada aviso é marcado na `Assinatura` e sai uma vez só por dia |
 
 Observações:

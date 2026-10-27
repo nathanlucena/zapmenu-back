@@ -44,6 +44,7 @@ function lojaSalva(dados: Partial<Loja> = {}): Loja {
     aceitaEnvio: false,
     freteEnvio: null,
     fretePorUf: {},
+    relatorioDiario: true,
     atualizadoEm: new Date('2026-10-23T12:00:00Z'),
     ...dados,
   };

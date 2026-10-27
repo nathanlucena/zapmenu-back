@@ -124,7 +124,11 @@ model Loja {
   fretePorUf               Json         @default("{}")
   atualizadoEm             DateTime     @updatedAt
 
-  promocoes Promocao[]
+  /// Relatório diário pelo WhatsApp (Profissional). O lojista desliga com "parar relatório diário".
+  relatorioDiario          Boolean      @default(true)
+
+  promocoes          Promocao[]
+  relatoriosEnviados RelatorioEnviado[]
 }
 
 model ItemCardapio {
@@ -454,4 +458,21 @@ model PromocaoAlvo {
   categoria   Categoria?    @relation(fields: [categoriaId], references: [id], onDelete: Cascade)
 
   @@index([promocaoId])
+}
+
+enum TipoRelatorio {
+  SEMANAL
+  DIARIO
+}
+
+/// Relatório automático já mandado: a chave é o período ("2026-10-19"), para não mandar duas vezes.
+model RelatorioEnviado {
+  id        String        @id @default(cuid())
+  lojaId    String
+  loja      Loja          @relation(fields: [lojaId], references: [id])
+  tipo      TipoRelatorio
+  chave     String
+  enviadoEm DateTime      @default(now())
+
+  @@unique([lojaId, tipo, chave])
 }
