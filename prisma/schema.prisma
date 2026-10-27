@@ -36,6 +36,11 @@ model Categoria {
   nome       String
   ordem      Int      @default(0)
   criadoEm   DateTime @default(now())
+  /// Peso e medidas padrão dos produtos da categoria (frete do Melhor Envio).
+  pesoGramas    Int?
+  alturaCm      Decimal? @db.Decimal(6, 1)
+  larguraCm     Decimal? @db.Decimal(6, 1)
+  comprimentoCm Decimal? @db.Decimal(6, 1)
 
   itens     ItemCardapio[]
   promocoes PromocaoAlvo[]
@@ -116,12 +121,10 @@ model Loja {
   politicaTroca            String?
   /// CEP de onde saem as encomendas, para cotar frete. Só uso interno.
   cepOrigem                String?
-  /// Envia pelos Correios/transportadora, com frete fixo (varejo).
-  aceitaEnvio              Boolean      @default(false)
-  /// Frete fixo para qualquer UF sem valor próprio em fretePorUf. Sem ele, só envia para as UFs listadas.
-  freteEnvio               Decimal?     @db.Decimal(10, 2)
-  /// Exceções por UF: { "PE": 12, "SP": 30 }.
-  fretePorUf               Json         @default("{}")
+  /// Envia por transportadora com o Melhor Envio (Profissional, conta conectada).
+  usaMelhorEnvio           Boolean      @default(false)
+  /// A loja usava o frete fixo por região (removido): avisa uma vez na gestão.
+  avisarFimDoFreteFixo     Boolean      @default(false)
   atualizadoEm             DateTime     @updatedAt
 
   /// Relatório diário pelo WhatsApp (Profissional). O lojista desliga com "parar relatório diário".
@@ -129,6 +132,7 @@ model Loja {
 
   promocoes          Promocao[]
   relatoriosEnviados RelatorioEnviado[]
+  contaMelhorEnvio   ContaMelhorEnvio?
 }
 
 model ItemCardapio {
@@ -143,6 +147,11 @@ model ItemCardapio {
   precoBase   Decimal    @db.Decimal(10, 2)
   imagemUrl   String?
   ativo       Boolean    @default(true)
+  /// Para o frete do Melhor Envio. Sem eles, vale o padrão da categoria (e depois o geral).
+  pesoGramas    Int?
+  alturaCm      Decimal? @db.Decimal(6, 1)
+  larguraCm     Decimal? @db.Decimal(6, 1)
+  comprimentoCm Decimal? @db.Decimal(6, 1)
   // Remoção lógica: pedidos antigos continuam apontando para o item.
   removidoEm  DateTime?
   criadoEm    DateTime   @default(now())
@@ -255,6 +264,9 @@ model Pedido {
   enqueteAceiteId    String?          @unique
   /// Id da enquete de andamento (saiu/pronto, entregue/retirado) enviada à loja.
   enqueteAndamentoId String?          @unique
+  /// Melhor Envio: { id, nome, empresa, preco, prazoDias } escolhido no checkout; etiqueta em etiquetaId.
+  servicoEnvio       Json?
+  etiquetaId         String?
   /// Rastreio informado pela loja ao enviar (varejo).
   codigoRastreio     String?
   transportadora     String?
@@ -271,8 +283,10 @@ model Pedido {
 enum ModalidadePedido {
   RETIRADA
   ENTREGA
-  /// Pelos Correios/transportadora, com frete fixo; sem raio de km.
+  /// Antigo frete fixo por região (removido): só em pedidos antigos.
   ENVIO
+  /// Transportadora pelo Melhor Envio (o serviço escolhido fica em Pedido.servicoEnvio).
+  MELHOR_ENVIO
 }
 
 model ItemPedido {
@@ -475,4 +489,19 @@ model RelatorioEnviado {
   enviadoEm DateTime      @default(now())
 
   @@unique([lojaId, tipo, chave])
+}
+
+/// Conta do Melhor Envio da loja, conectada por OAuth. Os tokens se renovam sozinhos.
+model ContaMelhorEnvio {
+  id            String    @id @default(cuid())
+  lojaId        String    @unique
+  loja          Loja      @relation(fields: [lojaId], references: [id])
+  accessToken   String    @db.Text
+  refreshToken  String    @db.Text
+  expiraEm      DateTime
+  /// Primeira falha seguida da API (cotação); o lojista é avisado depois de 30 min.
+  falhaDesde    DateTime?
+  avisoFalhaEm  DateTime?
+  conectadaEm   DateTime  @default(now())
+  atualizadoEm  DateTime  @updatedAt
 }

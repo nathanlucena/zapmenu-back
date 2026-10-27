@@ -10,7 +10,10 @@ import type { RegrasDaLoja } from './application/ports/loja-para-pedidos.js';
 const LOJA_NO_RECIFE = { latitude: -8.0631, longitude: -34.8711 };
 const ENDERECO_CLIENTE = { cep: '50050-000', numero: '123', complemento: 'apto 201' };
 
-async function montar(regras: Partial<RegrasDaLoja> = {}, opcoes: { semMapa?: boolean } = {}) {
+async function montar(
+  regras: Partial<RegrasDaLoja> = {},
+  opcoes: { semMapa?: boolean; cotador?: Parameters<typeof buildApp>[0]['cotadorDeFrete'] } = {},
+) {
   const menuRepo = criarMenuRepositoryFake();
   const ordersRepo = criarOrdersRepositoryFake();
   const endereco: EnderecoFake = criarEnderecoFake();
@@ -22,6 +25,7 @@ async function montar(regras: Partial<RegrasDaLoja> = {}, opcoes: { semMapa?: bo
     pedidoTtlMinutos: 20,
     frontendAllowedOrigin: 'http://localhost:3001',
     endereco: opcoes.semMapa ? undefined : endereco,
+    cotadorDeFrete: opcoes.cotador,
   });
   const pedir = (extra: Record<string, unknown> = {}, quantidade = 2) =>
     app.inject({
@@ -223,47 +227,67 @@ describe('regras da loja', () => {
   });
 });
 
-describe('pedido com envio pelos Correios', () => {
-  async function montarComEnvio(envio: RegrasDaLoja['envio']) {
-    return montar({ envio });
+describe('pedido com envio pelo Melhor Envio', () => {
+  const PAC = { id: '1', nome: 'PAC', empresa: 'Correios', preco: 22.5, prazoDias: 6 };
+  const SEDEX = { id: '2', nome: 'SEDEX', empresa: 'Correios', preco: 41.9, prazoDias: 2 };
+
+  async function montarComMelhorEnvio(servicos = [PAC, SEDEX]) {
+    const cotacoes: unknown[] = [];
+    const cotador = {
+      async cotar(empreendedorId: string, pedido: unknown) {
+        cotacoes.push({ empreendedorId, pedido });
+        return servicos;
+      },
+    };
+    const montado = await montar({ melhorEnvio: { cepOrigem: '50050000' } }, { cotador });
+    return { ...montado, cotacoes };
   }
 
-  it('soma o frete fixo da UF no total e guarda o endereço do CEP', async () => {
-    const { pedir, endereco } = await montarComEnvio({ padrao: 25, porUf: { PE: 12 } });
+  it('cobra o frete do serviço escolhido, recalculado no servidor, e guarda o serviço e o endereço do CEP', async () => {
+    const { pedir, endereco, cotacoes } = await montarComMelhorEnvio();
 
-    const resposta = await pedir({ modalidade: 'ENVIO', endereco: ENDERECO_CLIENTE });
+    const resposta = await pedir({ modalidade: 'MELHOR_ENVIO', endereco: ENDERECO_CLIENTE, servicoEnvioId: '2' });
 
     expect(resposta.statusCode).toBe(201);
     expect(resposta.json().pedido).toMatchObject({
-      modalidade: 'ENVIO',
-      taxaEntrega: 12,
-      valorTotal: 52,
+      modalidade: 'MELHOR_ENVIO',
+      taxaEntrega: 41.9,
+      valorTotal: 81.9,
+      servicoEnvio: SEDEX,
       entrega: { uf: 'PE', cidade: 'Recife', enderecoFormatado: 'Rua da Aurora, 123 - apto 201 - Boa Vista, Recife - PE, 50050-000' },
     });
+    expect(cotacoes[0]).toMatchObject({ pedido: { cepOrigem: '50050000', cepDestino: '50050000', itens: [{ quantidade: 2, precoUnitario: 20 }] } });
     expect(endereco.buscasGeo).toEqual([]);
   });
 
-  it('cotação do envio mostra o frete antes do pedido', async () => {
-    const { app } = await montarComEnvio({ padrao: 25, porUf: {} });
+  it('serviço que sumiu da cotação: pede para escolher de novo', async () => {
+    const { pedir } = await montarComMelhorEnvio([PAC]);
+    const resposta = await pedir({ modalidade: 'MELHOR_ENVIO', endereco: ENDERECO_CLIENTE, servicoEnvioId: '2' });
+    expect(resposta.json().codigo).toBe('FRETE_MUDOU');
+  });
+
+  it('cotação mostra os serviços com preço e prazo antes do pedido', async () => {
+    const { app } = await montarComMelhorEnvio();
 
     const resposta = await app.inject({
       method: 'POST',
-      url: '/v1/envio/cotacao',
-      payload: { empreendedorId: 'emp-1', endereco: ENDERECO_CLIENTE },
+      url: '/v1/frete/cotacao',
+      payload: { empreendedorId: 'emp-1', endereco: ENDERECO_CLIENTE, itens: [{ itemCardapioId: (await app.inject({ method: 'GET', url: '/v1/menu/emp-1' })).json().itens[0].id, quantidade: 1 }] },
     });
 
     expect(resposta.json()).toEqual({
-      envio: { enderecoFormatado: 'Rua da Aurora, 123 - apto 201 - Boa Vista, Recife - PE, 50050-000', uf: 'PE', frete: 25 },
+      frete: { enderecoFormatado: 'Rua da Aurora, 123 - apto 201 - Boa Vista, Recife - PE, 50050-000', servicos: [PAC, SEDEX] },
     });
   });
 
-  it('envio só com PIX e só em loja que envia', async () => {
-    const { pedir } = await montarComEnvio({ padrao: 25, porUf: {} });
+  it('só com PIX, só em loja que envia, e o antigo frete fixo não existe mais', async () => {
+    const { pedir } = await montarComMelhorEnvio();
     const semEnvio = await montar();
 
-    expect((await pedir({ modalidade: 'ENVIO', endereco: ENDERECO_CLIENTE, formaPagamento: 'DINHEIRO' })).json().erro).toBe(
-      'No envio pelos Correios o pagamento é só por PIX.',
+    expect((await pedir({ modalidade: 'MELHOR_ENVIO', endereco: ENDERECO_CLIENTE, servicoEnvioId: '1', formaPagamento: 'DINHEIRO' })).json().erro).toBe(
+      'No envio por transportadora o pagamento é só por PIX.',
     );
-    expect((await semEnvio.pedir({ modalidade: 'ENVIO', endereco: ENDERECO_CLIENTE })).json().codigo).toBe('ENVIO_INDISPONIVEL');
+    expect((await semEnvio.pedir({ modalidade: 'MELHOR_ENVIO', endereco: ENDERECO_CLIENTE, servicoEnvioId: '1' })).json().codigo).toBe('ENVIO_INDISPONIVEL');
+    expect((await pedir({ modalidade: 'ENVIO', endereco: ENDERECO_CLIENTE })).json().codigo).toBe('ENVIO_INDISPONIVEL');
   });
 });

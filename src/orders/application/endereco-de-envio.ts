@@ -1,12 +1,6 @@
 import { DomainError } from '../../shared/errors/domain-error.js';
-import { freteConfigurado, freteParaUf } from '../domain/envio.js';
 import type { EnderecoEnvio } from '../domain/pedido.js';
-import type { ConsultaCepParaEnvio, EnderecoDigitado, RegrasDaLoja } from './ports/loja-para-pedidos.js';
-
-export interface CotacaoEnvio {
-  endereco: EnderecoEnvio;
-  frete: number;
-}
+import type { ConsultaCepParaEnvio, EnderecoDigitado } from './ports/loja-para-pedidos.js';
 
 const formatarCep = (cep: string) => `${cep.slice(0, 5)}-${cep.slice(5)}`;
 
@@ -21,17 +15,13 @@ function formatarEndereco(endereco: Omit<EnderecoEnvio, 'enderecoFormatado'>): s
 }
 
 /**
- * Envio pelos Correios com o frete fixo da loja. O CEP dá a UF (ViaCEP); não há
- * mapa nem raio. É a mesma conta da criação do pedido, então o frete mostrado bate.
+ * Endereço de envio por transportadora: o CEP completa rua, bairro e cidade
+ * (ViaCEP), sem mapa nem raio. Lança ENDERECO_INVALIDO quando falta algo.
  */
-export async function cotarEnvio(
-  regras: RegrasDaLoja,
+export async function enderecoDeEnvio(
   consultaCep: ConsultaCepParaEnvio | undefined,
   digitado: EnderecoDigitado,
-): Promise<CotacaoEnvio> {
-  if (!regras.envio || !freteConfigurado(regras.envio)) {
-    throw new DomainError('Esta loja não envia pelos Correios.', 'ENVIO_INDISPONIVEL');
-  }
+): Promise<EnderecoEnvio> {
   const cep = (digitado.cep ?? '').replace(/\D/g, '');
   if (cep.length !== 8) {
     throw new DomainError('Informe o CEP de entrega, com 8 números.', 'ENDERECO_INVALIDO');
@@ -63,10 +53,6 @@ export async function cotarEnvio(
     throw new DomainError('Informe a rua do endereço de entrega.', 'ENDERECO_INVALIDO');
   }
 
-  const frete = freteParaUf(regras.envio, dados.uf);
-  if (frete === undefined) {
-    throw new DomainError(`A loja não envia para ${dados.uf}.`, 'FORA_DA_AREA');
-  }
   const endereco: Omit<EnderecoEnvio, 'enderecoFormatado'> = {
     cep,
     logradouro,
@@ -76,5 +62,5 @@ export async function cotarEnvio(
     cidade: dados.cidade ?? digitado.cidade,
     uf: dados.uf,
   };
-  return { endereco: { ...endereco, enderecoFormatado: formatarEndereco(endereco) }, frete };
+  return { ...endereco, enderecoFormatado: formatarEndereco(endereco) };
 }

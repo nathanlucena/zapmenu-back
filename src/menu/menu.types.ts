@@ -97,8 +97,8 @@ export interface LojaPublica {
   fuso: string;
   /** Trocas e devoluções, em texto livre (varejo). */
   politicaTroca?: string;
-  /** Envio pelos Correios com frete fixo; ausente quando a loja não envia. */
-  envio?: { padrao?: number; porUf: Record<string, number> };
+  /** Envia por transportadora (Melhor Envio): o app cota com o CEP do cliente. */
+  melhorEnvio?: boolean;
   /** Rodapé "Feito com ZapMenu": o plano da loja não inclui tirar o selo. Só o cardápio público preenche. */
   mostrarSelo?: boolean;
   /** Assinatura suspensa: o app mostra "Loja temporariamente indisponível" e não aceita pedidos. */

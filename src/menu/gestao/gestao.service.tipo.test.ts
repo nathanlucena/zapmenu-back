@@ -3,7 +3,7 @@ import type { ConversaPersistida, ConversationRepository } from '../conversation
 import { contextoInicial } from '../conversation/conversation-state.types.js';
 import { criarGestaoRepositoryFake } from './__mocks__/gestao.repository.fake.js';
 import { criarCadastroPorLista } from './cadastro-empreendedores.js';
-import { processarMensagemGestao, type GestaoDeps, type RespostaGestao } from './gestao.service.js';
+import { AVISO_FIM_DO_FRETE_FIXO, processarMensagemGestao, type GestaoDeps, type RespostaGestao } from './gestao.service.js';
 import type { EntradaConversa, InterpretadorMensagem, RespostaConversa } from './interpretador.js';
 import { AVISO_SO_DA_LOJA, AVISO_SO_DO_CARDAPIO } from './permissoes-por-tipo.js';
 import { interpretarRespostaDaIA, montarEntrada } from './deepseek-interpretador.js';
@@ -128,7 +128,7 @@ describe('gestão: cada tipo fechado na sua caixa', () => {
       ia([
         { tipo: 'NOVO_ITEM', ref: 'n1', dados: { nome: 'Pizza', precoBase: 40 } },
         { tipo: 'DEFINIR_GRADE', ref: 'n1', grade: [{ tamanho: 'G', estoque: 3 }] },
-        { tipo: 'ATUALIZAR_LOJA', dados: { aceitaEnvio: true, freteEnvio: 20 } },
+        { tipo: 'ATUALIZAR_LOJA', dados: { usaMelhorEnvio: true } },
       ]),
     ]);
 
@@ -334,5 +334,18 @@ describe('gestão: Instagram da loja (opcional)', () => {
 
     expect(texto).toContain('Não reconheci "moda da ana" como perfil do Instagram');
     expect(cenario.conversa().contexto.rascunho.loja?.instagram).toBeUndefined();
+  });
+});
+
+describe('gestão: fim do frete fixo por região', () => {
+  it('a loja que usava recebe o aviso uma vez', async () => {
+    const cenario = criarCenario(false, 'VAREJO', [
+      { resposta: 'Oi!', operacoes: [], operacoesMalformadas: [], finalizou: false, mostrarCardapio: false },
+      { resposta: 'Oi de novo!', operacoes: [], operacoesMalformadas: [], finalizou: false, mostrarCardapio: false },
+    ]);
+    cenario.gestaoRepo.snapshot.lojaSalva.avisarFimDoFreteFixo = true;
+
+    expect(textos(await cenario.enviar('oi'))).toContain(AVISO_FIM_DO_FRETE_FIXO);
+    expect(textos(await cenario.enviar('oi'))).not.toContain(AVISO_FIM_DO_FRETE_FIXO);
   });
 });

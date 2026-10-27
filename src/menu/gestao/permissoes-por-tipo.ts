@@ -3,10 +3,10 @@ import type { SegmentoLoja } from '../menu.types.js';
 import type { Operacao } from './interpretador.js';
 
 /** Campos da loja que só existem no tipo Loja (varejo). */
-const CAMPOS_SO_DA_LOJA = ['aceitaEnvio', 'freteEnvio', 'fretePorUf', 'politicaTroca'] as const satisfies readonly (keyof DadosLoja)[];
+const CAMPOS_SO_DA_LOJA = ['usaMelhorEnvio', 'cepOrigem', 'politicaTroca'] as const satisfies readonly (keyof DadosLoja)[];
 
 export const AVISO_SO_DA_LOJA =
-  '⚠️ Tamanhos e cores com estoque, frete pelos Correios e política de troca são do tipo *Loja*. A sua está como *Cardápio*: para trocar, mande *mudar tipo da loja*.';
+  '⚠️ Tamanhos e cores com estoque, envio por transportadora (Melhor Envio) e política de troca são do tipo *Loja*. A sua está como *Cardápio*: para trocar, mande *mudar tipo da loja*.';
 export const AVISO_SO_DO_CARDAPIO =
   '⚠️ Adicionais e variações com preço são do tipo *Cardápio*. Na *Loja*, tamanho e cor entram na grade com estoque (ex.: _P, M e G, 5 de cada_). Para trocar o tipo, mande *mudar tipo da loja*.';
 

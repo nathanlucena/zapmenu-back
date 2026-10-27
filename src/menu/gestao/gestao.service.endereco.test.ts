@@ -50,6 +50,7 @@ function criarCenario(loja: DadosLoja = {}, opcoes: { semEndereco?: boolean } = 
       salvos.push(structuredClone(rascunho));
     },
     async registrarLembreteOpcionais() {},
+    async limparAvisoDoFreteFixo() {},
     async definirSegmento() {},
   };
   const interpretador: InterpretadorMensagem = {

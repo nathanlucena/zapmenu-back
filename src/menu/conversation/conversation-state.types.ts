@@ -90,12 +90,10 @@ export interface DadosLoja {
   /** Foto de capa (data URI), vinda de uma foto mandada na conversa. */
   capaUrl?: string;
   aceitaPagamentoNaEntrega?: boolean;
-  /** Envia pelos Correios com frete fixo (varejo). */
-  aceitaEnvio?: boolean;
-  /** Frete para qualquer UF sem valor próprio. */
-  freteEnvio?: number;
-  /** Exceções por UF: { "PE": 12 }. Substitui a lista anterior inteira. */
-  fretePorUf?: Record<string, number>;
+  /** Envia por transportadora com o Melhor Envio (loja, Profissional). */
+  usaMelhorEnvio?: boolean;
+  /** CEP de onde saem as encomendas (8 números). Sem ele, vale o CEP do endereço da loja. */
+  cepOrigem?: string;
   /** Trocas e devoluções, em texto livre (loja). */
   politicaTroca?: string;
 }

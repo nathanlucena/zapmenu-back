@@ -157,6 +157,8 @@ export async function processarMensagemGestao(mensagem: MensagemGestao, deps: Ge
     }
   }
 
+  await avisarFimDoFreteFixo(rodada);
+
   rodada.contexto.atualizadoEm = new Date().toISOString();
   logger.info(
     {
@@ -718,7 +720,7 @@ function lojaParaCadastro(rodada: Rodada, rascunho?: DadosLoja): LojaParaCadastr
     slug: loja.slug,
     aceitaRetirada: loja.aceitaRetirada,
     fazEntrega: loja.fazEntrega,
-    aceitaEnvio: loja.aceitaEnvio,
+    usaMelhorEnvio: loja.usaMelhorEnvio,
     enderecoConfirmado: Boolean(loja.enderecoVerificado),
     faixasEntrega: loja.faixasEntrega,
     taxaEntrega: loja.taxaEntrega,
@@ -810,6 +812,18 @@ async function avisarSituacaoDoCadastro(rodada: Rodada, completoAntes: boolean):
  * usando a distância (pede a taxa fixa) e a antiga sem endereço ou faixas.
  * Até a loja responder, só retirada; nada do que estava configurado é apagado.
  */
+export const AVISO_FIM_DO_FRETE_FIXO =
+  '📦 Mudou o envio: o frete fixo por estado saiu. Agora você pode entregar com *envio próprio* (um valor só ou por distância, com raio máximo) e, no plano Profissional, *por transportadora com o Melhor Envio*. Seu envio está desligado até você configurar: é só me dizer como quer entregar.';
+
+/** Loja que usava o frete fixo por região (removido): avisa uma vez. */
+async function avisarFimDoFreteFixo(rodada: Rodada): Promise<void> {
+  if (!rodada.snapshot.lojaSalva.avisarFimDoFreteFixo) {
+    return;
+  }
+  responder(rodada, AVISO_FIM_DO_FRETE_FIXO);
+  await rodada.deps.gestaoRepo.limparAvisoDoFreteFixo(rodada.empreendedorId);
+}
+
 function avisarEntregaPorConfigurar(rodada: Rodada): void {
   const loja = { ...rodada.snapshot.loja, ...rodada.contexto.rascunho.loja };
   const distancia = entregaPorDistancia(rodada);

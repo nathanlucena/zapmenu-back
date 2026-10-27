@@ -148,6 +148,14 @@ describe('gestão: recursos por plano', () => {
     expect(cenario.conversa().contexto.rascunho.loja).toMatchObject({ modoEntrega: 'DISTANCIA', faixasEntrega: [{ ateKm: 3, taxa: 5 }] });
   });
 
+  it('Básico: Melhor Envio é do Profissional', async () => {
+    const cenario = criarCenario(BASICO);
+    cenario.gestaoRepo.snapshot.segmento = 'VAREJO';
+    cenario.ia.responder(ia({ operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { usaMelhorEnvio: true } }] }));
+    expect(textos(await cenario.enviar('quero enviar pelo melhor envio'))).toContain('Isso faz parte do plano *Profissional*');
+    expect(cenario.conversa().contexto.rascunho.loja?.usaMelhorEnvio).toBeUndefined();
+  });
+
   it('Básico: desligar a entrega continua liberado', async () => {
     const cenario = criarCenario(BASICO);
     cenario.ia.responder(ia({ operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { fazEntrega: false } }] }));

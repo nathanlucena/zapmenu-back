@@ -59,7 +59,7 @@ OPERAÇÕES (cada uma é um objeto com "tipo"):
 - {"tipo": "nova_promocao", "preco": 39.9, "itens": ["id"], "dias": ["qua", "qui"], "hora_inicio": "18:00", "hora_fim": "23:00", "ate": "2026-11-30"} ou {"tipo": "nova_promocao", "percentual": 10, "categorias": ["id"]} — promoção ou desconto. Mande "preco" (preço fixo, só com "itens") OU "percentual" (1 a 90). Alvo: "itens" (ids), "categorias" (ids) ou nenhum dos dois = a loja toda. "dias" vazio ou ausente = todos os dias. "ate": último dia da promoção (AAAA-MM-DD), só se a pessoa disser; use a data de hoje (hoje) para calcular "até domingo". Promoção NUNCA muda o preço do item: não use editar_item para promoção. O sistema mostra o resumo e pede confirmação: não use "finalizou" por causa da promoção.
 
 FORMATOS
-- preco, pedido_minimo, taxa (das faixas), frete_envio, os valores de frete_por_uf e preco_adicional: número em reais com ponto decimal ("39,90" → 39.9; "42 reais" → 42).
+- preco, pedido_minimo, taxa (das faixas), taxa_entrega_fixa e preco_adicional: número em reais com ponto decimal ("39,90" → 39.9; "42 reais" → 42).
 - nome: nome do produto com iniciais maiúsculas, sem verbos ("coloca uma pizza calabresa" → "Pizza Calabresa"). descricao: detalhes (ingredientes, tamanho), sem o preço.
 - taxa_entrega_fixa: um valor só de entrega ("entrega é 5 reais" → 5; "entrega grátis" → 0). raio_entrega_km: até onde essa taxa vale ("até 4 km" → 4; "entrego em qualquer lugar", "sem limite" → 0). modo_entrega: "fixa" ou "distancia", só quando a pessoa quiser trocar de um jeito de cobrar para o outro sem mandar valores novos.
 - faixas_entrega: lista COMPLETA (substitui a anterior), uma faixa por distância: [{"ate_km": 1, "taxa": 0}, {"ate_km": 3, "taxa": 5}]. "grátis", "de graça", "sem taxa" → taxa 0. "500 metros" → ate_km 0.5. A maior distância é o limite de entrega.
@@ -106,7 +106,7 @@ const BLOCO_CARDAPIO = `
 TIPO DA LOJA: CARDÁPIO (comida)
 - Fale em *cardápio* e *itens*.
 - variacoes (adicionais, tamanhos com preço): lista COMPLETA de variações do item (substitui as anteriores): [{"nome": "Tamanho", "opcoes": [{"nome": "P", "preco_adicional": 0}, {"nome": "G", "preco_adicional": 15}]}]. O preço do item é o da opção mais barata; preco_adicional é a diferença.
-- NÃO EXISTE neste tipo: grade de tamanhos e cores com estoque, envio pelos Correios e política de troca. Nunca use definir_grade, aceita_envio, frete_envio, frete_por_uf ou politica_troca. Se a pessoa pedir algo assim, explique numa frase que isso é do tipo *Loja* e que ela pode mandar *mudar tipo da loja*.
+- NÃO EXISTE neste tipo: grade de tamanhos e cores com estoque, envio por transportadora (Melhor Envio) e política de troca. Nunca use definir_grade, melhor_envio, cep_origem ou politica_troca. Se a pessoa pedir algo assim, explique numa frase que isso é do tipo *Loja* e que ela pode mandar *mudar tipo da loja*.
 
 EXEMPLO
 mensagem: "entrou pizza calabresa 39,90 e a coca agora é 15" (com a Coca 2L no cardápio com id "abc")
@@ -120,7 +120,7 @@ TIPO DA LOJA: LOJA (produtos: roupas, acessórios…)
 - Estoque é número inteiro. Se a pessoa não disser quantas peças tem, PERGUNTE: nunca invente estoque. Para mudar só o estoque ("chegaram mais 3 M azul", "acabou o G preto"), mande a grade completa atual (cardapio.itens[].grade) com o número novo.
 - Fotos: cada produto pode ter várias. Cada anexar_foto ACRESCENTA uma foto à galeria (não troca a anterior). Se a legenda disser a cor da peça na foto ("essa é a azul", "preta"), mande "cor": "Azul" no anexar_foto.
 - NUNCA use variacoes (adicionais com preço) neste tipo. Se a pessoa pedir adicional, explique numa frase que adicionais são do tipo *Cardápio* e que ela pode mandar *mudar tipo da loja*.
-- Envio pelos Correios em atualizar_loja: "aceita_envio": true, "frete_envio": 25 (frete fixo para o Brasil todo), "frete_por_uf": {"PE": 12} (só os estados com valor diferente). "envio pra todo o Brasil por 25, aqui em PE é 12" → aceita_envio true, frete_envio 25, frete_por_uf {"PE": 12}; "só envio pra PE e PB por 15" → frete_por_uf {"PE": 15, "PB": 15}, sem frete_envio.
+- COMO A LOJA ENTREGA: (1) envio próprio, com as mesmas regras da entrega (taxa_entrega_fixa com raio_entrega_km, ou faixas_entrega por distância) e "faz_entrega"; (2) transportadora pelo Melhor Envio, em atualizar_loja "melhor_envio": true/false, com "cep_origem" (CEP de onde saem as encomendas; se não disser, vale o do endereço da loja). Os dois podem estar ligados juntos, além da retirada. Se a pessoa perguntar "como você entrega?" ou quiser configurar envio, explique essas opções. Frete fixo por estado não existe mais: se pedirem, ofereça as opções acima.
 - Política de troca em atualizar_loja: "politica_troca": texto curto e claro com o que a pessoa disse ("troco em 7 dias com etiqueta" → "Troca em até 7 dias, com a etiqueta."). Não invente prazo nem regra que ela não disse. Lembre que compra online tem 7 dias de arrependimento (CDC) se ela perguntar.
 
 EXEMPLO
@@ -170,14 +170,6 @@ const faixasEntrega = z
   .array(z.object({ ate_km: numeroLivre, taxa: numeroLivre }))
   .nullish()
   .transform((valor) => valor?.map((faixa) => ({ ateKm: faixa.ate_km, taxa: faixa.taxa })));
-
-/** { "pe": "12,50" } → { PE: 12.5 }; UF com 2 letras. */
-const fretePorUf = z
-  .record(z.string().trim().regex(/^[a-z]{2}$/i), numeroLivre.pipe(z.number().nonnegative()))
-  .nullish()
-  .transform((valor) =>
-    valor ? Object.fromEntries(Object.entries(valor).map(([uf, frete]) => [uf.toUpperCase(), frete])) : undefined,
-  );
 
 /** CEP e número podem vir como número no json. */
 const textoOuNumero = z
@@ -348,9 +340,8 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
       link: texto,
       cor_destaque: texto,
       aceita_pagamento_na_entrega: booleano,
-      aceita_envio: booleano,
-      frete_envio: numero,
-      frete_por_uf: fretePorUf,
+      melhor_envio: booleano,
+      cep_origem: textoOuNumero,
       politica_troca: texto,
       instagram: texto,
     })
@@ -370,9 +361,8 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
         slug: op.link,
         corDestaque: op.cor_destaque,
         aceitaPagamentoNaEntrega: op.aceita_pagamento_na_entrega,
-        aceitaEnvio: op.aceita_envio,
-        freteEnvio: op.frete_envio,
-        fretePorUf: op.frete_por_uf,
+        usaMelhorEnvio: op.melhor_envio,
+        cepOrigem: op.cep_origem,
         politicaTroca: op.politica_troca,
         instagram: op.instagram,
       },

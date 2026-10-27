@@ -117,9 +117,8 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
               corDestaque: loja.corDestaque ?? undefined,
               instagram: loja.instagram ?? undefined,
               aceitaPagamentoNaEntrega: loja.aceitaPagamentoNaEntrega,
-              aceitaEnvio: loja.aceitaEnvio,
-              freteEnvio: loja.freteEnvio === null ? undefined : Number(loja.freteEnvio),
-              fretePorUf: loja.fretePorUf as Record<string, number>,
+              usaMelhorEnvio: loja.usaMelhorEnvio,
+              cepOrigem: loja.cepOrigem ?? undefined,
               politicaTroca: loja.politicaTroca ?? undefined,
             }
           : {},
@@ -131,6 +130,7 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
           capaUrl: loja?.capaUrl ?? undefined,
           lembreteOpcionaisEm: loja?.lembreteOpcionaisEm ?? undefined,
           naoLembrarOpcionais: loja?.naoLembrarOpcionais ?? false,
+          avisarFimDoFreteFixo: loja?.avisarFimDoFreteFixo ?? false,
           tipoPendente: !loja?.segmentoDefinido,
         },
         segmento: loja?.segmento,
@@ -145,6 +145,10 @@ export function criarGestaoRepositoryPrisma(prisma: PrismaClient): GestaoReposit
         update: { segmento, segmentoDefinido: true },
         create: { empreendedorId, segmento, segmentoDefinido: true },
       });
+    },
+
+    async limparAvisoDoFreteFixo(telefone) {
+      await prisma.loja.updateMany({ where: { empreendedor: { telefone } }, data: { avisarFimDoFreteFixo: false } });
     },
 
     async registrarLembreteOpcionais(telefone, registro) {
@@ -331,9 +335,8 @@ async function salvarLoja(tx: Tx, empreendedorId: string, loja: DadosLoja): Prom
     logoUrl: loja.logoUrl,
     capaUrl: loja.capaUrl,
     aceitaPagamentoNaEntrega: loja.aceitaPagamentoNaEntrega,
-    aceitaEnvio: loja.aceitaEnvio,
-    freteEnvio: loja.freteEnvio,
-    fretePorUf: loja.fretePorUf as Prisma.InputJsonValue | undefined,
+    usaMelhorEnvio: loja.usaMelhorEnvio,
+    cepOrigem: loja.cepOrigem,
     politicaTroca: loja.politicaTroca,
   });
   // O endereço é gravado inteiro (null limpa o que não veio), para não misturar com o anterior.

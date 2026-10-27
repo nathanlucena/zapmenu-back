@@ -79,6 +79,10 @@ export function filtrarPorPlano(
           delete dados.faixasEntrega;
           delete dados.modoEntrega;
         }
+        if (dados.usaMelhorEnvio === true && !podeUsar(loja, 'MELHOR_ENVIO')) {
+          bloquear('MELHOR_ENVIO');
+          delete dados.usaMelhorEnvio;
+        }
         if (Object.values(dados).some((valor) => valor !== undefined)) {
           permitidas.push({ ...operacao, dados });
         }

@@ -257,6 +257,13 @@ export function aplicarOperacoes(aplicacao: AplicacaoOperacoes, operacoes: Opera
             dados.fazEntrega = true;
           }
         }
+        if (dados.cepOrigem !== undefined) {
+          const cep = dados.cepOrigem.replace(/\D/g, '');
+          if (cep.length !== 8) {
+            avisos.add(`⚠️ O CEP ${dados.cepOrigem} não tem 8 números. Confere pra mim?`);
+          }
+          dados.cepOrigem = cep.length === 8 ? cep : undefined;
+        }
         if (dados.taxaEntrega !== undefined) {
           if (!Number.isFinite(dados.taxaEntrega) || dados.taxaEntrega < 0) {
             avisos.add('⚠️ Não consegui aplicar a taxa de entrega: o valor não pode ser negativo.');
@@ -591,12 +598,8 @@ function descreverLoja(loja: DadosLoja, atual: DadosLoja): string[] {
   if (loja.aceitaPagamentoNaEntrega !== undefined) {
     linhas.push(`💵 Pagamento na entrega (dinheiro ou cartão): *${simNao(loja.aceitaPagamentoNaEntrega)}*`);
   }
-  if (loja.aceitaEnvio !== undefined) linhas.push(`📦 Envia pelos Correios: *${simNao(loja.aceitaEnvio)}*`);
-  if (loja.freteEnvio !== undefined) linhas.push(`📦 Frete para o Brasil: *${formatarPreco(loja.freteEnvio)}*`);
-  if (loja.fretePorUf !== undefined) {
-    const porUf = Object.entries(loja.fretePorUf).map(([uf, frete]) => `${uf} ${formatarPreco(frete)}`);
-    linhas.push(`📦 Frete por estado: *${porUf.length ? porUf.join(' · ') : 'nenhum'}*`);
-  }
+  if (loja.usaMelhorEnvio !== undefined) linhas.push(`📦 Envio por transportadora (Melhor Envio): *${simNao(loja.usaMelhorEnvio)}*`);
+  if (loja.cepOrigem !== undefined) linhas.push(`📦 CEP de onde saem as encomendas: *${loja.cepOrigem.replace(/^(\d{5})(\d{3})$/, '$1-$2')}*`);
   if (loja.politicaTroca !== undefined) linhas.push(`🔁 Política de troca: _${loja.politicaTroca}_`);
   return linhas;
 }
