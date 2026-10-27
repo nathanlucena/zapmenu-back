@@ -65,6 +65,27 @@ const envSchema = z.object({
     .optional()
     .transform((valor) => valor || undefined),
 
+  // Assinatura do ZapMenu pelas lojas (Mercado Pago Assinaturas), na conta do próprio ZapMenu:
+  // credenciais separadas das que cobram os PIX das lojas. Sem token, "assinar" fica indisponível.
+  MERCADO_PAGO_ASSINATURAS_ACCESS_TOKEN: z
+    .string()
+    .optional()
+    .transform((valor) => valor?.trim() || undefined),
+  // Assinatura secreta do webhook dessa aplicação. Obrigatória junto com o token.
+  MERCADO_PAGO_ASSINATURAS_WEBHOOK_SECRET: z
+    .string()
+    .optional()
+    .transform((valor) => valor?.trim() || undefined),
+  // Credenciais de teste: manda o link do sandbox. Só desligue com credenciais de produção.
+  MERCADO_PAGO_ASSINATURAS_SANDBOX: z.stringbool().default(true),
+  // Para onde o Mercado Pago leva a loja depois de cadastrar o cartão. Vazio: o endereço público do app.
+  ASSINATURA_URL_RETORNO: z
+    .string()
+    .optional()
+    .transform((valor) => valor?.trim() || undefined),
+  // De quanto em quanto tempo o job das assinaturas roda (cada aviso sai uma vez por dia).
+  ASSINATURAS_VERIFICACAO_INTERVALO_MINUTOS: z.coerce.number().positive().default(60),
+
   PEDIDO_TTL_MINUTOS: z.coerce.number().default(20),
   // Quanto tempo a loja tem para aceitar ou recusar um pedido depois que o cliente manda o código.
   PEDIDO_ACEITE_MINUTOS: z.coerce.number().int().positive().default(15),
@@ -87,10 +108,18 @@ const envSchema = z.object({
     .transform((valor) => valor?.trim() || undefined),
 });
 
+const envValidado = envSchema.refine(
+  (env) => !env.MERCADO_PAGO_ASSINATURAS_ACCESS_TOKEN || env.MERCADO_PAGO_ASSINATURAS_WEBHOOK_SECRET,
+  {
+    message: 'MERCADO_PAGO_ASSINATURAS_WEBHOOK_SECRET é obrigatória junto com MERCADO_PAGO_ASSINATURAS_ACCESS_TOKEN',
+    path: ['MERCADO_PAGO_ASSINATURAS_WEBHOOK_SECRET'],
+  },
+);
+
 export type Env = z.infer<typeof envSchema>;
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
-  const parsed = envSchema.safeParse(source);
+  const parsed = envValidado.safeParse(source);
   if (!parsed.success) {
     throw new Error(`Configuração de ambiente inválida:\n${parsed.error.toString()}`);
   }

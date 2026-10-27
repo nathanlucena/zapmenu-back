@@ -39,6 +39,8 @@ import { chaveTelefone } from './shared/telefone/telefone.js';
 import { criarAssinaturasRepositoryPrisma } from './planos/infra/assinaturas.repository.prisma.js';
 import { avisarLimiteDePedidos } from './planos/application/avisar-limite-de-pedidos.js';
 import type { PlanosDeps } from './planos/application/dependencias.js';
+import { criarMercadoPagoAssinaturasClient } from './planos/infra/mercado-pago-assinaturas.client.js';
+import { iniciarJobAssinaturas } from './planos/infra/assinaturas.job.js';
 
 async function main(): Promise<void> {
   const env = getEnv();
@@ -106,11 +108,23 @@ async function main(): Promise<void> {
   };
   const avisoPedidoPago = { contatos, mensageiro: mensageiroLoja };
   const urlPublica = (env.FRONTEND_URL_PUBLICA ?? env.FRONTEND_ALLOWED_ORIGIN).replace(/\/$/, '');
+  const tokenAssinaturas = env.MERCADO_PAGO_ASSINATURAS_ACCESS_TOKEN;
+  if (!tokenAssinaturas) {
+    logger.warn('MERCADO_PAGO_ASSINATURAS_ACCESS_TOKEN não definida: as lojas não conseguem assinar (o teste e os limites continuam valendo)');
+  } else if (env.MERCADO_PAGO_ASSINATURAS_SANDBOX && !tokenAssinaturas.startsWith('TEST-')) {
+    logger.warn('assinaturas em modo sandbox: confira que o token é de um usuário de teste do Mercado Pago');
+  }
   const planos: PlanosDeps = {
     repo: criarAssinaturasRepositoryPrisma(prisma),
     mensageiro: mensageiroLoja,
     idempotency,
     linkDosPlanos: `${urlPublica}/#planos`,
+    gateway: tokenAssinaturas
+      ? criarMercadoPagoAssinaturasClient(tokenAssinaturas, {
+          urlDeRetorno: env.ASSINATURA_URL_RETORNO ?? urlPublica,
+          sandbox: env.MERCADO_PAGO_ASSINATURAS_SANDBOX,
+        })
+      : undefined,
   };
   // Cada venda confere o limite de pedidos do mês (aviso de 80% e 100%; o cliente nunca é barrado).
   const aoVirarVenda = (pedido: Pedido) => avisarLimiteDePedidos(planos, pedido.empreendedorId);
@@ -225,6 +239,7 @@ async function main(): Promise<void> {
     env.PAGAMENTO_POLLING_INTERVALO_SEGUNDOS * 1000,
     env.PAGAMENTO_POLLING_INTERVALO_SEGUNDOS,
   );
+  iniciarJobAssinaturas(planos, env.ASSINATURAS_VERIFICACAO_INTERVALO_MINUTOS * 60_000);
   // Prévias em imagem vencem em 1 h; limpa de hora em hora.
   setInterval(() => {
     previas.apagarVencidas().catch((erro: unknown) => logger.error({ err: erro }, 'falha ao apagar prévias vencidas'));
@@ -246,6 +261,8 @@ async function main(): Promise<void> {
     paymentsDeps,
     mercadoPagoWebhookSecret: env.MERCADO_PAGO_WEBHOOK_SECRET,
     previas,
+    planos,
+    assinaturasWebhookSecret: env.MERCADO_PAGO_ASSINATURAS_WEBHOOK_SECRET,
   });
 
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
