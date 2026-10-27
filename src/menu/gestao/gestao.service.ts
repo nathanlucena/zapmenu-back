@@ -15,6 +15,11 @@ import { entregaConfigurada } from '../entrega.js';
 import type { CadastroEmpreendedores } from './cadastro-empreendedores.js';
 import { reconhecerComando } from './comandos.js';
 import { filtrarPorTipo } from './permissoes-por-tipo.js';
+import { filtrarPorPlano } from './permissoes-por-plano.js';
+import { podeUsar, type Assinatura } from '../../planos/domain/assinatura.js';
+import type { PlanosDeps } from '../../planos/application/dependencias.js';
+import { assinaturaNaGestao } from '../../planos/application/situacao-do-plano.js';
+import { mensagemRecursoDoPlano } from '../../planos/application/mensagens.js';
 import {
   ehOpcaoDaEnquete,
   oQueMudaNaTroca,
@@ -70,6 +75,8 @@ export interface GestaoDeps {
   urlDoCardapio?: (slug: string) => string;
   /** Prévia em imagem das alterações: onde guardar e a URL da imagem no front. Sem isso, só texto. */
   previas?: { repo: PreviasRepository; urlDaImagem: (id: string) => string };
+  /** Planos e assinatura. Sem isso, a gestão não limita nada (como antes dos planos). */
+  planos?: PlanosDeps;
 }
 
 export interface MensagemGestao {
@@ -84,6 +91,8 @@ interface Rodada {
   mensagem: MensagemGestao;
   empreendedorId: string;
   snapshot: SnapshotCardapio;
+  /** Ausente quando os planos estão desligados: nada é limitado. */
+  assinatura?: Assinatura;
   estado: Estado;
   contexto: Contexto;
   respostas: RespostaGestao[];
@@ -116,6 +125,8 @@ export async function processarMensagemGestao(mensagem: MensagemGestao, deps: Ge
     mensagem,
     empreendedorId,
     snapshot: await deps.gestaoRepo.carregarSnapshot(empreendedorId),
+    // Depois do snapshot, que cria o empreendedor na primeira conversa: é aí que o teste começa.
+    assinatura: deps.planos ? await assinaturaNaGestao(deps.planos.repo, empreendedorId) : undefined,
     estado: conversa.estado,
     contexto: conversa.contexto,
     respostas: [],
@@ -226,7 +237,9 @@ async function tratar(rodada: Rodada): Promise<void> {
       responder(rodada, descreverPendencias(rodada));
       return;
     case 'PREVIA':
-      if (!rodada.deps.previas) {
+      if (!recursoLiberado(rodada, 'PREVIA_IMAGEM')) {
+        responder(rodada, mensagemRecursoDoPlano('PREVIA_IMAGEM', rodada.deps.planos?.linkDosPlanos));
+      } else if (!rodada.deps.previas) {
         responder(rodada, 'A prévia em imagem não está disponível agora. O resumo em texto continua: diga *pronto* quando terminar.');
       } else if (await responderPrevia(rodada, `Assim vai ficar no ${vocabulario(rodada.snapshot.segmento).lista} 👇`)) {
         responder(rodada, 'Quando terminar, diga *pronto* para revisar e salvar.');
@@ -440,8 +453,16 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
   if (doTipo.avisos.length > 0) {
     logger.info({ segmento: rodada.snapshot.segmento ?? 'COMIDA' }, 'operações de outro tipo de loja foram descartadas');
   }
+  // O plano tira o que ele não inclui (entrega por distância, cor e capa) e os produtos acima do limite.
+  const doPlano = filtrarPorPlano(
+    rodada.assinatura,
+    doTipo.operacoes,
+    { salvos: rodada.snapshot.itens.length, noRascunho: rodada.contexto.rascunho.novosItens.length },
+    rodada.deps.planos?.linkDosPlanos,
+  );
   const avisos = [
     ...doTipo.avisos,
+    ...doPlano.avisos,
     ...aplicarOperacoes(
       {
         contexto: rodada.contexto,
@@ -449,7 +470,7 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
         fotoAtual: rodada.mensagem.imagemUrl,
         segmento: rodada.snapshot.segmento,
       },
-      doTipo.operacoes,
+      doPlano.operacoes,
     ),
   ];
   if (saida.operacoesMalformadas.length > 0) {
@@ -474,7 +495,7 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
     await procurarEndereco(rodada);
   }
 
-  const mudouRascunho = doTipo.operacoes.length > 0;
+  const mudouRascunho = doPlano.operacoes.length > 0;
   if (estadoAnterior === 'CONFIRMANDO' && !mudouRascunho) {
     if (saida.decisao === 'CONFIRMAR') {
       await salvar(rodada);
@@ -706,6 +727,9 @@ const VALIDADE_PREVIA_MS = 60 * 60_000;
  */
 async function responderPrevia(rodada: Rodada, legenda: string): Promise<boolean> {
   const { previas } = rodada.deps;
+  if (!recursoLiberado(rodada, 'PREVIA_IMAGEM')) {
+    return false;
+  }
   const previa = previas && montarPrevia(rodada.contexto.rascunho, rodada.snapshot);
   if (!previas || !previa) {
     return false;
@@ -785,6 +809,11 @@ function registrarHistorico(rodada: Rodada, respostaBot: string): void {
 
 function limitar(texto: string): string {
   return texto.length > MAX_CARACTERES_HISTORICO ? `${texto.slice(0, MAX_CARACTERES_HISTORICO)}…` : texto;
+}
+
+/** Sem planos configurados, tudo fica liberado. */
+function recursoLiberado(rodada: Rodada, recurso: Parameters<typeof podeUsar>[1]): boolean {
+  return !rodada.assinatura || podeUsar(rodada.assinatura, recurso);
 }
 
 function responder(rodada: Rodada, texto: string): void {
