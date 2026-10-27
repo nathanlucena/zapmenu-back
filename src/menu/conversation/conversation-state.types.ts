@@ -193,6 +193,11 @@ export interface Contexto {
   proximaRef: number;
   /** Produto que recebeu a última foto (loja): a próxima foto sem legenda logo em seguida vai para ele. */
   ultimaFoto?: { ref?: string; itemId?: string; em: string };
+  /** Guia de medidas mostrado, esperando o "sim". */
+  guiaPendente?: {
+    alvo: { tipo: 'CATEGORIA' | 'ITEM'; id: string };
+    guia: { nome: string; colunas: string[]; linhas: { tamanho: string; medidas: number[] }[] };
+  };
   /** "mudar tipo da loja" em andamento: sem `para`, esperando a escolha; com `para`, esperando o sim. */
   trocaDeTipo?: { para?: 'COMIDA' | 'VAREJO' };
   /** Conversa da assinatura em andamento: esperando o e-mail do Mercado Pago ou o "sim" de uma mudança. */

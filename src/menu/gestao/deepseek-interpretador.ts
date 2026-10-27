@@ -122,6 +122,7 @@ TIPO DA LOJA: LOJA (produtos: roupas, acessórios…)
 - NUNCA use variacoes (adicionais com preço) neste tipo. Se a pessoa pedir adicional, explique numa frase que adicionais são do tipo *Cardápio* e que ela pode mandar *mudar tipo da loja*.
 - COMO A LOJA ENTREGA: (1) envio próprio, com as mesmas regras da entrega (taxa_entrega_fixa com raio_entrega_km, ou faixas_entrega por distância) e "faz_entrega"; (2) transportadora pelo Melhor Envio, em atualizar_loja "melhor_envio": true/false, com "cep_origem" (CEP de onde saem as encomendas; se não disser, vale o do endereço da loja). Os dois podem estar ligados juntos, além da retirada. Se a pessoa perguntar "como você entrega?" ou quiser configurar envio, explique essas opções. Frete fixo por estado não existe mais: se pedirem, ofereça as opções acima.
 - Peso e medidas para o frete por transportadora: em novo_item/editar_item, "peso_g" (gramas) e "altura_cm", "largura_cm", "comprimento_cm" (centímetros do pacote). Para a categoria inteira: {"tipo": "medidas_da_categoria", "categoria_id": "...", "peso_g": 300, "altura_cm": 4, "largura_cm": 20, "comprimento_cm": 30}. "camiseta pesa 200g" → peso_g 200; "1,2 kg" → 1200. Nunca invente medidas.
+- Guia de medidas (tabela de tamanhos em cm) de uma categoria ou de um produto: {"tipo": "guia_de_medidas", "categoria_id": "..." (ou "item_id"), "nome": "Camisetas", "colunas": ["Busto", "Comprimento"], "linhas": [{"tamanho": "P", "medidas": [96, 68]}, {"tamanho": "M", "medidas": [100, 70]}]}. Uma medida por coluna, em centímetros, na mesma ordem. Use só os números que a pessoa mandou; se faltar algum, pergunte. O sistema mostra a tabela e pede confirmação.
 - Política de troca em atualizar_loja: "politica_troca": texto curto e claro com o que a pessoa disse ("troco em 7 dias com etiqueta" → "Troca em até 7 dias, com a etiqueta."). Não invente prazo nem regra que ela não disse. Lembre que compra online tem 7 dias de arrependimento (CDC) se ela perguntar.
 
 EXEMPLO
@@ -415,6 +416,23 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
   z.object({ tipo: z.literal('confirmar_endereco') }).transform((): Operacao => ({ tipo: 'CONFIRMAR_ENDERECO' })),
   z.object({ tipo: z.literal('recusar_endereco') }).transform((): Operacao => ({ tipo: 'RECUSAR_ENDERECO' })),
   z.object({ tipo: z.literal('descartar_tudo') }).transform((): Operacao => ({ tipo: 'DESCARTAR_TUDO' })),
+  z
+    .object({
+      tipo: z.literal('guia_de_medidas'),
+      item_id: z.string().trim().min(1).nullish(),
+      categoria_id: z.string().trim().min(1).nullish(),
+      nome: texto,
+      colunas: z.array(z.string().trim().min(1)).min(1),
+      linhas: z.array(z.object({ tamanho: z.union([z.string(), z.number()]).transform(String), medidas: z.array(numeroLivre) })).min(1),
+    })
+    .refine((op) => Boolean(op.item_id) !== Boolean(op.categoria_id), 'mande item_id OU categoria_id')
+    .transform(
+      (op): Operacao => ({
+        tipo: 'DEFINIR_GUIA_MEDIDAS',
+        alvo: op.item_id ? { tipo: 'ITEM', id: op.item_id } : { tipo: 'CATEGORIA', id: op.categoria_id! },
+        guia: { nome: op.nome ?? 'Guia de medidas', colunas: op.colunas, linhas: op.linhas.map((linha) => ({ tamanho: linha.tamanho.trim(), medidas: linha.medidas })) },
+      }),
+    ),
   z
     .object({ tipo: z.literal('medidas_da_categoria'), categoria_id: idObrigatorio, ...medidas })
     .transform(

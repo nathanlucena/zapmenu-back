@@ -42,8 +42,9 @@ model Categoria {
   larguraCm     Decimal? @db.Decimal(6, 1)
   comprimentoCm Decimal? @db.Decimal(6, 1)
 
-  itens     ItemCardapio[]
-  promocoes PromocaoAlvo[]
+  itens       ItemCardapio[]
+  promocoes   PromocaoAlvo[]
+  guiaMedidas GuiaMedidas?
 
   @@unique([cardapioId, nome])
   @@index([cardapioId])
@@ -133,6 +134,7 @@ model Loja {
   promocoes          Promocao[]
   relatoriosEnviados RelatorioEnviado[]
   contaMelhorEnvio   ContaMelhorEnvio?
+  guiasDeMedidas     GuiaMedidas[]
 }
 
 model ItemCardapio {
@@ -161,6 +163,7 @@ model ItemCardapio {
   fotos       FotoProduto[]
   skus        Sku[]
   promocoes   PromocaoAlvo[]
+  guiaMedidas GuiaMedidas?
 
   @@index([cardapioId])
   @@index([categoriaId])
@@ -504,4 +507,23 @@ model ContaMelhorEnvio {
   avisoFalhaEm  DateTime?
   conectadaEm   DateTime  @default(now())
   atualizadoEm  DateTime  @updatedAt
+}
+
+/// Tabela de medidas (cm) por tamanho, de uma categoria ou de um produto (o do produto vale primeiro).
+model GuiaMedidas {
+  id          String        @id @default(cuid())
+  lojaId      String
+  loja        Loja          @relation(fields: [lojaId], references: [id])
+  nome        String
+  /// Ex.: ["Busto", "Cintura", "Comprimento"].
+  colunas     String[]
+  /// [{ "tamanho": "P", "medidas": [88, 70, 65] }], uma medida por coluna.
+  linhas      Json
+  categoriaId String?       @unique
+  categoria   Categoria?    @relation(fields: [categoriaId], references: [id], onDelete: Cascade)
+  itemId      String?       @unique
+  item        ItemCardapio? @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  criadoEm    DateTime      @default(now())
+
+  @@index([lojaId])
 }

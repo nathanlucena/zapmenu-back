@@ -60,6 +60,12 @@ export function filtrarPorPlano(
         }
         break;
       }
+      case 'DEFINIR_GUIA_MEDIDAS':
+        if (!podeUsar(loja, 'GUIA_MEDIDAS')) {
+          bloquear('GUIA_MEDIDAS');
+          continue;
+        }
+        break;
       case 'ANEXAR_FOTO_LOJA':
         if (operacao.destino === 'CAPA' && !podeUsar(loja, 'CORES_CAPA')) {
           bloquear('CORES_CAPA');

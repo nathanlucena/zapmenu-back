@@ -22,6 +22,8 @@ import { assinaturaNaGestao } from '../../planos/application/situacao-do-plano.j
 import { mensagemLojaSuspensa, mensagemRecursoDoPlano } from '../../planos/application/mensagens.js';
 import { conversaDoPlano } from './conversa-do-plano.js';
 import { conversaDosRelatorios } from './conversa-dos-relatorios.js';
+import { problemasDoGuia, tabelaEmTexto } from '../guia-medidas/guia-medidas.js';
+import type { GuiasRepository } from '../guia-medidas/guias.repository.js';
 import type { RelatoriosDeps } from '../../relatorios/application/relatorios.js';
 import { conversaDasPromocoes, proporPromocao, type ConversaDasPromocoes, type PromocoesDeps } from './conversa-das-promocoes.js';
 import { diaNoFuso } from '../../planos/domain/calendario.js';
@@ -83,6 +85,8 @@ export interface GestaoDeps {
   previas?: { repo: PreviasRepository; urlDaImagem: (id: string) => string };
   /** Planos e assinatura. Sem isso, a gestão não limita nada (como antes dos planos). */
   planos?: PlanosDeps;
+  /** Guias de medidas (loja, Profissional). Sem isso, a gestão diz que não está disponível. */
+  guias?: GuiasRepository;
   /** Conta do Melhor Envio da loja (link de conexão). Sem isso, o envio por transportadora fica indisponível. */
   melhorEnvio?: {
     linkParaConectar(telefone: string): Promise<string | undefined>;
@@ -220,6 +224,9 @@ async function tratar(rodada: Rodada): Promise<void> {
   if (await tratarRelatorios(rodada)) {
     return;
   }
+  if (await tratarGuiaPendente(rodada)) {
+    return;
+  }
   if (rodada.snapshot.lojaSalva.tipoPendente) {
     await escolherTipoNoCadastro(rodada);
     return;
@@ -354,6 +361,54 @@ async function tratarPromocoes(rodada: Rodada): Promise<boolean> {
   const respostas = await conversaDasPromocoes(conversaDasPromocoesDa(rodada, promocoes));
   respostas?.forEach((resposta) => rodada.respostas.push(resposta));
   return Boolean(respostas);
+}
+
+/** Mostra a tabela que a IA montou e guarda para o "sim". */
+function proporGuia(
+  rodada: Rodada,
+  alvo: NonNullable<Contexto['guiaPendente']>['alvo'],
+  guia: NonNullable<Contexto['guiaPendente']>['guia'],
+): void {
+  if (!rodada.deps.guias) {
+    responder(rodada, 'O guia de medidas ainda não está disponível por aqui.');
+    return;
+  }
+  const existe =
+    alvo.tipo === 'ITEM'
+      ? rodada.snapshot.itens.some((item) => item.id === alvo.id)
+      : rodada.snapshot.categorias.some((categoria) => categoria.id === alvo.id);
+  const problemas = existe ? problemasDoGuia(guia) : ['não achei o produto ou a categoria do guia'];
+  if (problemas.length > 0) {
+    responder(rodada, `Não consegui montar o guia de medidas: ${problemas.join('; ')}. Pode mandar de novo?`);
+    return;
+  }
+  const nomeDoAlvo =
+    alvo.tipo === 'ITEM'
+      ? rodada.snapshot.itens.find((item) => item.id === alvo.id)?.nome
+      : `categoria ${rodada.snapshot.categorias.find((categoria) => categoria.id === alvo.id)?.nome}`;
+  rodada.contexto.guiaPendente = { alvo, guia };
+  responder(rodada, [`📏 *${guia.nome}* (${nomeDoAlvo})`, tabelaEmTexto(guia), '', 'Confirma? (*sim*/*não*)'].join('\n'));
+}
+
+/** "sim" grava o guia mostrado; "não"/"cancelar" descarta; outra mensagem deixa de lado e segue a conversa. */
+async function tratarGuiaPendente(rodada: Rodada): Promise<boolean> {
+  const pendente = rodada.contexto.guiaPendente;
+  if (!pendente || !rodada.deps.guias) {
+    return false;
+  }
+  const comando = rodada.mensagem.imagemUrl ? undefined : reconhecerComando(rodada.mensagem.texto);
+  rodada.contexto.guiaPendente = undefined;
+  if (comando === 'NAO' || comando === 'CANCELAR') {
+    responder(rodada, 'Ok, descartei o guia de medidas.');
+    return true;
+  }
+  if (comando !== 'SIM') {
+    return false;
+  }
+  await rodada.deps.guias.salvar(rodada.empreendedorId, pendente.alvo, pendente.guia);
+  logger.info({ telefone: rodada.mensagem.telefone, alvo: pendente.alvo.tipo }, '📏 guia de medidas salvo');
+  responder(rodada, '✅ Guia de medidas salvo! Na vitrine, aparece o link *Guia de medidas* ao lado dos tamanhos.');
+  return true;
 }
 
 /** "relatório", "vendas de hoje"… e o liga/desliga do relatório diário. */
@@ -570,7 +625,10 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
   );
   // Promoção não entra no rascunho: tem resumo e "sim" próprios.
   const promocoesPropostas = doPlano.operacoes.flatMap((operacao) => (operacao.tipo === 'NOVA_PROMOCAO' ? [operacao.promocao] : []));
-  const paraORascunho = doPlano.operacoes.filter((operacao) => operacao.tipo !== 'NOVA_PROMOCAO');
+  const guiaProposto = doPlano.operacoes.find((operacao) => operacao.tipo === 'DEFINIR_GUIA_MEDIDAS');
+  const paraORascunho = doPlano.operacoes.filter(
+    (operacao) => operacao.tipo !== 'NOVA_PROMOCAO' && operacao.tipo !== 'DEFINIR_GUIA_MEDIDAS',
+  );
   const avisos = [
     ...doTipo.avisos,
     ...doPlano.avisos,
@@ -616,6 +674,10 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
     }
   }
 
+  if (guiaProposto?.tipo === 'DEFINIR_GUIA_MEDIDAS') {
+    proporGuia(rodada, guiaProposto.alvo, guiaProposto.guia);
+  }
+
   const mudouRascunho = paraORascunho.length > 0;
   if (estadoAnterior === 'CONFIRMANDO' && !mudouRascunho) {
     if (saida.decisao === 'CONFIRMAR') {
@@ -631,7 +693,7 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
   rodada.estado = 'CONVERSANDO';
   // Com um endereço acabando de ser encontrado, a pergunta "é aqui?" vem antes do resumo.
   // Com uma promoção esperando o "sim", o resumo dela vem antes do resumo do rascunho.
-  if (saida.finalizou && !rodada.contexto.enderecoPendente && !rodada.contexto.promocaoPendente) {
+  if (saida.finalizou && !rodada.contexto.enderecoPendente && !rodada.contexto.promocaoPendente && !rodada.contexto.guiaPendente) {
     await finalizar(rodada);
   }
 }

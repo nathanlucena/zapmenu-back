@@ -26,6 +26,7 @@ export function filtrarPorTipo(
   for (const operacao of operacoes) {
     switch (operacao.tipo) {
       case 'DEFINIR_GRADE':
+      case 'DEFINIR_GUIA_MEDIDAS':
         if (!varejo) {
           avisos.add(AVISO_SO_DA_LOJA);
           continue;

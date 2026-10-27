@@ -41,6 +41,7 @@ import { criarContasMelhorEnvioRepositoryPrisma } from './envio/infra/contas-mel
 import { contaConectada, linkParaConectar } from './envio/application/conexao.js';
 import { criarCotadorMelhorEnvio } from './envio/application/cotador.js';
 import { gerarEtiqueta } from './envio/application/etiqueta.js';
+import { criarGuiasRepositoryPrisma } from './menu/guia-medidas/guias.repository.prisma.js';
 import type { MelhorEnvioDeps } from './envio/application/dependencias.js';
 import { criarAssinaturasRepositoryPrisma } from './planos/infra/assinaturas.repository.prisma.js';
 import { avisarLimiteDePedidos } from './planos/application/avisar-limite-de-pedidos.js';
@@ -212,6 +213,7 @@ async function main(): Promise<void> {
       urlDoCardapio: (slug) => `${urlPublica}/${slug}`,
       planos,
       promocoes,
+      guias: criarGuiasRepositoryPrisma(prisma),
       melhorEnvio: melhorEnvio && {
         linkParaConectar: (telefone: string) => linkParaConectar(melhorEnvio, telefone),
         conectada: (telefone: string) => contaConectada(melhorEnvio, telefone),

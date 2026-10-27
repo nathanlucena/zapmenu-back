@@ -22,6 +22,8 @@ import { fotosDoItem } from './fotos-do-produto.js';
 import { cardapioNoPlano, regrasNoPlano } from './plano-na-vitrine.js';
 import { comPromocoes } from './promocoes-na-vitrine.js';
 import { promocaoDoRegistro } from '../promocoes/domain/promocao.js';
+import { paraGuia } from './guia-medidas/guias.repository.prisma.js';
+import { guiaDoItem } from './guia-medidas/guia-medidas.js';
 
 /** Os dados da loja salva que contam para o cadastro obrigatório. */
 function lojaParaCadastro(loja: Loja, entregaPorDistancia: boolean): LojaParaCadastro {
@@ -207,6 +209,7 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
           include: {
             promocoes: { where: { ativa: true }, include: { alvos: true } },
             contaMelhorEnvio: { select: { id: true } },
+            guiasDeMedidas: true,
           },
         }),
         prisma.assinatura.findUnique({ where: { empreendedorId }, select: { plano: true, status: true } }),
@@ -229,6 +232,15 @@ export function criarMenuRepositoryPrisma(prisma: PrismaClient): MenuRepository 
         })),
         { id: null, nome: 'Outros', itens: disponiveis.filter((item) => !item.categoriaId) },
       ].filter((secao) => secao.itens.length > 0);
+
+      // Guia de medidas: só na loja (varejo) do Profissional; o do produto vale antes do da categoria.
+      if (loja?.segmento === 'VAREJO' && podeUsar(plano ?? undefined, 'GUIA_MEDIDAS') && loja.guiasDeMedidas.length > 0) {
+        const guias = loja.guiasDeMedidas.map((registro) => ({ itemId: registro.itemId, categoriaId: registro.categoriaId, guia: paraGuia(registro) }));
+        for (const item of disponiveis) {
+          const guia = guiaDoItem(item, guias);
+          if (guia) item.guiaMedidas = guia;
+        }
+      }
 
       const cardapio: CardapioPublico = {
         loja: loja && paraLojaPublica(loja, plano ?? undefined, Boolean(loja.contaMelhorEnvio)),
