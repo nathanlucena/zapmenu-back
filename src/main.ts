@@ -47,6 +47,7 @@ import { criarRelatoriosRepositoryPrisma } from './relatorios/infra/relatorios.r
 import { iniciarJobRelatorios } from './relatorios/infra/relatorios.job.js';
 import { criarTranscritorOpenAiCompativel } from './audio/infra/transcritor-openai-compativel.js';
 import { ouvirAudio, type OuvirAudioDeps } from './audio/application/ouvir-audio.js';
+import { criarGeradorDeDescricoesDeepSeek } from './menu/gestao/deepseek-descricoes.js';
 
 async function main(): Promise<void> {
   const env = getEnv();
@@ -202,6 +203,17 @@ async function main(): Promise<void> {
       promocoes,
       relatorios,
       audio,
+      // Descrições pela IA usam o mesmo DeepSeek da gestão; sem chave, a oferta não aparece.
+      descricoes: env.DEEPSEEK_API_KEY
+        ? {
+            gerador: criarGeradorDeDescricoesDeepSeek({
+              apiKey: env.DEEPSEEK_API_KEY,
+              modelo: env.DEEPSEEK_MODEL,
+              baseURL: env.DEEPSEEK_BASE_URL,
+            }),
+            cotas: planos.repo,
+          }
+        : undefined,
       decisoes: {
         ordersRepo,
         contatos,

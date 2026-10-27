@@ -178,6 +178,22 @@ export function ehComandoSemIA(texto: string): boolean {
     reconhecerComando(texto) ||
       reconhecerComandoDePlano(texto) ||
       reconhecerComandoDePromocao(texto) ||
-      reconhecerComandoDeRelatorio(texto),
+      reconhecerComandoDeRelatorio(texto) ||
+      reconhecerComandoDeDescricao(texto),
   );
+}
+
+/** Pedido de descrição escrita pela IA: de um item (pelo nome) ou de uma categoria. */
+export type ComandoDeDescricao = { tipo: 'ITEM' | 'CATEGORIA'; nome: string };
+
+const DESCRICAO_DA_CATEGORIA = /^(?:melhor(?:a|ar)|escreve(?:r)?|cria(?:r)?)\s+(?:as\s+)?descricoes\s+(?:da|do|de|dos|das)\s+categoria\s+(.+)$/;
+const DESCRICAO_DO_ITEM = /^(?:melhor(?:a|ar)|escreve(?:r)?|cria(?:r)?)\s+(?:a\s+|uma\s+)?descricao\s+(?:da|do|de|para|pra|pro)\s+(?:a\s+|o\s+)?(.+)$/;
+
+export function reconhecerComandoDeDescricao(texto: string): ComandoDeDescricao | undefined {
+  const normalizado = normalizar(texto);
+  const categoria = normalizado.match(DESCRICAO_DA_CATEGORIA);
+  if (categoria) return { tipo: 'CATEGORIA', nome: categoria[1]!.trim() };
+  const item = normalizado.match(DESCRICAO_DO_ITEM);
+  if (item) return { tipo: 'ITEM', nome: item[1]!.trim() };
+  return undefined;
 }

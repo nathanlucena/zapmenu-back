@@ -22,6 +22,7 @@ import { assinaturaNaGestao } from '../../planos/application/situacao-do-plano.j
 import { mensagemLojaSuspensa, mensagemRecursoDoPlano } from '../../planos/application/mensagens.js';
 import { conversaDoPlano } from './conversa-do-plano.js';
 import { conversaDosRelatorios } from './conversa-dos-relatorios.js';
+import { conversaDasDescricoes, oferecerDescricoes, type DescricoesDeps } from './conversa-das-descricoes.js';
 import type { RelatoriosDeps } from '../../relatorios/application/relatorios.js';
 import { conversaDasPromocoes, proporPromocao, type ConversaDasPromocoes, type PromocoesDeps } from './conversa-das-promocoes.js';
 import { diaNoFuso } from '../../planos/domain/calendario.js';
@@ -87,6 +88,8 @@ export interface GestaoDeps {
   promocoes?: PromocoesDeps;
   /** Relatórios de vendas pedidos na conversa. Sem isso, "relatório" vai para a IA. */
   relatorios?: RelatoriosDeps;
+  /** Descrições escritas pela IA (Profissional). Sem isso, nem oferece. */
+  descricoes?: DescricoesDeps;
 }
 
 export interface MensagemGestao {
@@ -211,6 +214,9 @@ async function tratar(rodada: Rodada): Promise<void> {
     return;
   }
   if (await tratarRelatorios(rodada)) {
+    return;
+  }
+  if (await tratarDescricoes(rodada)) {
     return;
   }
   if (rodada.snapshot.lojaSalva.tipoPendente) {
@@ -343,6 +349,26 @@ async function tratarPromocoes(rodada: Rodada): Promise<boolean> {
   }
   const respostas = await conversaDasPromocoes(conversaDasPromocoesDa(rodada, promocoes));
   respostas?.forEach((resposta) => rodada.respostas.push(resposta));
+  return Boolean(respostas);
+}
+
+/** "melhora a descrição da …" e as respostas à oferta e às opções da IA. */
+async function tratarDescricoes(rodada: Rodada): Promise<boolean> {
+  const { descricoes } = rodada.deps;
+  if (!descricoes || rodada.mensagem.imagemUrl) {
+    return false;
+  }
+  const respostas = await conversaDasDescricoes({
+    descricoes,
+    gestaoRepo: rodada.deps.gestaoRepo,
+    telefone: rodada.empreendedorId,
+    texto: rodada.mensagem.texto,
+    contexto: rodada.contexto,
+    snapshot: rodada.snapshot,
+    plano: rodada.assinatura,
+    linkDosPlanos: rodada.deps.planos?.linkDosPlanos,
+  });
+  respostas?.forEach((resposta) => responder(rodada, resposta));
   return Boolean(respostas);
 }
 
@@ -910,12 +936,21 @@ async function salvar(rodada: Rodada): Promise<void> {
 
   logger.info({ telefone: rodada.mensagem.telefone, alteracoes: total }, '💾 rascunho salvo no cardápio');
   const completoAntes = cadastroCompleto(lojaParaCadastro(rodada));
+  const nomesNovos = new Set(rascunho.novosItens.map((novo) => novo.nome));
   reiniciar(rodada);
   responder(
     rodada,
     `✅ Pronto! ${total === 1 ? '1 alteração salva' : `${total} alterações salvas`} no ${vocabulario(rodada.snapshot.segmento).lista}.`,
   );
   await avisarSituacaoDoCadastro(rodada, completoAntes);
+  // Itens novos sem descrição (ou curta): a IA oferece escrever (Profissional).
+  if (rodada.deps.descricoes && recursoLiberado(rodada, 'IA_DESCRICAO') && nomesNovos.size > 0) {
+    const oferta = oferecerDescricoes(
+      rodada.contexto,
+      rodada.snapshot.itens.filter((item) => nomesNovos.has(item.nome)),
+    );
+    if (oferta) responder(rodada, oferta);
+  }
 }
 
 function reiniciar(rodada: Rodada): void {

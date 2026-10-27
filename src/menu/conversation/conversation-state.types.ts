@@ -190,6 +190,10 @@ export interface Contexto {
     | { etapa: 'EMAIL'; plano: 'ESSENCIAL' | 'PROFISSIONAL'; periodo: 'MENSAL' | 'ANUAL' }
     | { etapa: 'CONFIRMAR_MUDANCA'; plano: 'ESSENCIAL' | 'PROFISSIONAL' }
     | { etapa: 'CONFIRMAR_CANCELAMENTO' };
+  /** Descrições pela IA: a oferta depois de cadastrar, ou a escolha entre as 2 opções do item atual. */
+  descricoes?:
+    | { etapa: 'OFERTA'; itemIds: string[] }
+    | { etapa: 'ESCOLHA'; fila: string[]; atual: { itemId: string; nome: string; opcoes: [string, string] } };
   /** Promoção mostrada no resumo, esperando o "sim" (duas vezes acima de 50%). Datas em ISO. */
   promocaoPendente?: {
     tipo: 'PRECO_FIXO' | 'PERCENTUAL';
