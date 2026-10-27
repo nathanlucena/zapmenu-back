@@ -14,6 +14,7 @@ import {
   mensagemCanceladaNoMercadoPago,
   mensagemCobrancaPendente,
   mensagemPagamentoRegularizado,
+  mensagemPlanoMudou,
 } from './mensagens.js';
 import { DIAS_PENDENTE_ATE_SUSPENDER } from '../domain/assinatura.js';
 
@@ -106,6 +107,9 @@ async function tratarCobranca(deps: Deps, id: string, agora: Date): Promise<void
     await deps.repo.salvar(paga);
     if (assinatura.status === 'PENDENTE' || assinatura.status === 'SUSPENSA') {
       await avisar(deps, loja.telefone, mensagemPagamentoRegularizado());
+    }
+    if (paga.plano !== assinatura.plano) {
+      await avisar(deps, loja.telefone, mensagemPlanoMudou(paga.plano));
     }
     return;
   }

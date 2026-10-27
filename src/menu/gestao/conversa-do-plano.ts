@@ -37,7 +37,7 @@ function nome(plano: PlanoId): string {
 const { ESSENCIAL, PROFISSIONAL } = CATALOGO_PLANOS;
 const ESCOLHA_DO_PLANO = [
   'Qual plano você quer?',
-  `• ${comandoAssinar('ESSENCIAL')}: ${precoDaAssinatura('ESSENCIAL', 'MENSAL')}, até ${ESSENCIAL.limites.pedidosMes} pedidos por mês e ${ESSENCIAL.limites.produtos} produtos`,
+  `• ${comandoAssinar('ESSENCIAL')}: ${precoDaAssinatura('ESSENCIAL', 'MENSAL')}, até ${ESSENCIAL.limites.pedidosMes} pedidos por mês, ${ESSENCIAL.limites.produtos} produtos e entrega com taxa fixa`,
   `• ${comandoAssinar('PROFISSIONAL')}: ${precoDaAssinatura('PROFISSIONAL', 'MENSAL')}, ${PROFISSIONAL.limites.pedidosMes?.toLocaleString('pt-BR')} pedidos por mês, produtos ilimitados, entrega por distância, cores e capa, prévia em imagem e sem o selo do ZapMenu`,
   'No anual sai mais barato: acrescente *anual* (ex.: _assinar profissional anual_).',
 ].join('\n');
@@ -125,7 +125,7 @@ function comandoMudarPlano(conversa: ConversaDoPlano, comando: Extract<ComandoDe
   }
   const { limites } = CATALOGO_PLANOS[alvo];
   return [
-    `Você continua no *${nome(assinatura.plano)}* até ${ate}. Depois disso fica no *${nome(alvo)}* (${precoDaAssinatura(alvo, assinatura.periodo)}): até ${limites.pedidosMes} pedidos por mês e ${limites.produtos} produtos, sem entrega por distância, cores, capa e prévia em imagem, e com o selo do ZapMenu na vitrine. Confirma? (*sim*/*não*)`,
+    `Você continua no *${nome(assinatura.plano)}* até ${ate}. Depois disso fica no *${nome(alvo)}* (${precoDaAssinatura(alvo, assinatura.periodo)}): até ${limites.pedidosMes} pedidos por mês e ${limites.produtos} produtos, entrega com taxa fixa (sem a por distância), sem cores, capa e prévia em imagem, e com o selo do ZapMenu na vitrine. Confirma? (*sim*/*não*)`,
   ];
 }
 

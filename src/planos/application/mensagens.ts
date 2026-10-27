@@ -109,9 +109,25 @@ export function precoDaAssinatura(plano: PlanoId, periodo: PeriodoAssinatura): s
   return `${formatarCentavos(valorDaCobrancaCentavos(plano, periodo))}/${periodo === 'ANUAL' ? 'ano' : 'mês'}`;
 }
 
+/** No Básico a entrega por distância para: quem usava passa para a taxa fixa (pede o valor). */
+const LEMBRETE_TAXA_FIXA =
+  '🛵 No Básico a entrega é com *taxa fixa*. Se você usava a entrega por distância, me diga quanto cobra de entrega (ex.: _R$ 5 até 4 km_); até lá, só retirada. Suas faixas continuam guardadas.';
+
+function comLembreteDaEntrega(plano: PlanoId, texto: string): string {
+  return CATALOGO_PLANOS[plano].recursos.ENTREGA_POR_DISTANCIA ? texto : `${texto}\n${LEMBRETE_TAXA_FIXA}`;
+}
+
 export function mensagemAssinaturaConfirmada(assinatura: Assinatura, fuso: string): string {
   const quando = assinatura.proximaCobranca ? ` A próxima cobrança é em ${diaEMes(assinatura.proximaCobranca, fuso)}.` : '';
-  return `✅ Assinatura confirmada! Sua loja está no plano *${nome(assinatura.plano)}* (${precoDaAssinatura(assinatura.plano, assinatura.periodo)}).${quando}`;
+  return comLembreteDaEntrega(
+    assinatura.plano,
+    `✅ Assinatura confirmada! Sua loja está no plano *${nome(assinatura.plano)}* (${precoDaAssinatura(assinatura.plano, assinatura.periodo)}).${quando}`,
+  );
+}
+
+/** O downgrade marcado entrou em vigor com a cobrança do mês. */
+export function mensagemPlanoMudou(plano: PlanoId): string {
+  return comLembreteDaEntrega(plano, `Sua loja agora está no plano *${nome(plano)}*, como combinado.`);
 }
 
 export function mensagemPagamentoRegularizado(): string {

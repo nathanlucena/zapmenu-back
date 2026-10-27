@@ -72,20 +72,80 @@ function ia(parcial: Partial<RespostaConversa>): Partial<RespostaConversa> {
 }
 
 describe('gestão: recursos por plano', () => {
-  it('Básico: entrega por distância é recusada com o convite para o Profissional', async () => {
+  it('Básico: entrega por distância é recusada com o convite para o Profissional e o pedido da taxa fixa', async () => {
     const cenario = criarCenario(BASICO);
     cenario.ia.responder(
-      ia({ operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { fazEntrega: true, faixasEntrega: [{ ateKm: 3, taxa: 5 }] } }] }),
+      ia({ operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { fazEntrega: true, faixasEntrega: [{ ateKm: 1, taxa: 0 }, { ateKm: 3, taxa: 5 }] } }] }),
     );
 
-    const respostas = await cenario.enviar('quero entregar até 3 km por 5 reais');
+    const respostas = await cenario.enviar('até 1 km grátis, até 3 km 5 reais');
 
     const texto = textos(respostas);
     expect(texto).toContain('Isso faz parte do plano *Profissional*');
     expect(texto).toContain(LINK_PLANOS);
     expect(texto).toContain('*assinar profissional*');
-    expect(cenario.conversa().contexto.rascunho.loja?.fazEntrega).toBeUndefined();
+    expect(texto).toContain('No seu plano a entrega é com *taxa fixa*');
     expect(cenario.conversa().contexto.rascunho.loja?.faixasEntrega).toBeUndefined();
+  });
+
+  it('Básico: entrega com taxa fixa e raio é anotada e salva', async () => {
+    const cenario = criarCenario(BASICO);
+    cenario.ia.responder(
+      ia({ operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { taxaEntrega: 5, raioEntregaKm: 4 } }], finalizou: true }),
+    );
+
+    const resumo = textos(await cenario.enviar('entrego por 5 reais até 4 km, é isso'));
+
+    expect(resumo).not.toContain('Isso faz parte do plano');
+    expect(resumo).toContain('Entrega com taxa fixa: *R$ 5,00 até 4 km*');
+    expect(cenario.conversa().contexto.rascunho.loja).toMatchObject({
+      fazEntrega: true,
+      taxaEntrega: 5,
+      raioEntregaKm: 4,
+      modoEntrega: 'FIXA',
+    });
+    await cenario.enviar('sim');
+    expect(cenario.gestaoRepo.salvos[0]?.rascunho.loja).toMatchObject({ taxaEntrega: 5, modoEntrega: 'FIXA' });
+  });
+
+  it('Básico: "faço entrega" sem valor pede a taxa fixa antes de salvar (não as faixas)', async () => {
+    const cenario = criarCenario(BASICO);
+    cenario.ia.responder(ia({ operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { fazEntrega: true } }], finalizou: true }));
+
+    const texto = textos(await cenario.enviar('agora faço entrega, é isso'));
+
+    expect(texto).toContain('quanto você cobra de entrega (um valor só)');
+    expect(texto).not.toContain('até 1 km grátis');
+  });
+
+  it('caiu do Profissional para o Básico usando a distância: avisa e pede a taxa fixa, sem apagar as faixas', async () => {
+    const cenario = criarCenario(BASICO);
+    cenario.gestaoRepo.snapshot.loja = {
+      ...cenario.gestaoRepo.snapshot.loja,
+      fazEntrega: true,
+      modoEntrega: 'DISTANCIA',
+      faixasEntrega: [{ ateKm: 3, taxa: 5 }],
+    };
+    cenario.ia.responder(ia({ resposta: 'Oi!' }));
+
+    const texto = textos(await cenario.enviar('oi'));
+
+    expect(texto).toContain('No seu plano a entrega é com *taxa fixa*');
+    expect(texto).toContain('só com retirada');
+    expect(texto).toContain('faixas de distância continuam guardadas');
+    expect(cenario.gestaoRepo.snapshot.loja.faixasEntrega).toEqual([{ ateKm: 3, taxa: 5 }]);
+  });
+
+  it('Profissional escolhe a taxa fixa ou a distância', async () => {
+    const cenario = criarCenario(PROFISSIONAL);
+    cenario.ia.responder(ia({ operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { fazEntrega: true, taxaEntrega: 6 } }] }));
+    await cenario.enviar('entrega é 6 reais');
+    expect(cenario.conversa().contexto.rascunho.loja).toMatchObject({ taxaEntrega: 6, modoEntrega: 'FIXA' });
+
+    cenario.ia.responder(ia({ operacoes: [{ tipo: 'ATUALIZAR_LOJA', dados: { faixasEntrega: [{ ateKm: 3, taxa: 5 }] } }] }));
+    const texto = textos(await cenario.enviar('melhor por distância: até 3 km 5 reais'));
+    expect(texto).not.toContain('Isso faz parte do plano');
+    expect(cenario.conversa().contexto.rascunho.loja).toMatchObject({ modoEntrega: 'DISTANCIA', faixasEntrega: [{ ateKm: 3, taxa: 5 }] });
   });
 
   it('Básico: desligar a entrega continua liberado', async () => {

@@ -135,6 +135,7 @@ Catálogo único em `planos/domain/catalogo.ts` (preço em centavos, limites e r
 | Preço | R$ 29,99/mês ou R$ 24,99/mês no anual | R$ 59,99/mês ou R$ 49,99/mês no anual |
 | Pedidos por mês | 100 | 1.500 |
 | Produtos | 30 | ilimitados |
+| Entrega | taxa fixa (valor único, raio opcional) | taxa fixa ou por distância (a loja escolhe) |
 | Recursos pagos (entrega por distância, cor e capa, prévia em imagem, sem selo…) | nenhum | todos |
 
 - **Teste:** a primeira conversa de uma loja sem assinatura grava `Assinatura` em `TESTE` por 14 dias, com tudo do Profissional. Lojas anteriores aos planos ganharam o teste na migração.
@@ -163,7 +164,7 @@ TESTE ──cartão autorizado──▶ ATIVA ──cobrança recusada──▶ 
 | IA fora do ar | Rascunho preservado; o bot pede para repetir. Sem `DEEPSEEK_API_KEY`, só as palavras-chave funcionam. |
 | Fotos | Baixadas do WhatsApp como data URI base64 e guardadas em `ItemCardapio.imagemUrl` |
 | Endereço da loja | CEP + número digitados → ViaCEP → Google → "É aqui?" → só entra no rascunho depois do "sim". Sem `GOOGLE_MAPS_API_KEY`, o bot avisa que está indisponível. |
-| Entrega | Faixas "até X km → R$ Y", até 6 faixas e 30 km. Loja com a taxa fixa antiga fica com a entrega desligada até configurar endereço e faixas; o bot avisa quando uma conversa começa. |
+| Entrega | Dois jeitos (`Loja.modoEntrega`): **taxa fixa** (`taxaEntrega`, com raio opcional `raioEntregaKm`; todos os planos) ou **por distância** (faixas "até X km → R$ Y", até 6 faixas e 30 km; só Profissional). Um valor só vira taxa fixa; faixas viram distância. Fora do Profissional vale sempre a taxa fixa (`menu/entrega.ts` → `entregaEmUso`): a loja que usava distância e caiu para o Básico passa para a taxa fixa e, sem valor informado, fica só com retirada até responder; o bot avisa no começo da conversa e quando o plano muda. Nada é apagado. |
 
 ---
 
@@ -355,7 +356,7 @@ Todo erro sai como `{ "erro": "mensagem para pessoas", "codigo": "CODIGO" }` (`h
     "fazEntrega": true,           // false também para loja antiga sem endereço/faixas
     "faixasEntrega": [{ "ateKm": 1, "taxa": 0 }, { "ateKm": 3, "taxa": 5 }],
     "raioMaximoKm": 3,
-    "taxaEntrega": 5,             // depreciada (taxa fixa antiga)
+    "taxaEntrega": 5,             // só com a taxa fixa em uso (aí faixasEntrega vem vazia e raioMaximoKm é o raio dela)
     "pedidoMinimo": 30,
     "horarios": [{ "dia": "seg", "abre": "18:00", "fecha": "23:00" }],
     "mostrarSelo": true,          // plano sem SEM_SELO: rodapé "Feito com ZapMenu"

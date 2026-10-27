@@ -3,6 +3,9 @@ import type { Recurso } from '../../planos/domain/catalogo.js';
 import { mensagemLimiteDeProdutos, mensagemRecursoDoPlano } from '../../planos/application/mensagens.js';
 import type { Operacao } from './interpretador.js';
 
+export const AVISO_TAXA_FIXA =
+  '🛵 No seu plano a entrega é com *taxa fixa*: me diga um valor só e, se quiser, até quantos km entrega (ex.: _R$ 5 até 4 km_).';
+
 export interface ContagemDeProdutos {
   /** Produtos salvos (ativos e pausados). */
   salvos: number;
@@ -12,7 +15,7 @@ export interface ContagemDeProdutos {
 
 /**
  * Tira das operações da IA o que o plano da loja não inclui (entrega por
- * distância, cor e capa) e os produtos acima do limite, como o filtro por tipo
+ * distância — a taxa fixa vale em todos —, cor e capa) e os produtos acima do limite, como o filtro por tipo
  * faz com o que é do outro tipo. Sem situação do plano (planos desligados), tudo passa.
  */
 export function filtrarPorPlano(
@@ -60,11 +63,12 @@ export function filtrarPorPlano(
           bloquear('CORES_CAPA');
           delete dados.corDestaque;
         }
-        // Desligar a entrega sempre pode; ligar ou mudar as faixas, só com o recurso.
-        if ((dados.fazEntrega === true || dados.faixasEntrega !== undefined) && !podeUsar(loja, 'ENTREGA_POR_DISTANCIA')) {
+        // Entregar com taxa fixa vale em qualquer plano; faixas por distância, só com o recurso.
+        if ((dados.faixasEntrega !== undefined || dados.modoEntrega === 'DISTANCIA') && !podeUsar(loja, 'ENTREGA_POR_DISTANCIA')) {
           bloquear('ENTREGA_POR_DISTANCIA');
+          avisos.add(AVISO_TAXA_FIXA);
           delete dados.faixasEntrega;
-          if (dados.fazEntrega === true) delete dados.fazEntrega;
+          delete dados.modoEntrega;
         }
         if (Object.values(dados).some((valor) => valor !== undefined)) {
           permitidas.push({ ...operacao, dados });

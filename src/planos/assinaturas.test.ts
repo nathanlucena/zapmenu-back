@@ -196,7 +196,7 @@ describe('mudança de plano', () => {
   });
 
   it('downgrade fica para a próxima cobrança aprovada', async () => {
-    const { deps, gateway, notificar, assinarEAutorizar, assinatura } = cenario();
+    const { deps, gateway, enviados, notificar, assinarEAutorizar, assinatura } = cenario();
     const id = await assinarEAutorizar('PROFISSIONAL');
 
     const { quando } = await mudarDePlano(deps, TELEFONE, 'ESSENCIAL', depois(5));
@@ -212,6 +212,11 @@ describe('mudança de plano', () => {
 
     expect(assinatura()).toMatchObject({ plano: 'ESSENCIAL', planoProximoCiclo: undefined, status: 'ATIVA' });
     expect(podeUsar(assinatura(), 'CORES_CAPA')).toBe(false);
+    expect(podeUsar(assinatura(), 'ENTREGA_POR_DISTANCIA')).toBe(false);
+    expect(podeUsar(assinatura(), 'ENTREGA_TAXA_FIXA')).toBe(true);
+    // Avisa a troca e pede a taxa fixa a quem usava a distância.
+    expect(enviados.at(-1)).toContain('agora está no plano *Básico*');
+    expect(enviados.at(-1)).toContain('me diga quanto cobra de entrega');
   });
 
   it('não muda de plano no teste', async () => {

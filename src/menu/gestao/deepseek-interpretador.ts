@@ -52,7 +52,7 @@ OPERAÇÕES (cada uma é um objeto com "tipo"):
 - {"tipo": "nova_categoria", "nome": "Bebidas"}
 - {"tipo": "renomear_categoria", "categoria_id": "...", "novo_nome": "..."}
 - {"tipo": "remover_categoria", "categoria_id": "..."} — os itens dela ficam sem categoria.
-- {"tipo": "atualizar_loja", "nome": "...", "descricao": "...", "aceita_retirada": true, "faz_entrega": true, "faixas_entrega": [...], "pedido_minimo": 30, "horarios": [...], "link": "pizzaria-do-ze", "cor_destaque": "laranja", "aceita_pagamento_na_entrega": true, "instagram": "@pizzariadoze"} — só os campos que mudam (campos extras do tipo da loja no fim). Endereço NÃO vai aqui. aceita_pagamento_na_entrega: se o cliente pode pagar em dinheiro ou cartão na entrega/no balcão, além do PIX ("não aceito dinheiro", "só PIX" → false).
+- {"tipo": "atualizar_loja", "nome": "...", "descricao": "...", "aceita_retirada": true, "faz_entrega": true, "taxa_entrega_fixa": 5, "raio_entrega_km": 4, "faixas_entrega": [...], "modo_entrega": "fixa", "pedido_minimo": 30, "horarios": [...], "link": "pizzaria-do-ze", "cor_destaque": "laranja", "aceita_pagamento_na_entrega": true, "instagram": "@pizzariadoze"} — só os campos que mudam (campos extras do tipo da loja no fim). Endereço NÃO vai aqui. aceita_pagamento_na_entrega: se o cliente pode pagar em dinheiro ou cartão na entrega/no balcão, além do PIX ("não aceito dinheiro", "só PIX" → false).
 - {"tipo": "definir_endereco", "cep": "50050000", "numero": "123", "complemento": "loja 2"} — endereço da loja. Também aceita "rua", "bairro", "cidade", "uf" e "sem_numero": true.
 - {"tipo": "confirmar_endereco"} / {"tipo": "recusar_endereco"} — resposta da pessoa quando endereco_pendente existe ("é aí mesmo" / "não é aí").
 - {"tipo": "descartar_tudo"} — a pessoa quer jogar fora todas as alterações anotadas.
@@ -60,6 +60,7 @@ OPERAÇÕES (cada uma é um objeto com "tipo"):
 FORMATOS
 - preco, pedido_minimo, taxa (das faixas), frete_envio, os valores de frete_por_uf e preco_adicional: número em reais com ponto decimal ("39,90" → 39.9; "42 reais" → 42).
 - nome: nome do produto com iniciais maiúsculas, sem verbos ("coloca uma pizza calabresa" → "Pizza Calabresa"). descricao: detalhes (ingredientes, tamanho), sem o preço.
+- taxa_entrega_fixa: um valor só de entrega ("entrega é 5 reais" → 5; "entrega grátis" → 0). raio_entrega_km: até onde essa taxa vale ("até 4 km" → 4; "entrego em qualquer lugar", "sem limite" → 0). modo_entrega: "fixa" ou "distancia", só quando a pessoa quiser trocar de um jeito de cobrar para o outro sem mandar valores novos.
 - faixas_entrega: lista COMPLETA (substitui a anterior), uma faixa por distância: [{"ate_km": 1, "taxa": 0}, {"ate_km": 3, "taxa": 5}]. "grátis", "de graça", "sem taxa" → taxa 0. "500 metros" → ate_km 0.5. A maior distância é o limite de entrega.
 - horarios: lista COMPLETA da semana (substitui a anterior), um objeto por dia aberto: [{"dia": "seg", "abre": "18:00", "fecha": "23:00"}]. Dias: dom, seg, ter, qua, qui, sex, sab. Dias fechados não aparecem.
 - instagram: o perfil da loja no Instagram, como a pessoa mandou (@perfil ou o link). É opcional: só mande quando a pessoa informar.
@@ -77,7 +78,8 @@ CADASTRO DA LOJA
 - Quando a pessoa responder um item do cadastro, gere a operação correspondente e peça o próximo. Quando o último for respondido, peça para ela dizer *pronto* para revisar e salvar.
 
 ENDEREÇO E ENTREGA
-- A entrega é cobrada por distância: precisa do endereço da loja e das faixas. Quando a pessoa quiser começar a entregar, peça o CEP e o número da loja (e o complemento, se tiver) e como ela cobra em cada faixa.
+- A entrega pode ser cobrada com uma taxa fixa (um valor só, com um raio máximo opcional) ou por distância (faixas). Se entrega_por_distancia for false, o plano da loja só tem a taxa fixa: NÃO proponha faixas; peça um valor só e até onde ela entrega. Se for true, a pessoa escolhe: um valor só vira taxa_entrega_fixa; valores diferentes por distância viram faixas_entrega.
+- Quando a pessoa quiser começar a entregar, peça o CEP e o número da loja (e o complemento, se tiver) e como ela cobra a entrega.
 - definir_endereco leva SOMENTE o que a pessoa escreveu. Nunca complete rua, bairro ou cidade por conta própria: o sistema completa pelo CEP e procura no mapa.
 - Se a pessoa digitar o endereço de outro jeito (por extenso, sem CEP, com CEP errado), use definir_endereco com as partes que der para separar.
 - Correção ("o número é 132", "o CEP certo é 50050-010") → definir_endereco só com o campo que mudou.
@@ -334,6 +336,12 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
       aceita_retirada: booleano,
       faz_entrega: booleano,
       faixas_entrega: faixasEntrega,
+      taxa_entrega_fixa: numero,
+      raio_entrega_km: numero,
+      modo_entrega: z
+        .enum(['fixa', 'distancia'])
+        .nullish()
+        .transform((modo) => (modo ? (modo === 'fixa' ? ('FIXA' as const) : ('DISTANCIA' as const)) : undefined)),
       pedido_minimo: numero,
       horarios,
       link: texto,
@@ -353,6 +361,9 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
         aceitaRetirada: op.aceita_retirada,
         fazEntrega: op.faz_entrega,
         faixasEntrega: op.faixas_entrega,
+        taxaEntrega: op.taxa_entrega_fixa,
+        raioEntregaKm: op.raio_entrega_km,
+        modoEntrega: op.modo_entrega,
         pedidoMinimo: op.pedido_minimo,
         horarios: op.horarios,
         slug: op.link,
@@ -428,13 +439,13 @@ const respostaSchema = z.object({
 // Entrada
 // ---------------------------------------------------------------------------
 
-/** Loja como a IA vê: endereço em texto e faixas, sem coordenadas nem a taxa fixa antiga. */
+/** Loja como a IA vê: endereço em texto, faixas e taxa fixa, sem coordenadas. */
 function lojaParaIA(loja: DadosLoja | undefined) {
   if (!loja) {
     return null;
   }
   // Fotos de logo e capa são data URIs enormes: a IA só precisa saber se vieram.
-  const { enderecoVerificado, taxaEntrega: _taxaEntrega, logoUrl, capaUrl, ...resto } = loja;
+  const { enderecoVerificado, logoUrl, capaUrl, ...resto } = loja;
   return {
     ...resto,
     endereco: enderecoVerificado?.enderecoFormatado ?? loja.endereco,
@@ -494,6 +505,7 @@ export function montarEntrada(entrada: EntradaConversa) {
     loja: lojaParaIA(snapshot.loja),
     tipo_da_loja: entrada.segmento === 'VAREJO' ? 'loja' : 'cardapio',
     cadastro_pendente: entrada.cadastroPendente ?? [],
+    entrega_por_distancia: entrada.entregaPorDistancia ?? true,
   };
 }
 
