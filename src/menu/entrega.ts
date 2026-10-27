@@ -24,38 +24,80 @@ export type ResultadoEntrega =
   | { disponivel: false; distanciaKm: number; motivo: 'FORA_DA_AREA' }
   | { disponivel: false; motivo: 'LOJA_SEM_ENTREGA' | 'LOJA_SEM_ENDERECO' | 'SEM_FAIXAS' };
 
+export type ModoEntrega = 'FIXA' | 'DISTANCIA';
+
+/** O que a loja configurou de entrega (salvo, ou salvo + rascunho). */
+export type ConfigEntrega = Pick<DadosLoja, 'fazEntrega' | 'faixasEntrega' | 'taxaEntrega' | 'raioEntregaKm' | 'modoEntrega'> & {
+  enderecoVerificado?: Coordenada;
+};
+
+/** A entrega que vale agora: taxa fixa (com raio opcional) ou por faixas de distância. */
+export type EntregaEmUso = { tipo: 'FIXA'; taxa: number; raioKm?: number } | { tipo: 'DISTANCIA'; faixas: FaixaEntrega[] };
+
 /**
- * Taxa de entrega até `destino`. O limite de cada faixa é inclusivo ("até 1 km"
- * vale para 1,000 km). Loja com a taxa fixa antiga e sem faixas não entrega.
+ * Como a loja entrega de fato. Por distância só com o recurso no plano, o
+ * endereço verificado e ao menos uma faixa; sem o recurso (ou escolhendo),
+ * vale a taxa fixa. Sem taxa fixa informada, não entrega (só retirada): nada
+ * do que estava configurado é apagado. `fazEntrega` desligado não entrega.
  */
-export function calcularEntrega(
-  loja: Pick<DadosLoja, 'fazEntrega' | 'faixasEntrega'> & { enderecoVerificado?: Coordenada },
-  destino: Coordenada,
-): ResultadoEntrega {
+export function entregaEmUso(loja: ConfigEntrega, distanciaLiberada = true): EntregaEmUso | undefined {
+  if (!loja.fazEntrega) {
+    return undefined;
+  }
+  if ((loja.modoEntrega ?? 'DISTANCIA') === 'DISTANCIA' && distanciaLiberada) {
+    const faixas = loja.faixasEntrega ?? [];
+    return loja.enderecoVerificado && faixas.length > 0 ? { tipo: 'DISTANCIA', faixas } : undefined;
+  }
+  if (loja.taxaEntrega === undefined) {
+    return undefined;
+  }
+  return { tipo: 'FIXA', taxa: loja.taxaEntrega, ...(loja.raioEntregaKm !== undefined && { raioKm: loja.raioEntregaKm }) };
+}
+
+/**
+ * Taxa de entrega até `destino`. O limite de cada faixa (e o raio da taxa
+ * fixa) é inclusivo ("até 1 km" vale para 1,000 km).
+ */
+export function calcularEntrega(loja: ConfigEntrega, destino: Coordenada, distanciaLiberada = true): ResultadoEntrega {
   if (!loja.fazEntrega) {
     return { disponivel: false, motivo: 'LOJA_SEM_ENTREGA' };
+  }
+  const entrega = entregaEmUso(loja, distanciaLiberada);
+  if (entrega?.tipo === 'FIXA') {
+    // Sem endereço da loja, o raio não tem de onde ser medido: vale para qualquer endereço.
+    if (!loja.enderecoVerificado) {
+      return { disponivel: true, distanciaKm: 0, taxa: entrega.taxa };
+    }
+    const distancia = distanciaKm(loja.enderecoVerificado, destino);
+    if (entrega.raioKm !== undefined && distancia > entrega.raioKm) {
+      return { disponivel: false, distanciaKm: distancia, motivo: 'FORA_DA_AREA' };
+    }
+    return { disponivel: true, distanciaKm: distancia, taxa: entrega.taxa };
   }
   if (!loja.enderecoVerificado) {
     return { disponivel: false, motivo: 'LOJA_SEM_ENDERECO' };
   }
-  const faixas = [...(loja.faixasEntrega ?? [])].sort((a, b) => a.ateKm - b.ateKm);
-  if (faixas.length === 0) {
+  if (!entrega) {
     return { disponivel: false, motivo: 'SEM_FAIXAS' };
   }
 
   const distancia = distanciaKm(loja.enderecoVerificado, destino);
-  const faixa = faixas.find((candidata) => distancia <= candidata.ateKm);
+  const faixa = [...entrega.faixas].sort((a, b) => a.ateKm - b.ateKm).find((candidata) => distancia <= candidata.ateKm);
   if (!faixa) {
     return { disponivel: false, distanciaKm: distancia, motivo: 'FORA_DA_AREA' };
   }
   return { disponivel: true, distanciaKm: distancia, taxa: faixa.taxa };
 }
 
-/** A loja só entrega de verdade com endereço verificado e ao menos uma faixa. */
-export function entregaConfigurada(
-  loja: Pick<DadosLoja, 'faixasEntrega'> & { enderecoVerificado?: Coordenada },
-): boolean {
-  return Boolean(loja.enderecoVerificado) && (loja.faixasEntrega?.length ?? 0) > 0;
+/** A loja tem como entregar (taxa fixa, ou endereço e faixas), ligada ou não. */
+export function entregaConfigurada(loja: ConfigEntrega, distanciaLiberada = true): boolean {
+  return entregaEmUso({ ...loja, fazEntrega: true }, distanciaLiberada) !== undefined;
+}
+
+/** "R$ 5,00 até 4 km" ou "R$ 5,00". */
+export function descreverTaxaFixa(entrega: Extract<EntregaEmUso, { tipo: 'FIXA' }>): string {
+  const valor = entrega.taxa === 0 ? 'grátis' : `R$ ${entrega.taxa.toFixed(2).replace('.', ',')}`;
+  return entrega.raioKm !== undefined ? `${valor} até ${formatarKm(entrega.raioKm)}` : valor;
 }
 
 export function raioMaximoKm(faixas: FaixaEntrega[] = []): number | undefined {

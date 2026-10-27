@@ -11,7 +11,13 @@ import type {
 import { DIAS_SEMANA, rascunhoVazio } from '../conversation/conversation-state.types.js';
 import { mesclarConsulta } from '../endereco/endereco.service.js';
 import { corDaPaleta, gerarSlug, listaDaPaleta, nomeDaCor, normalizarInstagram, problemaNoSlug } from '../vitrine.js';
-import { faixasComTaxaDecrescente, formatarKm, validarFaixas } from '../entrega.js';
+import {
+  descreverTaxaFixa,
+  faixasComTaxaDecrescente,
+  formatarKm,
+  RAIO_MAXIMO_KM,
+  validarFaixas,
+} from '../entrega.js';
 import type { SegmentoLoja } from '../menu.types.js';
 import type { SnapshotCardapio } from './gestao.repository.js';
 import type { DadosItemOperacao, Operacao } from './interpretador.js';
@@ -251,6 +257,30 @@ export function aplicarOperacoes(aplicacao: AplicacaoOperacoes, operacoes: Opera
             dados.fazEntrega = true;
           }
         }
+        if (dados.taxaEntrega !== undefined) {
+          if (!Number.isFinite(dados.taxaEntrega) || dados.taxaEntrega < 0) {
+            avisos.add('⚠️ Não consegui aplicar a taxa de entrega: o valor não pode ser negativo.');
+            dados.taxaEntrega = undefined;
+          } else {
+            dados.taxaEntrega = Math.round(dados.taxaEntrega * 100) / 100;
+          }
+        }
+        if (dados.raioEntregaKm !== undefined) {
+          if (!Number.isFinite(dados.raioEntregaKm) || dados.raioEntregaKm < 0 || dados.raioEntregaKm > RAIO_MAXIMO_KM) {
+            avisos.add(`⚠️ Não consegui aplicar o limite da entrega: precisa ser até ${RAIO_MAXIMO_KM} km.`);
+            dados.raioEntregaKm = undefined;
+          } else {
+            dados.raioEntregaKm = Math.round(dados.raioEntregaKm * 100) / 100;
+          }
+        }
+        // O jeito de cobrar segue o que a pessoa acabou de informar: um valor só é taxa fixa; faixas, distância.
+        if (dados.modoEntrega === undefined) {
+          if (dados.taxaEntrega !== undefined && dados.faixasEntrega === undefined) dados.modoEntrega = 'FIXA';
+          if (dados.faixasEntrega !== undefined && dados.taxaEntrega === undefined) dados.modoEntrega = 'DISTANCIA';
+        }
+        if (dados.taxaEntrega !== undefined && dados.fazEntrega === undefined && !(rascunho.loja?.fazEntrega ?? snapshot.loja.fazEntrega)) {
+          dados.fazEntrega = true;
+        }
         rascunho.loja = { ...rascunho.loja, ...definidos(dados) };
         break;
       }
@@ -402,7 +432,7 @@ export function contarAlteracoes(rascunho: Rascunho): number {
 }
 
 /** O que falta para o rascunho poder ser salvo (vazio = pode salvar). */
-export function pendenciasParaSalvar(contexto: Contexto, snapshot: SnapshotCardapio): string[] {
+export function pendenciasParaSalvar(contexto: Contexto, snapshot: SnapshotCardapio, entregaPorDistancia = true): string[] {
   const { rascunho } = contexto;
   const pendencias: string[] = [];
   if (contexto.enderecoPendente) {
@@ -421,9 +451,15 @@ export function pendenciasParaSalvar(contexto: Contexto, snapshot: SnapshotCarda
   // Só cobra endereço e faixas quando a conversa mexeu na entrega: editar um
   // preço numa loja antiga (entrega por taxa fixa) não pode ficar travado.
   const loja = rascunho.loja;
-  const mexeuNaEntrega = loja?.fazEntrega === true || loja?.faixasEntrega !== undefined;
+  const mexeuNaEntrega =
+    loja?.fazEntrega === true || loja?.faixasEntrega !== undefined || loja?.taxaEntrega !== undefined || loja?.modoEntrega !== undefined;
   const fazEntrega = loja?.fazEntrega ?? snapshot.loja.fazEntrega;
-  if (mexeuNaEntrega && fazEntrega) {
+  const modo = loja?.modoEntrega ?? snapshot.loja.modoEntrega ?? 'DISTANCIA';
+  if (mexeuNaEntrega && fazEntrega && (modo === 'FIXA' || !entregaPorDistancia)) {
+    if ((loja?.taxaEntrega ?? snapshot.loja.taxaEntrega) === undefined) {
+      pendencias.push('quanto você cobra de entrega (um valor só) e, se quiser, até quantos km entrega (ex.: _R$ 5 até 4 km_)');
+    }
+  } else if (mexeuNaEntrega && fazEntrega) {
     if (!(loja?.enderecoVerificado ?? snapshot.loja.enderecoVerificado) && !contexto.enderecoPendente) {
       pendencias.push('o CEP e o número da loja (para calcular a distância das entregas)');
     }
@@ -535,6 +571,15 @@ function descreverLoja(loja: DadosLoja, atual: DadosLoja): string[] {
         `   ⚠️ a faixa de até ${formatarKm(longe.ateKm)} está mais barata que a de até ${formatarKm(perto.ateKm)}`,
       );
     }
+  }
+  if (loja.taxaEntrega !== undefined || loja.raioEntregaKm !== undefined) {
+    const taxa = loja.taxaEntrega ?? atual.taxaEntrega;
+    const raio = loja.raioEntregaKm ?? atual.raioEntregaKm;
+    if (taxa !== undefined) {
+      linhas.push(`🛵 Entrega com taxa fixa: *${descreverTaxaFixa({ tipo: 'FIXA', taxa, ...(raio ? { raioKm: raio } : {}) })}*`);
+    }
+  } else if (loja.modoEntrega !== undefined && loja.faixasEntrega === undefined) {
+    linhas.push(`🛵 Entrega: *${loja.modoEntrega === 'FIXA' ? 'taxa fixa' : 'por distância'}*`);
   }
   if (loja.pedidoMinimo !== undefined) linhas.push(`🧾 Pedido mínimo: *${formatarPreco(loja.pedidoMinimo)}*`);
   if (loja.horarios !== undefined) linhas.push(`🕒 Horários: ${formatarHorarios(loja.horarios)}`);

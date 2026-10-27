@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { EnderecoVerificado } from './conversation/conversation-state.types.js';
-import { calcularEntrega, distanciaKm, raioMaximoKm, validarFaixas } from './entrega.js';
+import {
+  calcularEntrega,
+  descreverTaxaFixa,
+  distanciaKm,
+  entregaConfigurada,
+  entregaEmUso,
+  raioMaximoKm,
+  validarFaixas,
+} from './entrega.js';
 
 const LOJA_COORD = { latitude: -8.0591, longitude: -34.8798 };
 const ENDERECO: EnderecoVerificado = {
@@ -99,5 +107,36 @@ describe('raioMaximoKm', () => {
   it('é o maior ateKm', () => {
     expect(raioMaximoKm(FAIXAS)).toBe(3);
     expect(raioMaximoKm([])).toBeUndefined();
+  });
+});
+
+describe('entrega com taxa fixa', () => {
+  const LOJA = { latitude: -8.05, longitude: -34.9 };
+  const PERTO = { latitude: -8.06, longitude: -34.9 }; // ~1,1 km
+  const LONGE = { latitude: -8.15, longitude: -34.9 }; // ~11 km
+  const fixa = { fazEntrega: true, modoEntrega: 'FIXA' as const, taxaEntrega: 6, enderecoVerificado: LOJA };
+
+  it('cobra o mesmo valor em qualquer distância dentro do raio', () => {
+    expect(calcularEntrega({ ...fixa, raioEntregaKm: 5 }, PERTO)).toMatchObject({ disponivel: true, taxa: 6 });
+    expect(calcularEntrega({ ...fixa, raioEntregaKm: 5 }, LONGE)).toMatchObject({ disponivel: false, motivo: 'FORA_DA_AREA' });
+    expect(calcularEntrega(fixa, LONGE)).toMatchObject({ disponivel: true, taxa: 6 });
+  });
+
+  it('sem o recurso de distância, a loja por faixas usa a taxa fixa guardada; sem ela, não entrega', () => {
+    const porFaixas = { fazEntrega: true, faixasEntrega: [{ ateKm: 3, taxa: 5 }], enderecoVerificado: LOJA };
+    expect(entregaEmUso(porFaixas, true)).toEqual({ tipo: 'DISTANCIA', faixas: [{ ateKm: 3, taxa: 5 }] });
+    expect(entregaEmUso(porFaixas, false)).toBeUndefined();
+    expect(entregaEmUso({ ...porFaixas, taxaEntrega: 4 }, false)).toEqual({ tipo: 'FIXA', taxa: 4 });
+    expect(calcularEntrega({ ...porFaixas, taxaEntrega: 4 }, LONGE, false)).toMatchObject({ disponivel: true, taxa: 4 });
+  });
+
+  it('entrega desligada não entrega, mesmo configurada', () => {
+    expect(entregaEmUso({ ...fixa, fazEntrega: false })).toBeUndefined();
+    expect(entregaConfigurada({ ...fixa, fazEntrega: false })).toBe(true);
+  });
+
+  it('descreve a taxa fixa', () => {
+    expect(descreverTaxaFixa({ tipo: 'FIXA', taxa: 5, raioKm: 4 })).toBe('R$ 5,00 até 4 km');
+    expect(descreverTaxaFixa({ tipo: 'FIXA', taxa: 0 })).toBe('grátis');
   });
 });

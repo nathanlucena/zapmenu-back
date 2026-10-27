@@ -11,10 +11,16 @@ import {
 } from '../cadastro-da-loja.js';
 import { buscarEndereco, linkMapa, normalizarCep } from '../endereco/endereco.service.js';
 import type { EnderecoDeps } from '../endereco/endereco.types.js';
-import { entregaConfigurada } from '../entrega.js';
+import { descreverTaxaFixa, entregaConfigurada, entregaEmUso } from '../entrega.js';
 import type { CadastroEmpreendedores } from './cadastro-empreendedores.js';
 import { reconhecerComando } from './comandos.js';
 import { filtrarPorTipo } from './permissoes-por-tipo.js';
+import { filtrarPorPlano } from './permissoes-por-plano.js';
+import { podeUsar, type Assinatura } from '../../planos/domain/assinatura.js';
+import type { PlanosDeps } from '../../planos/application/dependencias.js';
+import { assinaturaNaGestao } from '../../planos/application/situacao-do-plano.js';
+import { mensagemLojaSuspensa, mensagemRecursoDoPlano } from '../../planos/application/mensagens.js';
+import { conversaDoPlano } from './conversa-do-plano.js';
 import {
   ehOpcaoDaEnquete,
   oQueMudaNaTroca,
@@ -70,6 +76,8 @@ export interface GestaoDeps {
   urlDoCardapio?: (slug: string) => string;
   /** Prévia em imagem das alterações: onde guardar e a URL da imagem no front. Sem isso, só texto. */
   previas?: { repo: PreviasRepository; urlDaImagem: (id: string) => string };
+  /** Planos e assinatura. Sem isso, a gestão não limita nada (como antes dos planos). */
+  planos?: PlanosDeps;
 }
 
 export interface MensagemGestao {
@@ -84,6 +92,8 @@ interface Rodada {
   mensagem: MensagemGestao;
   empreendedorId: string;
   snapshot: SnapshotCardapio;
+  /** Ausente quando os planos estão desligados: nada é limitado. */
+  assinatura?: Assinatura;
   estado: Estado;
   contexto: Contexto;
   respostas: RespostaGestao[];
@@ -116,6 +126,8 @@ export async function processarMensagemGestao(mensagem: MensagemGestao, deps: Ge
     mensagem,
     empreendedorId,
     snapshot: await deps.gestaoRepo.carregarSnapshot(empreendedorId),
+    // Depois do snapshot, que cria o empreendedor na primeira conversa: é aí que o teste começa.
+    assinatura: deps.planos ? await assinaturaNaGestao(deps.planos.repo, empreendedorId) : undefined,
     estado: conversa.estado,
     contexto: conversa.contexto,
     respostas: [],
@@ -126,8 +138,8 @@ export async function processarMensagemGestao(mensagem: MensagemGestao, deps: Ge
   await tratar(rodada);
   // Começo de conversa: mostra o que falta no cadastro ou, com a loja no ar, lembra dos opcionais.
   if (estadoAnterior === 'OCIOSO' && rodada.estado !== 'OCIOSO') {
-    if (!cadastroCompleto(lojaParaCadastro(rodada.snapshot))) {
-      const loja = lojaParaCadastro(rodada.snapshot, rodada.contexto.rascunho.loja);
+    if (!cadastroCompleto(lojaParaCadastro(rodada))) {
+      const loja = lojaParaCadastro(rodada, rodada.contexto.rascunho.loja);
       responder(rodada, `Para sua loja entrar no ar ainda faltam alguns dados:\n${descreverObrigatorios(loja)}`);
       avisarEntregaPorConfigurar(rodada);
     } else {
@@ -183,6 +195,9 @@ function verificarAbandono(rodada: Rodada): void {
 
 async function tratar(rodada: Rodada): Promise<void> {
   const { texto, imagemUrl } = rodada.mensagem;
+  if (await tratarPlano(rodada)) {
+    return;
+  }
   if (rodada.snapshot.lojaSalva.tipoPendente) {
     await escolherTipoNoCadastro(rodada);
     return;
@@ -220,13 +235,15 @@ async function tratar(rodada: Rodada): Promise<void> {
       return;
     }
     case 'CARDAPIO':
-      responder(rodada, descreverCardapio(rodada.snapshot));
+      responder(rodada, descreverCardapio(rodada.snapshot, entregaPorDistancia(rodada)));
       return;
     case 'PENDENCIAS':
       responder(rodada, descreverPendencias(rodada));
       return;
     case 'PREVIA':
-      if (!rodada.deps.previas) {
+      if (!recursoLiberado(rodada, 'PREVIA_IMAGEM')) {
+        responder(rodada, mensagemRecursoDoPlano('PREVIA_IMAGEM', rodada.deps.planos?.linkDosPlanos));
+      } else if (!rodada.deps.previas) {
         responder(rodada, 'A prévia em imagem não está disponível agora. O resumo em texto continua: diga *pronto* quando terminar.');
       } else if (await responderPrevia(rodada, `Assim vai ficar no ${vocabulario(rodada.snapshot.segmento).lista} 👇`)) {
         responder(rodada, 'Quando terminar, diga *pronto* para revisar e salvar.');
@@ -258,6 +275,35 @@ async function tratar(rodada: Rodada): Promise<void> {
   }
 
   await conversarComIA(rodada);
+}
+
+/**
+ * Assinatura antes de tudo: os comandos do plano funcionam em qualquer etapa e,
+ * com a loja suspensa, são a única coisa que a gestão aceita.
+ */
+async function tratarPlano(rodada: Rodada): Promise<boolean> {
+  const { planos } = rodada.deps;
+  if (!planos) {
+    return false;
+  }
+  const respostas = rodada.mensagem.imagemUrl
+    ? undefined
+    : await conversaDoPlano({
+        planos,
+        telefone: rodada.mensagem.telefone,
+        texto: rodada.mensagem.texto,
+        contexto: rodada.contexto,
+        assinatura: rodada.assinatura,
+      });
+  if (respostas) {
+    respostas.forEach((resposta) => responder(rodada, resposta));
+    return true;
+  }
+  if (rodada.assinatura?.status === 'SUSPENSA') {
+    responder(rodada, mensagemLojaSuspensa());
+    return true;
+  }
+  return false;
 }
 
 /** Fotos seguidas sem legenda, até este tempo depois da anterior, vão para o mesmo produto. */
@@ -404,10 +450,11 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
         enderecoPendente: rodada.contexto.enderecoPendente,
       },
       snapshot: rodada.snapshot,
-      cadastroPendente: obrigatoriosDaLoja(lojaParaCadastro(rodada.snapshot, rodada.contexto.rascunho.loja))
+      cadastroPendente: obrigatoriosDaLoja(lojaParaCadastro(rodada, rodada.contexto.rascunho.loja))
         .filter((item) => !item.ok)
         .map((item) => `${item.rotulo}: ${item.comoPedir}`),
       segmento: rodada.snapshot.segmento,
+      entregaPorDistancia: entregaPorDistancia(rodada),
     });
   } catch (erro) {
     logger.warn({ err: erro }, 'falha ao conversar com a IA');
@@ -440,8 +487,16 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
   if (doTipo.avisos.length > 0) {
     logger.info({ segmento: rodada.snapshot.segmento ?? 'COMIDA' }, 'operações de outro tipo de loja foram descartadas');
   }
+  // O plano tira o que ele não inclui (entrega por distância, cor e capa) e os produtos acima do limite.
+  const doPlano = filtrarPorPlano(
+    rodada.assinatura,
+    doTipo.operacoes,
+    { salvos: rodada.snapshot.itens.length, noRascunho: rodada.contexto.rascunho.novosItens.length },
+    rodada.deps.planos?.linkDosPlanos,
+  );
   const avisos = [
     ...doTipo.avisos,
+    ...doPlano.avisos,
     ...aplicarOperacoes(
       {
         contexto: rodada.contexto,
@@ -449,7 +504,7 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
         fotoAtual: rodada.mensagem.imagemUrl,
         segmento: rodada.snapshot.segmento,
       },
-      doTipo.operacoes,
+      doPlano.operacoes,
     ),
   ];
   if (saida.operacoesMalformadas.length > 0) {
@@ -461,7 +516,7 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
     responder(rodada, saida.resposta);
   }
   if (saida.mostrarCardapio) {
-    responder(rodada, descreverCardapio(rodada.snapshot));
+    responder(rodada, descreverCardapio(rodada.snapshot, entregaPorDistancia(rodada)));
     const pendentes = contarAlteracoes(rodada.contexto.rascunho);
     if (pendentes > 0) {
       responder(rodada, avisoAlteracoesPendentes(pendentes, vocabulario(rodada.snapshot.segmento).lista));
@@ -474,7 +529,7 @@ async function conversarComIA(rodada: Rodada): Promise<void> {
     await procurarEndereco(rodada);
   }
 
-  const mudouRascunho = doTipo.operacoes.length > 0;
+  const mudouRascunho = doPlano.operacoes.length > 0;
   if (estadoAnterior === 'CONFIRMANDO' && !mudouRascunho) {
     if (saida.decisao === 'CONFIRMAR') {
       await salvar(rodada);
@@ -560,11 +615,11 @@ function responderSobreEndereco(rodada: Rodada, confirmou: boolean): void {
   if (confirmou) {
     confirmarEndereco(rodada.contexto);
     const { loja: lojaRascunho } = rodada.contexto.rascunho;
-    const fazEntrega = lojaRascunho?.fazEntrega ?? rodada.snapshot.loja.fazEntrega;
-    const temFaixas = (lojaRascunho?.faixasEntrega ?? rodada.snapshot.loja.faixasEntrega)?.length;
+    const loja = { ...rodada.snapshot.loja, ...lojaRascunho };
+    const exemplo = entregaPorDistancia(rodada) ? '_até 1 km grátis, até 3 km R$ 5_ ou um valor só' : '_R$ 5 até 4 km_';
     texto =
-      fazEntrega && !temFaixas
-        ? '📍 Endereço anotado! Agora me diz como você cobra a entrega. Exemplo: _até 1 km grátis, até 3 km R$ 5_.'
+      loja.fazEntrega && !entregaConfigurada(loja, entregaPorDistancia(rodada))
+        ? `📍 Endereço anotado! Agora me diz como você cobra a entrega. Exemplo: ${exemplo}.`
         : '📍 Endereço anotado! Mais alguma coisa?';
   } else {
     recusarEndereco(rodada.contexto);
@@ -576,7 +631,8 @@ function responderSobreEndereco(rodada: Rodada, confirmou: boolean): void {
 
 /** Loja que entregava com a taxa fixa antiga: a entrega fica parada até configurar endereço e faixas. */
 /** Loja como o cadastro vê: a salva, mais o que está anotado no rascunho. */
-function lojaParaCadastro(snapshot: SnapshotCardapio, rascunho?: DadosLoja): LojaParaCadastro {
+function lojaParaCadastro(rodada: Rodada, rascunho?: DadosLoja): LojaParaCadastro {
+  const { snapshot } = rodada;
   const definidosDoRascunho = Object.fromEntries(Object.entries(rascunho ?? {}).filter(([, valor]) => valor !== undefined));
   const loja: DadosLoja = { ...snapshot.loja, ...definidosDoRascunho };
   return {
@@ -587,6 +643,9 @@ function lojaParaCadastro(snapshot: SnapshotCardapio, rascunho?: DadosLoja): Loj
     aceitaEnvio: loja.aceitaEnvio,
     enderecoConfirmado: Boolean(loja.enderecoVerificado),
     faixasEntrega: loja.faixasEntrega,
+    taxaEntrega: loja.taxaEntrega,
+    modoEntrega: loja.modoEntrega,
+    entregaPorDistancia: entregaPorDistancia(rodada),
     horarios: loja.horarios,
     descricao: loja.descricao,
     temLogo: snapshot.lojaSalva.temLogo || Boolean(rascunho?.logoUrl),
@@ -601,7 +660,7 @@ function lojaParaCadastro(snapshot: SnapshotCardapio, rascunho?: DadosLoja): Loj
 
 /** Resposta ao "o que falta?": obrigatórios com ✅/⬜ e, com a loja no ar, os opcionais. */
 function descreverPendencias(rodada: Rodada): string {
-  const loja = lojaParaCadastro(rodada.snapshot, rodada.contexto.rascunho.loja);
+  const loja = lojaParaCadastro(rodada, rodada.contexto.rascunho.loja);
   const proximo = obrigatoriosDaLoja(loja).find((item) => !item.ok);
   if (proximo) {
     return `${descreverObrigatorios(loja)}\n\nVamos lá: ${proximo.comoPedir}`;
@@ -611,7 +670,7 @@ function descreverPendencias(rodada: Rodada): string {
 
 /** Lista dos opcionais que faltam, com como mandar cada um, e a situação do pagamento na entrega. */
 function textoDosOpcionais(rodada: Rodada): string | undefined {
-  const loja = lojaParaCadastro(rodada.snapshot);
+  const loja = lojaParaCadastro(rodada);
   const faltando = opcionaisDaLoja(loja).filter((item) => !item.ok);
   if (faltando.length === 0) {
     return undefined;
@@ -639,7 +698,7 @@ async function lembrarOpcionaisSeDevido(rodada: Rodada): Promise<void> {
 /** Depois de salvar: comemora quando a loja entra no ar, ou mostra o que ainda falta. */
 async function avisarSituacaoDoCadastro(rodada: Rodada, completoAntes: boolean): Promise<void> {
   rodada.snapshot = await rodada.deps.gestaoRepo.carregarSnapshot(rodada.empreendedorId);
-  const loja = lojaParaCadastro(rodada.snapshot);
+  const loja = lojaParaCadastro(rodada);
   if (!cadastroCompleto(loja)) {
     responder(rodada, `Para a loja entrar no ar ainda falta:\n${descreverObrigatorios(loja)}`);
     return;
@@ -668,14 +727,28 @@ async function avisarSituacaoDoCadastro(rodada: Rodada, completoAntes: boolean):
   }
 }
 
+/**
+ * Loja que diz entregar mas não tem como cobrar: a que caiu para o Básico
+ * usando a distância (pede a taxa fixa) e a antiga sem endereço ou faixas.
+ * Até a loja responder, só retirada; nada do que estava configurado é apagado.
+ */
 function avisarEntregaPorConfigurar(rodada: Rodada): void {
   const loja = { ...rodada.snapshot.loja, ...rodada.contexto.rascunho.loja };
-  if (loja.fazEntrega && !entregaConfigurada(loja)) {
+  const distancia = entregaPorDistancia(rodada);
+  if (!loja.fazEntrega || entregaConfigurada(loja, distancia)) {
+    return;
+  }
+  if (!distancia) {
     responder(
       rodada,
-      '🛵 Agora a entrega é calculada pela distância. Para voltar a entregar, me manda o *CEP e o número* da loja e como você cobra em cada faixa (ex.: _até 1 km grátis, até 3 km R$ 5_).',
+      '🛵 No seu plano a entrega é com *taxa fixa* (a entrega por distância é do plano *Profissional*). Por enquanto sua loja está só com retirada: me diga quanto cobra de entrega e, se quiser, até quantos km entrega (ex.: _R$ 5 até 4 km_). Suas faixas de distância continuam guardadas.',
     );
+    return;
   }
+  responder(
+    rodada,
+    '🛵 Para voltar a entregar, me manda o *CEP e o número* da loja e como você cobra a entrega: um valor só (ex.: _R$ 5 até 4 km_) ou por distância (ex.: _até 1 km grátis, até 3 km R$ 5_).',
+  );
 }
 
 /** A pessoa terminou: mostra o resumo (ou o que falta) e pede confirmação. */
@@ -686,7 +759,7 @@ async function finalizar(rodada: Rodada): Promise<void> {
     responder(rodada, 'Não há nenhuma alteração anotada para salvar. Quando quiser mudar algo, é só me falar! 🙂');
     return;
   }
-  const pendencias = pendenciasParaSalvar(rodada.contexto, rodada.snapshot);
+  const pendencias = pendenciasParaSalvar(rodada.contexto, rodada.snapshot, entregaPorDistancia(rodada));
   if (pendencias.length > 0) {
     rodada.estado = 'CONVERSANDO';
     responder(rodada, `Antes de salvar, preciso saber:\n${pendencias.map((pendencia) => `• ${pendencia}`).join('\n')}`);
@@ -706,6 +779,9 @@ const VALIDADE_PREVIA_MS = 60 * 60_000;
  */
 async function responderPrevia(rodada: Rodada, legenda: string): Promise<boolean> {
   const { previas } = rodada.deps;
+  if (!recursoLiberado(rodada, 'PREVIA_IMAGEM')) {
+    return false;
+  }
   const previa = previas && montarPrevia(rodada.contexto.rascunho, rodada.snapshot);
   if (!previas || !previa) {
     return false;
@@ -722,7 +798,7 @@ async function responderPrevia(rodada: Rodada, legenda: string): Promise<boolean
 
 async function salvar(rodada: Rodada): Promise<void> {
   const { rascunho } = rodada.contexto;
-  const pendencias = pendenciasParaSalvar(rodada.contexto, rodada.snapshot);
+  const pendencias = pendenciasParaSalvar(rodada.contexto, rodada.snapshot, entregaPorDistancia(rodada));
   if (estaVazio(rascunho) || pendencias.length > 0) {
     await finalizar(rodada);
     return;
@@ -755,7 +831,7 @@ async function salvar(rodada: Rodada): Promise<void> {
   }
 
   logger.info({ telefone: rodada.mensagem.telefone, alteracoes: total }, '💾 rascunho salvo no cardápio');
-  const completoAntes = cadastroCompleto(lojaParaCadastro(rodada.snapshot));
+  const completoAntes = cadastroCompleto(lojaParaCadastro(rodada));
   reiniciar(rodada);
   responder(
     rodada,
@@ -787,6 +863,16 @@ function limitar(texto: string): string {
   return texto.length > MAX_CARACTERES_HISTORICO ? `${texto.slice(0, MAX_CARACTERES_HISTORICO)}…` : texto;
 }
 
+/** O plano inclui a entrega por distância (sem planos configurados, sim). */
+function entregaPorDistancia(rodada: Rodada): boolean {
+  return recursoLiberado(rodada, 'ENTREGA_POR_DISTANCIA');
+}
+
+/** Sem planos configurados, tudo fica liberado. */
+function recursoLiberado(rodada: Rodada, recurso: Parameters<typeof podeUsar>[1]): boolean {
+  return !rodada.assinatura || podeUsar(rodada.assinatura, recurso);
+}
+
 function responder(rodada: Rodada, texto: string): void {
   rodada.respostas.push(texto);
 }
@@ -799,7 +885,7 @@ function falar(rodada: Rodada, texto: string): void {
 }
 
 /** Cardápio (ou catálogo) atual agrupado por categoria, com a numeração usada pela IA. */
-function descreverCardapio(snapshot: SnapshotCardapio): string {
+function descreverCardapio(snapshot: SnapshotCardapio, distanciaLiberada = true): string {
   const fala = vocabulario(snapshot.segmento);
   if (snapshot.itens.length === 0) {
     return `Seu ${fala.lista} ainda está vazio. Me conta o primeiro ${fala.item}, por exemplo: _${fala.exemploItem}_`;
@@ -831,10 +917,13 @@ function descreverCardapio(snapshot: SnapshotCardapio): string {
     linhas.push(`🔗 Link do ${fala.lista}: ${loja.slug}`);
   }
   if (loja.fazEntrega) {
+    const entrega = entregaEmUso(loja, distanciaLiberada);
     linhas.push(
-      entregaConfigurada(loja)
-        ? `🛵 ${descreverFaixas(loja.faixasEntrega!)}`
-        : '🛵 Entrega parada: falta configurar o endereço e as faixas de distância.',
+      entrega?.tipo === 'DISTANCIA'
+        ? `🛵 ${descreverFaixas(entrega.faixas)}`
+        : entrega
+          ? `🛵 Entrega com taxa fixa: ${descreverTaxaFixa(entrega)}`
+          : '🛵 Entrega parada: falta informar quanto você cobra de entrega.',
     );
   }
   linhas.push(

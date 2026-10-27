@@ -16,6 +16,8 @@ import { registerOrdersRoutes } from './v1/orders.routes.js';
 import { registerPreviasRoutes } from './v1/previas.routes.js';
 import type { PreviasRepository } from '../menu/gestao/previa.js';
 import { registerMercadoPagoWebhook } from './webhooks/mercado-pago.webhook.js';
+import { registerMercadoPagoAssinaturasWebhook } from './webhooks/mercado-pago-assinaturas.webhook.js';
+import type { PlanosDeps } from '../planos/application/dependencias.js';
 
 export interface AppDeps {
   menuRepo: MenuRepository;
@@ -31,6 +33,9 @@ export interface AppDeps {
   mercadoPagoWebhookSecret?: string;
   /** Prévias em imagem da gestão (o front busca os dados e desenha). */
   previas?: PreviasRepository;
+  /** Assinaturas do ZapMenu. O webhook só sobe com o gateway e o segredo da conta do ZapMenu. */
+  planos?: PlanosDeps;
+  assinaturasWebhookSecret?: string;
 }
 
 configurarMensagensDeValidacao();
@@ -63,6 +68,13 @@ export function buildApp(deps: AppDeps): FastifyInstance {
           throw new Error('mercadoPagoWebhookSecret é obrigatório para registrar o webhook do Mercado Pago.');
         }
         registerMercadoPagoWebhook(v1, deps.paymentsDeps, { segredo: deps.mercadoPagoWebhookSecret });
+      }
+      const { planos } = deps;
+      if (planos?.gateway) {
+        if (!deps.assinaturasWebhookSecret) {
+          throw new Error('assinaturasWebhookSecret é obrigatório para registrar o webhook das assinaturas.');
+        }
+        registerMercadoPagoAssinaturasWebhook(v1, { ...planos, gateway: planos.gateway }, { segredo: deps.assinaturasWebhookSecret });
       }
     },
     { prefix: '/v1' },

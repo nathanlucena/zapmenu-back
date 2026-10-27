@@ -9,6 +9,11 @@ export interface LojaParaCadastro {
   /** Endereço confirmado (CEP + número → mapa → "sim"). */
   enderecoConfirmado: boolean;
   faixasEntrega?: unknown[];
+  /** Taxa fixa de entrega e o modo escolhido (FIXA ou DISTANCIA). */
+  taxaEntrega?: number;
+  modoEntrega?: 'FIXA' | 'DISTANCIA';
+  /** O plano inclui a entrega por distância. Ausente = inclui. */
+  entregaPorDistancia?: boolean;
   horarios?: unknown[];
   descricao?: string;
   temLogo?: boolean;
@@ -52,15 +57,7 @@ export function obrigatoriosDaLoja(loja: LojaParaCadastro | null | undefined): I
       ok: l.enderecoConfirmado,
       comoPedir: 'Qual é o CEP e o número do endereço da loja?',
     },
-    ...(l.fazEntrega
-      ? [
-          {
-            rotulo: 'Taxas de entrega por distância',
-            ok: (l.faixasEntrega?.length ?? 0) > 0,
-            comoPedir: 'Quanto cobra de entrega por distância? Ex.: até 2 km R$ 5, até 5 km R$ 8',
-          },
-        ]
-      : []),
+    ...(l.fazEntrega ? [itemDaTaxaDeEntrega(l)] : []),
     {
       rotulo: 'Horário de funcionamento',
       ok: (l.horarios?.length ?? 0) > 0,
@@ -102,4 +99,20 @@ export function descreverObrigatorios(loja: LojaParaCadastro | null | undefined)
     `📋 *Cadastro da loja* (${feitos} de ${itens.length})`,
     ...itens.map((item) => `${item.ok ? '✅' : '⬜'} ${item.rotulo}`),
   ].join('\n');
+}
+
+/** Por distância (com o recurso no plano e escolhida) pede as faixas; senão, a taxa fixa. */
+function itemDaTaxaDeEntrega(loja: LojaParaCadastro): ItemDoCadastro {
+  const porDistancia = loja.entregaPorDistancia !== false && (loja.modoEntrega ?? 'DISTANCIA') === 'DISTANCIA';
+  return porDistancia
+    ? {
+        rotulo: 'Taxas de entrega por distância',
+        ok: (loja.faixasEntrega?.length ?? 0) > 0,
+        comoPedir: 'Quanto cobra de entrega por distância? Ex.: até 2 km R$ 5, até 5 km R$ 8',
+      }
+    : {
+        rotulo: 'Taxa de entrega',
+        ok: loja.taxaEntrega !== undefined,
+        comoPedir: 'Quanto cobra de entrega? É um valor só, e você pode dizer até onde entrega. Ex.: R$ 5 até 4 km',
+      };
 }

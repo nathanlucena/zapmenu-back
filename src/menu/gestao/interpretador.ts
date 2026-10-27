@@ -40,7 +40,7 @@ export type Operacao =
   | { tipo: 'RENOMEAR_CATEGORIA'; categoriaId: string; novoNome: string }
   | { tipo: 'REMOVER_CATEGORIA'; categoriaId: string }
   /** Endereço e taxa fixa não entram aqui: endereço só por DEFINIR_ENDERECO. */
-  | { tipo: 'ATUALIZAR_LOJA'; dados: Omit<DadosLoja, 'endereco' | 'enderecoVerificado' | 'taxaEntrega' | 'logoUrl' | 'capaUrl'> }
+  | { tipo: 'ATUALIZAR_LOJA'; dados: Omit<DadosLoja, 'endereco' | 'enderecoVerificado' | 'logoUrl' | 'capaUrl'> }
   /** Só o que a pessoa disse; o código completa pelo CEP e busca no mapa. */
   | { tipo: 'DEFINIR_ENDERECO'; dados: ConsultaEndereco }
   /** Resposta da pessoa ao "é aqui?" do endereço encontrado. */
@@ -61,6 +61,8 @@ export interface EntradaConversa {
   cadastroPendente?: string[];
   /** Tipo da loja: muda o prompt e o que a IA pode propor. Ausente = COMIDA. */
   segmento?: SegmentoLoja;
+  /** O plano inclui a entrega por distância (faixas). false: só a taxa fixa. Ausente = inclui. */
+  entregaPorDistancia?: boolean;
 }
 
 export interface RespostaConversa {

@@ -39,6 +39,8 @@ export interface DecisaoPedidoDeps {
   clientePedidos: () => WhatsAppClient | undefined;
   /** Para saber o segmento da loja (varejo tem "Separado" na enquete de andamento). */
   lojaParaPedidos?: LojaParaPedidos;
+  /** Pedido virou venda no aceite (pagamento na entrega): confere o limite de pedidos do plano. */
+  aoVirarVenda?: (pedido: Pedido) => Promise<void>;
 }
 
 /** Como foi o aviso ao cliente: avisado, não deu para avisar, ou (aceite com PIX) o PIX não saiu. */
@@ -156,6 +158,7 @@ async function aplicarDecisao(
   // Pago na entrega já está em preparo: a loja recebe a enquete de andamento agora (no PIX, ela vem com o pagamento).
   if (decidido.status === 'CONFIRMADO') {
     await pedirAndamentoDaLoja({ ...deps, mensageiro: mensageiroDa(whatsapp) }, decidido);
+    await deps.aoVirarVenda?.(decidido);
   }
 }
 

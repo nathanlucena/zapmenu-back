@@ -27,6 +27,8 @@ function lojaSalva(dados: Partial<Loja> = {}): Loja {
     aceitaPagamentoNaEntrega: true,
     faixasEntrega: [],
     taxaEntrega: null,
+    raioEntregaKm: null,
+    modoEntrega: 'DISTANCIA',
     pedidoMinimo: null,
     horarios: [],
     slug: 'bolos-da-dona',
@@ -76,5 +78,47 @@ describe('paraLojaPublica', () => {
       padrao: 25,
       porUf: {},
     });
+  });
+});
+
+describe('paraLojaPublica: entrega no plano da loja', () => {
+  const BASICO = { plano: 'ESSENCIAL', status: 'ATIVA' } as const;
+  const PROFISSIONAL = { plano: 'PROFISSIONAL', status: 'ATIVA' } as const;
+  const comEndereco = { latitude: new Prisma.Decimal(-8.05), longitude: new Prisma.Decimal(-34.9) };
+  const porDistancia = { ...comEndereco, fazEntrega: true, faixasEntrega: [{ ateKm: 3, taxa: 5 }] };
+
+  it('Básico com taxa fixa: entrega com o valor e o raio', () => {
+    const loja = paraLojaPublica(
+      lojaSalva({ ...comEndereco, fazEntrega: true, modoEntrega: 'FIXA', taxaEntrega: new Prisma.Decimal(6), raioEntregaKm: new Prisma.Decimal(4) }),
+      BASICO,
+    );
+    expect(loja).toMatchObject({ fazEntrega: true, taxaEntrega: 6, raioMaximoKm: 4, faixasEntrega: [] });
+  });
+
+  it('Básico: entrega por distância barrada; sem taxa fixa, só retirada (as faixas ficam guardadas)', () => {
+    const loja = paraLojaPublica(lojaSalva(porDistancia), BASICO);
+    expect(loja).toMatchObject({ fazEntrega: false, faixasEntrega: [] });
+    expect(loja.taxaEntrega).toBeUndefined();
+  });
+
+  it('caiu do Profissional para o Básico com uma taxa fixa guardada: passa a usar a taxa fixa', () => {
+    const loja = paraLojaPublica(lojaSalva({ ...porDistancia, taxaEntrega: new Prisma.Decimal(7) }), BASICO);
+    expect(loja).toMatchObject({ fazEntrega: true, taxaEntrega: 7, faixasEntrega: [] });
+  });
+
+  it('Profissional escolhe: por distância (a taxa fixa guardada não aparece) ou taxa fixa', () => {
+    const distancia = paraLojaPublica(lojaSalva({ ...porDistancia, taxaEntrega: new Prisma.Decimal(7) }), PROFISSIONAL);
+    expect(distancia).toMatchObject({ fazEntrega: true, faixasEntrega: [{ ateKm: 3, taxa: 5 }], raioMaximoKm: 3 });
+    expect(distancia.taxaEntrega).toBeUndefined();
+
+    const fixa = paraLojaPublica(lojaSalva({ ...porDistancia, modoEntrega: 'FIXA', taxaEntrega: new Prisma.Decimal(7) }), PROFISSIONAL);
+    expect(fixa).toMatchObject({ fazEntrega: true, taxaEntrega: 7, faixasEntrega: [] });
+  });
+
+  it('Básico pede a taxa fixa no cadastro (e não as faixas)', () => {
+    const semTaxa = lojaSalva({ ...porDistancia, horarios: [{ dia: 'seg', abre: '18:00', fecha: '23:00' }] });
+    expect(paraLojaPublica(semTaxa, BASICO).emMontagem).toBe(true);
+    expect(paraLojaPublica(semTaxa, PROFISSIONAL).emMontagem).toBe(false);
+    expect(paraLojaPublica({ ...semTaxa, taxaEntrega: new Prisma.Decimal(5) }, BASICO).emMontagem).toBe(false);
   });
 });

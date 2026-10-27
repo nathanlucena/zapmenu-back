@@ -103,6 +103,9 @@ export async function criarPedidoDoCarrinho(
     throw new DomainError('Loja não encontrada.', 'LOJA_NAO_ENCONTRADA', 'NAO_ENCONTRADO');
   }
 
+  if (regras.indisponivel) {
+    throw new DomainError('Esta loja está temporariamente indisponível.', 'LOJA_INDISPONIVEL');
+  }
   if (!regras.cadastroCompleto) {
     throw new DomainError(
       'Esta loja ainda está terminando o cadastro e não recebe pedidos.',

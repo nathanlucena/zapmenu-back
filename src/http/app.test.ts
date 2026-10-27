@@ -209,6 +209,20 @@ describe('POST /v1/orders', () => {
     expect(resposta.json().codigo).toBe('LOJA_EM_MONTAGEM');
   });
 
+  it('loja com a assinatura suspensa não recebe pedidos (LOJA_INDISPONIVEL)', async () => {
+    const { app, bolo, menuRepo } = await montarAppComBolo();
+    menuRepo.definirRegras('emp-1', { indisponivel: true });
+
+    const resposta = await app.inject({
+      method: 'POST',
+      url: '/v1/orders',
+      payload: { empreendedorId: 'emp-1', itens: [{ itemCardapioId: bolo.id, quantidade: 1 }] },
+    });
+
+    expect(resposta.statusCode).toBe(400);
+    expect(resposta.json().codigo).toBe('LOJA_INDISPONIVEL');
+  });
+
   it('validação em português, um erro por campo', async () => {
     const app = montarApp();
 

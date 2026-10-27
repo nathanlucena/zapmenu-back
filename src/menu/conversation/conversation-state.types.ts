@@ -71,8 +71,12 @@ export interface DadosLoja {
   aceitaRetirada?: boolean;
   fazEntrega?: boolean;
   faixasEntrega?: FaixaEntrega[];
-  /** Depreciada: taxa fixa antiga. Só leitura (identifica lojas que precisam configurar as faixas). */
+  /** Taxa fixa de entrega (todos os planos). */
   taxaEntrega?: number;
+  /** Até onde a taxa fixa vale (opcional). */
+  raioEntregaKm?: number;
+  /** FIXA ou DISTANCIA. Fora do Profissional, vale sempre a taxa fixa. */
+  modoEntrega?: 'FIXA' | 'DISTANCIA';
   pedidoMinimo?: number;
   horarios?: Horario[];
   /** Endereço curto do cardápio. Sem ele, um é gerado pelo nome da loja ao salvar. */
@@ -181,6 +185,11 @@ export interface Contexto {
   ultimaFoto?: { ref?: string; itemId?: string; em: string };
   /** "mudar tipo da loja" em andamento: sem `para`, esperando a escolha; com `para`, esperando o sim. */
   trocaDeTipo?: { para?: 'COMIDA' | 'VAREJO' };
+  /** Conversa da assinatura em andamento: esperando o e-mail do Mercado Pago ou o "sim" de uma mudança. */
+  assinatura?:
+    | { etapa: 'EMAIL'; plano: 'ESSENCIAL' | 'PROFISSIONAL'; periodo: 'MENSAL' | 'ANUAL' }
+    | { etapa: 'CONFIRMAR_MUDANCA'; plano: 'ESSENCIAL' | 'PROFISSIONAL' }
+    | { etapa: 'CONFIRMAR_CANCELAMENTO' };
   /** ISO; usado para retomar/expirar rascunhos abandonados. */
   atualizadoEm?: string;
 }
