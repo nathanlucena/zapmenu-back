@@ -19,7 +19,8 @@ import { filtrarPorPlano } from './permissoes-por-plano.js';
 import { podeUsar, type Assinatura } from '../../planos/domain/assinatura.js';
 import type { PlanosDeps } from '../../planos/application/dependencias.js';
 import { assinaturaNaGestao } from '../../planos/application/situacao-do-plano.js';
-import { mensagemRecursoDoPlano } from '../../planos/application/mensagens.js';
+import { mensagemLojaSuspensa, mensagemRecursoDoPlano } from '../../planos/application/mensagens.js';
+import { conversaDoPlano } from './conversa-do-plano.js';
 import {
   ehOpcaoDaEnquete,
   oQueMudaNaTroca,
@@ -194,6 +195,9 @@ function verificarAbandono(rodada: Rodada): void {
 
 async function tratar(rodada: Rodada): Promise<void> {
   const { texto, imagemUrl } = rodada.mensagem;
+  if (await tratarPlano(rodada)) {
+    return;
+  }
   if (rodada.snapshot.lojaSalva.tipoPendente) {
     await escolherTipoNoCadastro(rodada);
     return;
@@ -271,6 +275,35 @@ async function tratar(rodada: Rodada): Promise<void> {
   }
 
   await conversarComIA(rodada);
+}
+
+/**
+ * Assinatura antes de tudo: os comandos do plano funcionam em qualquer etapa e,
+ * com a loja suspensa, são a única coisa que a gestão aceita.
+ */
+async function tratarPlano(rodada: Rodada): Promise<boolean> {
+  const { planos } = rodada.deps;
+  if (!planos) {
+    return false;
+  }
+  const respostas = rodada.mensagem.imagemUrl
+    ? undefined
+    : await conversaDoPlano({
+        planos,
+        telefone: rodada.mensagem.telefone,
+        texto: rodada.mensagem.texto,
+        contexto: rodada.contexto,
+        assinatura: rodada.assinatura,
+      });
+  if (respostas) {
+    respostas.forEach((resposta) => responder(rodada, resposta));
+    return true;
+  }
+  if (rodada.assinatura?.status === 'SUSPENSA') {
+    responder(rodada, mensagemLojaSuspensa());
+    return true;
+  }
+  return false;
 }
 
 /** Fotos seguidas sem legenda, até este tempo depois da anterior, vão para o mesmo produto. */

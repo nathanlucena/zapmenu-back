@@ -75,3 +75,54 @@ export function reconhecerComando(texto: string): Comando | undefined {
   }
   return undefined;
 }
+
+export type PlanoDoComando = 'ESSENCIAL' | 'PROFISSIONAL';
+
+/** Comandos da assinatura do ZapMenu, também sem IA. "regularizar" é assinar de novo o plano atual. */
+export type ComandoDePlano =
+  | { tipo: 'MEU_PLANO' }
+  | { tipo: 'ASSINAR'; plano?: PlanoDoComando; periodo?: 'MENSAL' | 'ANUAL'; regularizar?: boolean }
+  | { tipo: 'MUDAR_PLANO'; plano?: PlanoDoComando }
+  | { tipo: 'CANCELAR_ASSINATURA' };
+
+const NOME_DO_PLANO = '(?:o\\s+)?(?:plano\\s+)?(basico|essencial|profissional|pro)';
+const PLANO_DA_PALAVRA: Record<string, PlanoDoComando> = {
+  basico: 'ESSENCIAL',
+  essencial: 'ESSENCIAL',
+  profissional: 'PROFISSIONAL',
+  pro: 'PROFISSIONAL',
+};
+
+const MEU_PLANO = /^(?:(?:qual\s+(?:e\s+)?|ver\s+)?(?:o\s+)?meu\s+plano|minha\s+assinatura|meu\s+plano\s+atual|qual\s+plano\s+(?:eu\s+)?(?:tenho|estou))$/;
+const CANCELAR_ASSINATURA = /^cancelar\s+(?:a\s+|minha\s+)?assinatura$/;
+const ASSINAR = new RegExp(`^(?:quero\\s+)?(?:assinar|assina)(?:\\s+${NOME_DO_PLANO})?(?:\\s+(anual|mensal))?$`);
+const REGULARIZAR = /^(?:quero\s+)?(?:regularizar|pagar\s+(?:a\s+)?assinatura|atualizar\s+(?:o\s+)?cartao)$/;
+const MUDAR_PLANO = new RegExp(`^(?:quero\\s+)?(?:mudar|trocar)\\s+(?:de\\s+|o\\s+|meu\\s+)?plano(?:\\s+(?:para|pro)\\s+${NOME_DO_PLANO})?$`);
+const MUDAR_PARA = new RegExp(`^(?:quero\\s+)?(?:mudar|trocar|passar)\\s+(?:para|pro)\\s+${NOME_DO_PLANO}$`);
+
+export function reconhecerComandoDePlano(texto: string): ComandoDePlano | undefined {
+  const normalizado = normalizar(texto);
+  if (MEU_PLANO.test(normalizado)) {
+    return { tipo: 'MEU_PLANO' };
+  }
+  if (CANCELAR_ASSINATURA.test(normalizado)) {
+    return { tipo: 'CANCELAR_ASSINATURA' };
+  }
+  if (REGULARIZAR.test(normalizado)) {
+    return { tipo: 'ASSINAR', regularizar: true };
+  }
+  const assinar = normalizado.match(ASSINAR);
+  if (assinar) {
+    const [, plano, periodo] = assinar;
+    return {
+      tipo: 'ASSINAR',
+      plano: plano ? PLANO_DA_PALAVRA[plano] : undefined,
+      periodo: periodo === 'anual' ? 'ANUAL' : periodo === 'mensal' ? 'MENSAL' : undefined,
+    };
+  }
+  const mudar = normalizado.match(MUDAR_PLANO) ?? normalizado.match(MUDAR_PARA);
+  if (mudar) {
+    return { tipo: 'MUDAR_PLANO', plano: mudar[1] ? PLANO_DA_PALAVRA[mudar[1]] : undefined };
+  }
+  return undefined;
+}

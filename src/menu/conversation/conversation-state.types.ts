@@ -181,6 +181,11 @@ export interface Contexto {
   ultimaFoto?: { ref?: string; itemId?: string; em: string };
   /** "mudar tipo da loja" em andamento: sem `para`, esperando a escolha; com `para`, esperando o sim. */
   trocaDeTipo?: { para?: 'COMIDA' | 'VAREJO' };
+  /** Conversa da assinatura em andamento: esperando o e-mail do Mercado Pago ou o "sim" de uma mudança. */
+  assinatura?:
+    | { etapa: 'EMAIL'; plano: 'ESSENCIAL' | 'PROFISSIONAL'; periodo: 'MENSAL' | 'ANUAL' }
+    | { etapa: 'CONFIRMAR_MUDANCA'; plano: 'ESSENCIAL' | 'PROFISSIONAL' }
+    | { etapa: 'CONFIRMAR_CANCELAMENTO' };
   /** ISO; usado para retomar/expirar rascunhos abandonados. */
   atualizadoEm?: string;
 }
