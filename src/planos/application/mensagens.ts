@@ -1,4 +1,13 @@
-import { formatarCentavos, planoQueLibera, valorDaCobrancaCentavos, type AvisoDePedidos } from '../domain/assinatura.js';
+import {
+  formatarCentavos,
+  planoEfetivo,
+  planoQueLibera,
+  valorDaCobrancaCentavos,
+  type Assinatura,
+  type AvisoDePedidos,
+  type PeriodoAssinatura,
+} from '../domain/assinatura.js';
+import { diaEMes } from '../domain/calendario.js';
 import { CATALOGO_PLANOS, type PlanoId, type Recurso } from '../domain/catalogo.js';
 
 /** Textos que a loja recebe na gestão sobre o plano. Ficam juntos para o tom ser um só. */
@@ -89,4 +98,63 @@ export function mensagemCanceladaEncerrada(): string {
 
 export function mensagemLojaSuspensa(): string {
   return `⛔ Sua loja está fora do ar por falta de assinatura. Para voltar, mande *regularizar* (ou ${precosDosPlanos()}). Também respondo *meu plano*.`;
+}
+
+export function nomeDoPeriodo(periodo: PeriodoAssinatura): string {
+  return periodo === 'ANUAL' ? 'anual' : 'mensal';
+}
+
+/** "R$ 59,99/mês" ou "R$ 599,88/ano". */
+export function precoDaAssinatura(plano: PlanoId, periodo: PeriodoAssinatura): string {
+  return `${formatarCentavos(valorDaCobrancaCentavos(plano, periodo))}/${periodo === 'ANUAL' ? 'ano' : 'mês'}`;
+}
+
+export function mensagemAssinaturaConfirmada(assinatura: Assinatura, fuso: string): string {
+  const quando = assinatura.proximaCobranca ? ` A próxima cobrança é em ${diaEMes(assinatura.proximaCobranca, fuso)}.` : '';
+  return `✅ Assinatura confirmada! Sua loja está no plano *${nome(assinatura.plano)}* (${precoDaAssinatura(assinatura.plano, assinatura.periodo)}).${quando}`;
+}
+
+export function mensagemPagamentoRegularizado(): string {
+  return '✅ Pagamento da assinatura confirmado. Sua loja está no ar normalmente.';
+}
+
+export function mensagemCanceladaNoMercadoPago(assinatura: Assinatura, fuso: string): string {
+  const ate = assinatura.proximaCobranca ? ` A loja continua no plano até ${diaEMes(assinatura.proximaCobranca, fuso)}.` : '';
+  return `A assinatura foi cancelada no Mercado Pago.${ate} Para assinar de novo, mande ${comandoAssinar(assinatura.plano)}.`;
+}
+
+export interface UsoDoMes {
+  pedidos: number;
+  produtos: number;
+}
+
+function linhaDeUso(rotulo: string, usado: number, maximo: number | null): string {
+  return maximo === null ? `${rotulo}: ${usado} (ilimitado)` : `${rotulo}: ${usado} de ${maximo.toLocaleString('pt-BR')}`;
+}
+
+/** Resposta ao "meu plano". */
+export function mensagemMeuPlano(assinatura: Assinatura, uso: UsoDoMes, fuso: string): string {
+  const efetivo = planoEfetivo(assinatura);
+  const data = (quando?: Date) => (quando ? diaEMes(quando, fuso) : '—');
+  const situacao: Record<Assinatura['status'], string> = {
+    TESTE: `teste grátis até ${data(assinatura.fimTeste)}`,
+    ATIVA: `${precoDaAssinatura(assinatura.plano, assinatura.periodo)}, próxima cobrança em ${data(assinatura.proximaCobranca)}`,
+    PENDENTE: '⚠️ a última cobrança foi recusada: atualize o cartão no Mercado Pago ou mande *regularizar*',
+    SUSPENSA: '⛔ loja fora do ar: mande *regularizar* para voltar',
+    CANCELADA: `cancelado, vale até ${data(assinatura.proximaCobranca)}`,
+  };
+  const { limites } = CATALOGO_PLANOS[efetivo];
+  return [
+    `📋 *Seu plano: ${nome(efetivo)}* (${situacao[assinatura.status]})`,
+    ...(assinatura.planoProximoCiclo
+      ? [`A partir de ${data(assinatura.proximaCobranca)}: *${nome(assinatura.planoProximoCiclo)}*.`]
+      : []),
+    '',
+    linhaDeUso('Pedidos este mês', uso.pedidos, limites.pedidosMes),
+    linhaDeUso('Produtos', uso.produtos, limites.produtos),
+    '',
+    assinatura.status === 'ATIVA'
+      ? 'Para trocar, mande *mudar de plano*; para cancelar, *cancelar assinatura*.'
+      : `Para assinar, mande ${precosDosPlanos()}. No anual sai mais barato: acrescente *anual*.`,
+  ].join('\n');
 }
