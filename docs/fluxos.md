@@ -126,6 +126,30 @@ Quando a IA finaliza e o resumo vai ser mostrado, a gestão monta a prévia do r
 - Ao salvar o último obrigatório: "🎉 Sua loja está no ar!" com o link do cardápio (`FRONTEND_ALLOWED_ORIGIN/<slug>`), o pedido dos itens e a lista dos opcionais.
 - **Opcionais:** descrição, logo e capa (foto mandada na conversa dizendo que é o logo/a capa), cor e pedido mínimo; e o pagamento na entrega (liga/desliga, padrão ligado). Lembrete no começo de uma conversa no máximo 1 vez por semana (`Loja.lembreteOpcionaisEm`), até completar ou a loja responder *não lembrar mais* (`Loja.naoLembrarOpcionais`).
 
+### Planos e assinatura
+
+Catálogo único em `planos/domain/catalogo.ts` (preço em centavos, limites e recursos). Hoje são dois planos:
+
+| | Básico (`ESSENCIAL`) | Profissional (`PROFISSIONAL`) |
+|---|---|---|
+| Preço | R$ 29,99/mês ou R$ 24,99/mês no anual | R$ 59,99/mês ou R$ 49,99/mês no anual |
+| Pedidos por mês | 100 | 1.500 |
+| Produtos | 30 | ilimitados |
+| Recursos pagos (entrega por distância, cor e capa, prévia em imagem, sem selo…) | nenhum | todos |
+
+- **Teste:** a primeira conversa de uma loja sem assinatura grava `Assinatura` em `TESTE` por 14 dias, com tudo do Profissional. Lojas anteriores aos planos ganharam o teste na migração.
+- **Na gestão** (`menu/gestao/permissoes-por-plano.ts`, no molde do filtro por tipo): o que o plano não inclui sai das operações da IA e o bot responde "🔒 Isso faz parte do plano *Profissional*" com o link dos planos (`FRONTEND_URL_PUBLICA/#planos`) e o comando *assinar profissional*. Produto acima do limite é recusado com a explicação do upgrade. Sem prévia em imagem no Básico.
+- **Na vitrine** (`menu/plano-na-vitrine.ts`): cor, capa e entrega por distância somem fora do plano (nada é apagado), `loja.mostrarSelo` liga o rodapé "Feito com ZapMenu" e a loja `SUSPENSA` vem com `loja.indisponivel: true` e sem o catálogo; `POST /v1/orders` recusa com `LOJA_INDISPONIVEL`.
+- **Limite de pedidos:** o cliente nunca é barrado. A cada venda (pedido que chega a `PAGO` ou `CONFIRMADO`, contado por `confirmadoEm` no mês do fuso da loja) a loja recebe na gestão, uma vez por mês cada, o aviso de 80% e de 100% com o convite para o upgrade.
+- **Comandos (sem IA):** *meu plano* (plano, situação, pedidos do mês e produtos), *assinar [básico|profissional] [anual]* (pede o e-mail da conta do Mercado Pago na primeira vez e manda o link para cadastrar o cartão; no teste, a primeira cobrança fica para o fim do teste), *mudar de plano* / *mudar para o básico* (upgrade vale na hora; downgrade na próxima cobrança; os dois mudam o valor da assinatura no Mercado Pago), *cancelar assinatura* (com confirmação; vale até o fim do período pago) e *regularizar* (assina de novo o plano que a loja tinha). Com a loja suspensa, a gestão só aceita esses comandos.
+
+```
+TESTE ──cartão autorizado──▶ ATIVA ──cobrança recusada──▶ PENDENTE ──5 dias──▶ SUSPENSA
+  │                           ▲  │                           │                    │
+  └──14 dias sem assinar──▶ SUSPENSA   └──cancelar──▶ CANCELADA ──fim do período──▶ SUSPENSA
+                              └────── cobrança aprovada / regularizar ◀────────────┘
+```
+
 ### Regras principais
 
 | Regra | Comportamento |
@@ -259,6 +283,7 @@ Os dois são `setInterval` dentro do mesmo processo (`main.ts`). Erros são loga
 |---|---|---|
 | Expiração de pedidos (`orders/infra/order-expiration.job.ts`) | `PEDIDO_TTL_MINUTOS` (padrão 20 min) | Marca como `EXPIRADO` os pedidos em `AGUARDANDO_CONFIRMACAO` ou `AGUARDANDO_ACEITE` com `expiraEm` no passado |
 | Polling de pagamentos (`payments/infra/payment-status-poller.job.ts`) | `PAGAMENTO_POLLING_INTERVALO_SEGUNDOS` (padrão 60 s) | Consulta no Mercado Pago cada pagamento `PENDENTE` criado há mais que esse mesmo intervalo e aplica o status |
+| Assinaturas (`planos/infra/assinaturas.job.ts`) | `ASSINATURAS_VERIFICACAO_INTERVALO_MINUTOS` (padrão 60 min; a primeira rodada 2 min depois do boot) | Job diário: avisa no 10º e no 13º dia do teste, suspende o teste vencido, avisa todo dia a cobrança pendente e suspende depois de 5 dias, e encerra a cancelada no fim do período. Cada aviso é marcado na `Assinatura` e sai uma vez só por dia |
 
 Observações:
 - Como o job de expiração roda no mesmo intervalo do prazo, um pedido pode ficar até ~2× o prazo como `AGUARDANDO_CONFIRMACAO` no banco. Isso não muda o comportamento (a confirmação confere o prazo na hora), mas afeta relatórios.
@@ -332,7 +357,9 @@ Todo erro sai como `{ "erro": "mensagem para pessoas", "codigo": "CODIGO" }` (`h
     "raioMaximoKm": 3,
     "taxaEntrega": 5,             // depreciada (taxa fixa antiga)
     "pedidoMinimo": 30,
-    "horarios": [{ "dia": "seg", "abre": "18:00", "fecha": "23:00" }]
+    "horarios": [{ "dia": "seg", "abre": "18:00", "fecha": "23:00" }],
+    "mostrarSelo": true,          // plano sem SEM_SELO: rodapé "Feito com ZapMenu"
+    "indisponivel": true          // só com a assinatura SUSPENSA (aí secoes e itens vêm vazios)
   },
   "secoes": [
     { "id": "ckx…", "nome": "Pizzas", "itens": [ /* ItemCardapio */ ] },
@@ -389,6 +416,10 @@ O valor total **não inclui taxa de entrega** e o pedido não guarda modalidade 
 
 Acompanhamento do pedido no app, pelo código `PED-XXXX` (sem diferenciar maiúsculas). Devolve status, modalidade, forma de pagamento, itens com nome, total e prazo, **sem** telefone, endereço do cliente nem ids internos. Enquanto o pedido está em `AGUARDANDO_PAGAMENTO`, vem também `pix: { copiaCola, qrCodeBase64? }`, o mesmo PIX enviado no WhatsApp, para o cliente copiar na tela. Código inexistente ou fora do formato: `404 PEDIDO_NAO_ENCONTRADO`.
 
+### `POST /v1/webhooks/mercado-pago-assinaturas`
+
+Notificações das assinaturas do ZapMenu (aplicação do Mercado Pago do próprio ZapMenu). Mesma verificação do `x-signature`, com `MERCADO_PAGO_ASSINATURAS_WEBHOOK_SECRET`, e mesmas respostas do webhook do PIX. `subscription_preapproval`: consulta a assinatura (cartão autorizado → `ATIVA` com o plano e o período da `external_reference` `<empreendedorId>:<plano>:<período>`; cancelada no Mercado Pago → `CANCELADA`). `subscription_authorized_payment`: consulta a cobrança (aprovada → `ATIVA` e o downgrade marcado entra; recusada → `PENDENTE` com aviso na hora). Idempotência em `EventoProcessado` (origem `mercado_pago_assinaturas_webhook`). Só sobe com `MERCADO_PAGO_ASSINATURAS_ACCESS_TOKEN`.
+
 ### `POST /v1/webhooks/mercado-pago`
 
 | Etapa | Comportamento |
@@ -423,6 +454,7 @@ A marca de "processado" é gravada **depois** do tratamento. Se o processo cair 
 |---|---|---|---|
 | WhatsApp Web (Baileys) | Os dois números | `WPP_*` | Reconexão com backoff; mensagens reentregues ao voltar |
 | DeepSeek (SDK `openai`) | Interpretar a conversa de gestão | `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `DEEPSEEK_BASE_URL` | Sem chave: só palavras-chave. Sobrecarga (429/5xx): 2 novas tentativas. Timeout de 45 s. |
+| Mercado Pago Assinaturas | Mensalidade do ZapMenu (preapproval), na conta do ZapMenu | `MERCADO_PAGO_ASSINATURAS_ACCESS_TOKEN`, `MERCADO_PAGO_ASSINATURAS_WEBHOOK_SECRET`, `MERCADO_PAGO_ASSINATURAS_SANDBOX` | Sem token: *assinar* responde que está indisponível; teste e limites continuam. Falha ao criar: "tente de novo em alguns minutos" |
 | Mercado Pago | Cobrança PIX e status | `MERCADO_PAGO_ACCESS_TOKEN`, `MERCADO_PAGO_NOTIFICATION_URL` | Falha ao criar cobrança: erro logado, cliente fica sem PIX (sem nova tentativa automática). Com credenciais de teste o PIX só existe no sandbox (nenhum banco reconhece); `MERCADO_PAGO_PAGADOR_TESTE=APRO` faz o Mercado Pago aprová-lo sozinho |
 | ViaCEP | CEP → rua, bairro, cidade | nenhuma | Segue só com o Google |
 | Google Geocoding | Endereço → coordenada | `GOOGLE_MAPS_API_KEY` (opcional) | Sem chave ou fora do ar: cadastro de endereço indisponível |
