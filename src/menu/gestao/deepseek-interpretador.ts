@@ -56,6 +56,7 @@ OPERAÇÕES (cada uma é um objeto com "tipo"):
 - {"tipo": "definir_endereco", "cep": "50050000", "numero": "123", "complemento": "loja 2"} — endereço da loja. Também aceita "rua", "bairro", "cidade", "uf" e "sem_numero": true.
 - {"tipo": "confirmar_endereco"} / {"tipo": "recusar_endereco"} — resposta da pessoa quando endereco_pendente existe ("é aí mesmo" / "não é aí").
 - {"tipo": "descartar_tudo"} — a pessoa quer jogar fora todas as alterações anotadas.
+- {"tipo": "nova_promocao", "preco": 39.9, "itens": ["id"], "dias": ["qua", "qui"], "hora_inicio": "18:00", "hora_fim": "23:00", "ate": "2026-11-30"} ou {"tipo": "nova_promocao", "percentual": 10, "categorias": ["id"]} — promoção ou desconto. Mande "preco" (preço fixo, só com "itens") OU "percentual" (1 a 90). Alvo: "itens" (ids), "categorias" (ids) ou nenhum dos dois = a loja toda. "dias" vazio ou ausente = todos os dias. "ate": último dia da promoção (AAAA-MM-DD), só se a pessoa disser; use a data de hoje (hoje) para calcular "até domingo". Promoção NUNCA muda o preço do item: não use editar_item para promoção. O sistema mostra o resumo e pede confirmação: não use "finalizou" por causa da promoção.
 
 FORMATOS
 - preco, pedido_minimo, taxa (das faixas), frete_envio, os valores de frete_por_uf e preco_adicional: número em reais com ponto decimal ("39,90" → 39.9; "42 reais" → 42).
@@ -407,6 +408,37 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
   z.object({ tipo: z.literal('confirmar_endereco') }).transform((): Operacao => ({ tipo: 'CONFIRMAR_ENDERECO' })),
   z.object({ tipo: z.literal('recusar_endereco') }).transform((): Operacao => ({ tipo: 'RECUSAR_ENDERECO' })),
   z.object({ tipo: z.literal('descartar_tudo') }).transform((): Operacao => ({ tipo: 'DESCARTAR_TUDO' })),
+  z
+    .object({
+      tipo: z.literal('nova_promocao'),
+      preco: numero,
+      percentual: numero,
+      itens: z.array(z.string()).nullish(),
+      categorias: z.array(z.string()).nullish(),
+      dias: z.array(z.enum(DIAS_SEMANA)).nullish(),
+      hora_inicio: z.string().regex(HORA).nullish(),
+      hora_fim: z.string().regex(HORA).nullish(),
+      ate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
+    })
+    .refine((op) => (op.preco === undefined) !== (op.percentual === undefined), 'mande preco OU percentual')
+    .transform(
+      (op): Operacao => ({
+        tipo: 'NOVA_PROMOCAO',
+        promocao: {
+          tipo: op.percentual !== undefined ? 'PERCENTUAL' : 'PRECO_FIXO',
+          valor: (op.percentual ?? op.preco)!,
+          alvo: op.itens?.length
+            ? { tipo: 'ITENS', ids: op.itens }
+            : op.categorias?.length
+              ? { tipo: 'CATEGORIAS', ids: op.categorias }
+              : { tipo: 'LOJA' },
+          diasSemana: (op.dias ?? []).map((dia) => DIAS_SEMANA.indexOf(dia)),
+          horaInicio: op.hora_inicio ?? undefined,
+          horaFim: op.hora_fim ?? undefined,
+          ate: op.ate ?? undefined,
+        },
+      }),
+    ),
 ]);
 
 const respostaSchema = z.object({
@@ -506,6 +538,7 @@ export function montarEntrada(entrada: EntradaConversa) {
     tipo_da_loja: entrada.segmento === 'VAREJO' ? 'loja' : 'cardapio',
     cadastro_pendente: entrada.cadastroPendente ?? [],
     entrega_por_distancia: entrada.entregaPorDistancia ?? true,
+    ...(entrada.hoje && { hoje: entrada.hoje }),
   };
 }
 

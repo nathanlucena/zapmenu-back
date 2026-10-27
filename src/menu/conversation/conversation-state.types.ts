@@ -190,6 +190,17 @@ export interface Contexto {
     | { etapa: 'EMAIL'; plano: 'ESSENCIAL' | 'PROFISSIONAL'; periodo: 'MENSAL' | 'ANUAL' }
     | { etapa: 'CONFIRMAR_MUDANCA'; plano: 'ESSENCIAL' | 'PROFISSIONAL' }
     | { etapa: 'CONFIRMAR_CANCELAMENTO' };
+  /** Promoção mostrada no resumo, esperando o "sim" (duas vezes acima de 50%). Datas em ISO. */
+  promocaoPendente?: {
+    tipo: 'PRECO_FIXO' | 'PERCENTUAL';
+    valor: number;
+    alvo: { tipo: 'LOJA' } | { tipo: 'CATEGORIAS'; ids: string[] } | { tipo: 'ITENS'; ids: string[] };
+    diasSemana: number[];
+    horaInicio?: string;
+    horaFim?: string;
+    fim?: string;
+    confirmacoes: number;
+  };
   /** ISO; usado para retomar/expirar rascunhos abandonados. */
   atualizadoEm?: string;
 }

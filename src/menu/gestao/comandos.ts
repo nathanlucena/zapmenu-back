@@ -126,3 +126,29 @@ export function reconhecerComandoDePlano(texto: string): ComandoDePlano | undefi
   }
   return undefined;
 }
+
+/** Comandos das promoções, sem IA. `numero` é a posição em "minhas promoções". */
+export type ComandoDePromocao =
+  | { tipo: 'LISTAR' }
+  | { tipo: 'PAUSAR' | 'REATIVAR' | 'REMOVER'; numero: number };
+
+const LISTAR_PROMOCOES = /^(?:(?:ver|listar|mostrar?|quais)\s+)?(?:as\s+)?(?:minhas\s+)?promocoes(?:\s+ativas)?$/;
+const ACAO_PROMOCAO = /^(pausar|parar|suspender|reativar|ativar|voltar|remover|apagar|excluir|cancelar)\s+(?:a\s+)?promocao\s+(?:n(?:umero|o|º)?\s*)?(\d+)$/;
+
+export function reconhecerComandoDePromocao(texto: string): ComandoDePromocao | undefined {
+  const normalizado = normalizar(texto);
+  if (LISTAR_PROMOCOES.test(normalizado)) {
+    return { tipo: 'LISTAR' };
+  }
+  const acao = normalizado.match(ACAO_PROMOCAO);
+  if (!acao) {
+    return undefined;
+  }
+  const [, verbo = '', numero = '0'] = acao;
+  const tipo = ['pausar', 'parar', 'suspender'].includes(verbo)
+    ? 'PAUSAR'
+    : ['reativar', 'ativar', 'voltar'].includes(verbo)
+      ? 'REATIVAR'
+      : 'REMOVER';
+  return { tipo, numero: Number(numero) };
+}

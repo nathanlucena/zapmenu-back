@@ -10,7 +10,11 @@ export interface ItemDaPrevia {
   imagemUrl?: string;
   categoria?: string;
   variacoes: Variacao[];
-  marca: 'NOVO' | 'ALTERADO';
+  /** PROMOCAO: o item aparece com o precoBase riscado e o preço da promoção. */
+  marca: 'NOVO' | 'ALTERADO' | 'PROMOCAO';
+  precoPromocional?: number;
+  /** Selo da promoção ("Promoção de quarta", "-10%"). */
+  selo?: string;
 }
 
 /** Cabeçalho da loja como vai ficar (com o que já está salvo por baixo). */

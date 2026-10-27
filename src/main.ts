@@ -41,6 +41,7 @@ import { avisarLimiteDePedidos } from './planos/application/avisar-limite-de-ped
 import type { PlanosDeps } from './planos/application/dependencias.js';
 import { criarMercadoPagoAssinaturasClient } from './planos/infra/mercado-pago-assinaturas.client.js';
 import { iniciarJobAssinaturas } from './planos/infra/assinaturas.job.js';
+import { criarPromocoesRepositoryPrisma } from './promocoes/infra/promocoes.repository.prisma.js';
 
 async function main(): Promise<void> {
   const env = getEnv();
@@ -126,6 +127,7 @@ async function main(): Promise<void> {
         })
       : undefined,
   };
+  const promocoes = { repo: criarPromocoesRepositoryPrisma(prisma), mensageiro: mensageiroLoja };
   // Cada venda confere o limite de pedidos do mês (aviso de 80% e 100%; o cliente nunca é barrado).
   const aoVirarVenda = (pedido: Pedido) => avisarLimiteDePedidos(planos, pedido.empreendedorId);
   // Pago: a loja recebe os dados completos e a enquete de andamento (saiu/pronto, entregue/retirado).
@@ -179,6 +181,7 @@ async function main(): Promise<void> {
       },
       urlDoCardapio: (slug) => `${urlPublica}/${slug}`,
       planos,
+      promocoes,
       decisoes: {
         ordersRepo,
         contatos,

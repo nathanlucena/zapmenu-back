@@ -2,6 +2,7 @@ import { limite, planoEfetivo, podeUsar, type SituacaoDoPlano } from '../../plan
 import type { Recurso } from '../../planos/domain/catalogo.js';
 import { mensagemLimiteDeProdutos, mensagemRecursoDoPlano } from '../../planos/application/mensagens.js';
 import type { Operacao } from './interpretador.js';
+import { recursoDaPromocao } from '../../promocoes/domain/promocao.js';
 
 export const AVISO_TAXA_FIXA =
   '🛵 No seu plano a entrega é com *taxa fixa*: me diga um valor só e, se quiser, até quantos km entrega (ex.: _R$ 5 até 4 km_).';
@@ -51,6 +52,14 @@ export function filtrarPorPlano(
         // O que viria junto de um produto recusado (foto, grade) cai com ele.
         if (operacao.ref && refsRecusadas.has(operacao.ref)) continue;
         break;
+      case 'NOVA_PROMOCAO': {
+        const recurso = recursoDaPromocao(operacao.promocao.tipo);
+        if (!podeUsar(loja, recurso)) {
+          bloquear(recurso);
+          continue;
+        }
+        break;
+      }
       case 'ANEXAR_FOTO_LOJA':
         if (operacao.destino === 'CAPA' && !podeUsar(loja, 'CORES_CAPA')) {
           bloquear('CORES_CAPA');
