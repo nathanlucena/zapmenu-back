@@ -105,7 +105,7 @@ npm run typecheck     # só o TypeScript, sem rodar testes
 | `npm run typecheck` | Checa os tipos de `src/`, `test/` e `scripts/` |
 | `npm run lint:deps` | Verifica a regra de dependência das camadas (`.dependency-cruiser.cjs`) |
 | `npm run smoke -- <viacep\|google\|deepseek\|mercado-pago\|todos>` | Chama as integrações reais com as chaves do `.env` |
-| `npm run loja-demo [-- --telefone <número>]` | Cria a loja de exemplo (Pizzaria do Zé, `/pizzaria-do-ze`). O telefone (ou `LOJA_DEMO_TELEFONE`) é o dono da loja, quem recebe o resumo e a enquete de aceite dos pedidos; sem ele, o dono é um número fictício que o modo autoteste bloqueia. Se o telefone já for de um empreendedor sem loja, a loja passa para ele; se ele tiver outra loja, nada muda. `-- apagar` remove a loja de exemplo |
+| `npm run loja-demo [-- restaurante\|loja] [-- --telefone <número>] [-- --telefone-loja <número>]` | Cria as lojas de exemplo que a landing abre no "Ver exemplo": o restaurante Pizzaria do Zé (`/pizzaria-do-ze`) e a loja de produtos Casa Alecrim (`/casa-alecrim`, com tamanhos, cores, estoque, fotos por cor, envio pelos Correios e política de troca). Sem `restaurante` ou `loja`, cria as duas. `--telefone` (ou `LOJA_DEMO_TELEFONE`) é o dono do restaurante e `--telefone-loja` (ou `LOJA_DEMO_TELEFONE_LOJA`) o da loja: quem recebe o resumo e a enquete de aceite dos pedidos; sem eles, os donos são números fictícios que o modo autoteste bloqueia. Se o telefone já for de um empreendedor sem loja, a loja passa para ele; se ele tiver outra loja, nada muda. `-- apagar [restaurante\|loja]` remove as lojas de exemplo |
 | `npm run prisma:generate` | Regenera o Prisma Client após mudar o schema |
 | `npm run prisma:migrate` | Cria/aplica migrations em desenvolvimento |
 
