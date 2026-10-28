@@ -126,6 +126,59 @@ Quando a IA finaliza e o resumo vai ser mostrado, a gestão monta a prévia do r
 - Ao salvar o último obrigatório: "🎉 Sua loja está no ar!" com o link do cardápio (`FRONTEND_ALLOWED_ORIGIN/<slug>`), o pedido dos itens e a lista dos opcionais.
 - **Opcionais:** descrição, logo e capa (foto mandada na conversa dizendo que é o logo/a capa), cor e pedido mínimo; e o pagamento na entrega (liga/desliga, padrão ligado). Lembrete no começo de uma conversa no máximo 1 vez por semana (`Loja.lembreteOpcionaisEm`), até completar ou a loja responder *não lembrar mais* (`Loja.naoLembrarOpcionais`).
 
+### Planos e assinatura
+
+Catálogo único em `planos/domain/catalogo.ts` (preço em centavos, limites e recursos). Hoje são dois planos:
+
+| | Básico (`ESSENCIAL`) | Profissional (`PROFISSIONAL`) |
+|---|---|---|
+| Preço | R$ 29,99/mês ou R$ 24,99/mês no anual | R$ 59,99/mês ou R$ 49,99/mês no anual |
+| Pedidos por mês | 100 | 1.500 |
+| Produtos | 30 | ilimitados |
+| Entrega | taxa fixa (valor único, raio opcional) | taxa fixa ou por distância (a loja escolhe) |
+| Recursos pagos (entrega por distância, cor e capa, prévia em imagem, sem selo…) | nenhum | todos |
+
+- **Teste:** a primeira conversa de uma loja sem assinatura grava `Assinatura` em `TESTE` por 14 dias, com tudo do Profissional. Lojas anteriores aos planos ganharam o teste na migração.
+- **Na gestão** (`menu/gestao/permissoes-por-plano.ts`, no molde do filtro por tipo): o que o plano não inclui sai das operações da IA e o bot responde "🔒 Isso faz parte do plano *Profissional*" com o link dos planos (`FRONTEND_URL_PUBLICA/#planos`) e o comando *assinar profissional*. Produto acima do limite é recusado com a explicação do upgrade. Sem prévia em imagem no Básico.
+- **Na vitrine** (`menu/plano-na-vitrine.ts`): cor, capa e entrega por distância somem fora do plano (nada é apagado), `loja.mostrarSelo` liga o rodapé "Feito com ZapMenu" e a loja `SUSPENSA` vem com `loja.indisponivel: true` e sem o catálogo; `POST /v1/orders` recusa com `LOJA_INDISPONIVEL`.
+- **Limite de pedidos:** o cliente nunca é barrado. A cada venda (pedido que chega a `PAGO` ou `CONFIRMADO`, contado por `confirmadoEm` no mês do fuso da loja) a loja recebe na gestão, uma vez por mês cada, o aviso de 80% e de 100% com o convite para o upgrade.
+- **Comandos (sem IA):** *meu plano* (plano, situação, pedidos do mês e produtos), *assinar [básico|profissional] [anual]* (pede o e-mail da conta do Mercado Pago na primeira vez e manda o link para cadastrar o cartão; no teste, a primeira cobrança fica para o fim do teste), *mudar de plano* / *mudar para o básico* (upgrade vale na hora; downgrade na próxima cobrança; os dois mudam o valor da assinatura no Mercado Pago), *cancelar assinatura* (com confirmação; vale até o fim do período pago) e *regularizar* (assina de novo o plano que a loja tinha). Com a loja suspensa, a gestão só aceita esses comandos.
+
+```
+TESTE ──cartão autorizado──▶ ATIVA ──cobrança recusada──▶ PENDENTE ──5 dias──▶ SUSPENSA
+  │                           ▲  │                           │                    │
+  └──14 dias sem assinar──▶ SUSPENSA   └──cancelar──▶ CANCELADA ──fim do período──▶ SUSPENSA
+                              └────── cobrança aprovada / regularizar ◀────────────┘
+```
+
+### Mensagens seguidas, áudio, descrições e fotos da loja
+
+- **Mensagens seguidas** (`whatsapp/menu-session/agrupador.ts`, todos os planos): a gestão espera 3 s de silêncio por telefone (reinicia a cada mensagem, teto de 10 s, com "digitando...") e manda tudo numa rodada só para a IA; a primeira foto vai junto (as outras logo depois). Comandos sem IA sozinhos (sim, cancelar, o que falta, meu plano…) e mensagens com `PED-XXXX` respondem na hora. Todos os ids são marcados como processados juntos. O prompt não cria item sem nome específico.
+- **Áudio** (`audio/`, Profissional, cota `minutosAudioMes`): nota de voz do lojista na gestão e do cliente no número de pedidos é transcrita (porta `Transcritor`, adaptador para APIs compatíveis com a OpenAI: OpenAI ou Groq) e segue como texto; na gestão a resposta começa com "🎤 Entendi: …". Até 2 min por áudio e 15 s de espera; senão "Não consegui ouvir o áudio, pode escrever?". O áudio do cliente conta na cota da loja do pedido mais recente dele. O áudio não é guardado; o uso fica em `UsoDeCota` (segundos). Sem `TRANSCRICAO_API_KEY`, o bot pede para escrever.
+- **Descrições com IA** (Profissional, cota `sugestoesIaMes`): depois de salvar itens novos sem descrição (ou com menos de 40 caracteres), o bot oferece escrever; também *melhora a descrição da X* e *melhora as descrições da categoria Y* (até 10 por vez). O DeepSeek dá 2 opções de até 200 caracteres no tom do segmento, sem inventar ingrediente, material, tamanho ou origem e sem promessas; a pessoa responde 1, 2, escreve a sua ou *pular*. Nada é salvo sem a escolha.
+- **Capa e logo**: foto com legenda curta "essa é a capa"/"esse é o logo" vai direto; foto sem legenda, sem item esperando foto (e não logo depois de uma foto de item), pergunta numa enquete se é item, capa ou logo. A capa é recortada em 1200×400 e o logo em 400×400, com menos de 300 KB (`menu/imagens/`, sharp); o resumo mostra a prévia do topo e pede o "sim". *Tirar a capa* / *tirar o logo* também passam pelo resumo. O logo vale em todos os planos; a capa é do Profissional. **Pendência:** as fotos ainda ficam em base64 no banco, como as dos itens (lacuna L12).
+
+### Envio do varejo
+
+- **Opções da loja (tipo Loja):** *envio próprio*, com as mesmas regras da entrega (taxa fixa em todos os planos ou por distância no Profissional, com raio máximo); *transportadora pelo Melhor Envio* (Profissional); e *retirada*. O lojista liga um, outro ou os dois pela conversa ("como você entrega?"). O antigo frete fixo por estado saiu: as lojas que usavam ficaram sem envio e recebem um aviso na gestão (`Loja.avisarFimDoFreteFixo`).
+- **Checkout:** o cliente informa o endereço (ou o CEP) e vê só o que vale para ele. `POST /v1/entrega/cotacao` cota o envio próprio; `POST /v1/frete/cotacao` lista os serviços do Melhor Envio (PAC, SEDEX, transportadoras) com preço e prazo. Fora do raio e sem Melhor Envio: "A loja não entrega no seu endereço", com a retirada se houver. O pedido `MELHOR_ENVIO` guarda o serviço escolhido (`Pedido.servicoEnvio`) e o frete é sempre recalculado no back; o pagamento é só PIX.
+- **Melhor Envio** (`envio/`, só sandbox por enquanto): *conectar melhor envio* manda o link de autorização (OAuth, `state` assinado); o retorno (`GET /v1/melhor-envio/retorno`) guarda os tokens por loja (`ContaMelhorEnvio`), que se renovam sozinhos. A cotação usa o CEP de origem (ou o da loja) e o peso e as medidas de cada produto (ou o padrão da categoria, ou 300 g e 4 × 20 × 30 cm), com uma nova tentativa; se falhar, `FRETE_INDISPONIVEL` e o app mostra só o envio próprio; passando de 30 min, o lojista é avisado uma vez. Com o pedido pago, *gerar etiqueta do PED-XXXX* compra a etiqueta com o saldo do lojista, manda o PDF pela gestão, grava o rastreio, marca `ENVIADO` e avisa o cliente.
+- **Guia de medidas** (Profissional, tipo Loja): o lojista manda as medidas em texto, a IA monta a tabela (`guia_de_medidas`), o bot mostra e grava depois do "sim" (`GuiaMedidas`, de uma categoria ou de um produto; o do produto vale primeiro). A vitrine recebe `item.guiaMedidas`.
+
+### Promoções e descontos (Profissional)
+
+- **Criar:** a IA lê "toda quarta e quinta a calabresa sai por 39,90" ou "10% em todas as pizzas até domingo" como `nova_promocao` (preço fixo só para itens; percentual de 1% a 90% para itens, categorias ou a loja toda; dias da semana, horário e data final opcionais). A promoção **não entra no rascunho**: o código valida, mostra o resumo com quantos itens são afetados e 2 ou 3 exemplos (`Calabresa ~R$ 50,00~ → R$ 45,00`), manda a prévia em imagem com o preço riscado e só grava depois do "sim" (duas vezes acima de 50%). Tabelas `Promocao` e `PromocaoAlvo` (sem alvo = loja toda).
+- **Valer:** a leitura do cardápio (`menu/promocoes-na-vitrine.ts`) aplica a promoção que vale agora no fuso da loja e devolve `item.promocao` (`rotulo` "Promoção de quarta"/"-10%" e `precoPromocional`). O preço do pedido sai da mesma leitura, no momento da criação; as variações somam o acréscimo normal; com mais de uma, vale a de menor preço, sem acumular; o percentual arredonda para baixo no centavo. O `precoBase` nunca muda.
+- **Comandos (sem IA):** *minhas promoções*, *pausar/reativar/remover promoção N*.
+- **Fim:** o job das promoções desliga a vencida e, no dia seguinte ao fim (8h no fuso da loja), avisa o lojista uma vez (`Promocao.avisoFimEm`).
+- **Plano:** preço fixo é `PROMOCOES` e percentual é `DESCONTO_PERCENTUAL`. Fora do plano, a IA não cria (convite para o Profissional) e as promoções gravadas ficam guardadas sem valer.
+
+### Relatório de vendas (Profissional)
+
+- **Na hora:** *relatório* (últimos 7 dias), *relatório do mês* (do dia 1 até agora), *vendas de hoje* e *vendas de ontem*, sempre comparados com o período anterior de mesmo tamanho (▲/▼ %).
+- **Automático:** semanal na segunda às 9h (segunda a domingo anteriores) e diário às 8h (ontem), no fuso da loja. O diário desliga com *parar relatório diário* (e volta com *voltar relatório diário*). `RelatorioEnviado` (loja, tipo, período) impede mandar duas vezes.
+- **Conteúdo:** total vendido, pedidos, ticket médio, os 5 mais vendidos, entrega/retirada/transportadora, PIX/cartão/dinheiro na entrega, horário de pico. Só pedidos pagos ou confirmados (e o que veio depois). Período sem vendas: mensagem curta.
+
 ### Regras principais
 
 | Regra | Comportamento |
@@ -139,7 +192,7 @@ Quando a IA finaliza e o resumo vai ser mostrado, a gestão monta a prévia do r
 | IA fora do ar | Rascunho preservado; o bot pede para repetir. Sem `DEEPSEEK_API_KEY`, só as palavras-chave funcionam. |
 | Fotos | Baixadas do WhatsApp como data URI base64 e guardadas em `ItemCardapio.imagemUrl` |
 | Endereço da loja | CEP + número digitados → ViaCEP → Google → "É aqui?" → só entra no rascunho depois do "sim". Sem `GOOGLE_MAPS_API_KEY`, o bot avisa que está indisponível. |
-| Entrega | Faixas "até X km → R$ Y", até 6 faixas e 30 km. Loja com a taxa fixa antiga fica com a entrega desligada até configurar endereço e faixas; o bot avisa quando uma conversa começa. |
+| Entrega | Dois jeitos (`Loja.modoEntrega`): **taxa fixa** (`taxaEntrega`, com raio opcional `raioEntregaKm`; todos os planos) ou **por distância** (faixas "até X km → R$ Y", até 6 faixas e 30 km; só Profissional). Um valor só vira taxa fixa; faixas viram distância. Fora do Profissional vale sempre a taxa fixa (`menu/entrega.ts` → `entregaEmUso`): a loja que usava distância e caiu para o Básico passa para a taxa fixa e, sem valor informado, fica só com retirada até responder; o bot avisa no começo da conversa e quando o plano muda. Nada é apagado. |
 
 ---
 
@@ -259,6 +312,9 @@ Os dois são `setInterval` dentro do mesmo processo (`main.ts`). Erros são loga
 |---|---|---|
 | Expiração de pedidos (`orders/infra/order-expiration.job.ts`) | `PEDIDO_TTL_MINUTOS` (padrão 20 min) | Marca como `EXPIRADO` os pedidos em `AGUARDANDO_CONFIRMACAO` ou `AGUARDANDO_ACEITE` com `expiraEm` no passado |
 | Polling de pagamentos (`payments/infra/payment-status-poller.job.ts`) | `PAGAMENTO_POLLING_INTERVALO_SEGUNDOS` (padrão 60 s) | Consulta no Mercado Pago cada pagamento `PENDENTE` criado há mais que esse mesmo intervalo e aplica o status |
+| Promoções vencidas (`promocoes/infra/promocoes.job.ts`) | O mesmo das assinaturas | Desliga a promoção com fim no passado e avisa o lojista no dia seguinte, às 8h (uma vez) |
+| Relatórios (`relatorios/infra/relatorios.job.ts`) | 10 min | Semanal (segunda 9h) e diário (8h) no fuso de cada loja do Profissional; o registro do envio evita repetir |
+| Assinaturas (`planos/infra/assinaturas.job.ts`) | `ASSINATURAS_VERIFICACAO_INTERVALO_MINUTOS` (padrão 60 min; a primeira rodada 2 min depois do boot) | Job diário: avisa no 10º e no 13º dia do teste, suspende o teste vencido, avisa todo dia a cobrança pendente e suspende depois de 5 dias, e encerra a cancelada no fim do período. Cada aviso é marcado na `Assinatura` e sai uma vez só por dia |
 
 Observações:
 - Como o job de expiração roda no mesmo intervalo do prazo, um pedido pode ficar até ~2× o prazo como `AGUARDANDO_CONFIRMACAO` no banco. Isso não muda o comportamento (a confirmação confere o prazo na hora), mas afeta relatórios.
@@ -330,9 +386,11 @@ Todo erro sai como `{ "erro": "mensagem para pessoas", "codigo": "CODIGO" }` (`h
     "fazEntrega": true,           // false também para loja antiga sem endereço/faixas
     "faixasEntrega": [{ "ateKm": 1, "taxa": 0 }, { "ateKm": 3, "taxa": 5 }],
     "raioMaximoKm": 3,
-    "taxaEntrega": 5,             // depreciada (taxa fixa antiga)
+    "taxaEntrega": 5,             // só com a taxa fixa em uso (aí faixasEntrega vem vazia e raioMaximoKm é o raio dela)
     "pedidoMinimo": 30,
-    "horarios": [{ "dia": "seg", "abre": "18:00", "fecha": "23:00" }]
+    "horarios": [{ "dia": "seg", "abre": "18:00", "fecha": "23:00" }],
+    "mostrarSelo": true,          // plano sem SEM_SELO: rodapé "Feito com ZapMenu"
+    "indisponivel": true          // só com a assinatura SUSPENSA (aí secoes e itens vêm vazios)
   },
   "secoes": [
     { "id": "ckx…", "nome": "Pizzas", "itens": [ /* ItemCardapio */ ] },
@@ -389,6 +447,10 @@ O valor total **não inclui taxa de entrega** e o pedido não guarda modalidade 
 
 Acompanhamento do pedido no app, pelo código `PED-XXXX` (sem diferenciar maiúsculas). Devolve status, modalidade, forma de pagamento, itens com nome, total e prazo, **sem** telefone, endereço do cliente nem ids internos. Enquanto o pedido está em `AGUARDANDO_PAGAMENTO`, vem também `pix: { copiaCola, qrCodeBase64? }`, o mesmo PIX enviado no WhatsApp, para o cliente copiar na tela. Código inexistente ou fora do formato: `404 PEDIDO_NAO_ENCONTRADO`.
 
+### `POST /v1/webhooks/mercado-pago-assinaturas`
+
+Notificações das assinaturas do ZapMenu (aplicação do Mercado Pago do próprio ZapMenu). Mesma verificação do `x-signature`, com `MERCADO_PAGO_ASSINATURAS_WEBHOOK_SECRET`, e mesmas respostas do webhook do PIX. `subscription_preapproval`: consulta a assinatura (cartão autorizado → `ATIVA` com o plano e o período da `external_reference` `<empreendedorId>:<plano>:<período>`; cancelada no Mercado Pago → `CANCELADA`). `subscription_authorized_payment`: consulta a cobrança (aprovada → `ATIVA` e o downgrade marcado entra; recusada → `PENDENTE` com aviso na hora). Idempotência em `EventoProcessado` (origem `mercado_pago_assinaturas_webhook`). Só sobe com `MERCADO_PAGO_ASSINATURAS_ACCESS_TOKEN`.
+
 ### `POST /v1/webhooks/mercado-pago`
 
 | Etapa | Comportamento |
@@ -423,6 +485,7 @@ A marca de "processado" é gravada **depois** do tratamento. Se o processo cair 
 |---|---|---|---|
 | WhatsApp Web (Baileys) | Os dois números | `WPP_*` | Reconexão com backoff; mensagens reentregues ao voltar |
 | DeepSeek (SDK `openai`) | Interpretar a conversa de gestão | `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `DEEPSEEK_BASE_URL` | Sem chave: só palavras-chave. Sobrecarga (429/5xx): 2 novas tentativas. Timeout de 45 s. |
+| Mercado Pago Assinaturas | Mensalidade do ZapMenu (preapproval), na conta do ZapMenu | `MERCADO_PAGO_ASSINATURAS_ACCESS_TOKEN`, `MERCADO_PAGO_ASSINATURAS_WEBHOOK_SECRET`, `MERCADO_PAGO_ASSINATURAS_SANDBOX` | Sem token: *assinar* responde que está indisponível; teste e limites continuam. Falha ao criar: "tente de novo em alguns minutos" |
 | Mercado Pago | Cobrança PIX e status | `MERCADO_PAGO_ACCESS_TOKEN`, `MERCADO_PAGO_NOTIFICATION_URL` | Falha ao criar cobrança: erro logado, cliente fica sem PIX (sem nova tentativa automática). Com credenciais de teste o PIX só existe no sandbox (nenhum banco reconhece); `MERCADO_PAGO_PAGADOR_TESTE=APRO` faz o Mercado Pago aprová-lo sozinho |
 | ViaCEP | CEP → rua, bairro, cidade | nenhuma | Segue só com o Google |
 | Google Geocoding | Endereço → coordenada | `GOOGLE_MAPS_API_KEY` (opcional) | Sem chave ou fora do ar: cadastro de endereço indisponível |

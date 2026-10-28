@@ -3,14 +3,22 @@ import type {
   DadosLoja,
   FaixaEntrega,
   Horario,
+  LinhaGrade,
   NovoItem,
   Rascunho,
   Variacao,
 } from '../conversation/conversation-state.types.js';
 import { DIAS_SEMANA, rascunhoVazio } from '../conversation/conversation-state.types.js';
 import { mesclarConsulta } from '../endereco/endereco.service.js';
-import { corDaPaleta, gerarSlug, listaDaPaleta, nomeDaCor, problemaNoSlug } from '../vitrine.js';
-import { faixasComTaxaDecrescente, formatarKm, validarFaixas } from '../entrega.js';
+import { corDaPaleta, gerarSlug, listaDaPaleta, nomeDaCor, normalizarInstagram, problemaNoSlug } from '../vitrine.js';
+import {
+  descreverTaxaFixa,
+  faixasComTaxaDecrescente,
+  formatarKm,
+  RAIO_MAXIMO_KM,
+  validarFaixas,
+} from '../entrega.js';
+import type { SegmentoLoja } from '../menu.types.js';
 import type { SnapshotCardapio } from './gestao.repository.js';
 import type { DadosItemOperacao, Operacao } from './interpretador.js';
 
@@ -23,6 +31,8 @@ export interface AplicacaoOperacoes {
   snapshot: SnapshotCardapio;
   /** Foto da mensagem atual, se houver. */
   fotoAtual?: string;
+  /** Na loja, fotos de produto vão para a galeria em vez de trocar a foto única. */
+  segmento?: SegmentoLoja;
 }
 
 /**
@@ -120,15 +130,33 @@ export function aplicarOperacoes(aplicacao: AplicacaoOperacoes, operacoes: Opera
           avisos.add('⚠️ Não recebi nenhuma foto para anexar. Pode mandar de novo?');
           break;
         }
+        const galeria = aplicacao.segmento === 'VAREJO';
+        const nova = { url: foto, ...(operacao.cor && { cor: operacao.cor }) };
         if (operacao.ref && novoItem(operacao.ref)) {
-          novoItem(operacao.ref)!.imagemUrl = foto;
+          const item = novoItem(operacao.ref)!;
+          if (galeria) {
+            item.fotos = [...(item.fotos ?? []), nova];
+            // A primeira foto também é a capa do produto (lista, prévia).
+            item.imagemUrl ??= foto;
+          } else {
+            item.imagemUrl = foto;
+          }
+          contexto.ultimaFoto = { ref: item.ref, em: new Date().toISOString() };
         } else if (operacao.itemId && itemExiste(operacao.itemId)) {
           let edicao = rascunho.edicoes.find((candidata) => candidata.itemId === operacao.itemId);
           if (!edicao) {
             edicao = { itemId: operacao.itemId };
             rascunho.edicoes.push(edicao);
           }
-          edicao.imagemUrl = foto;
+          if (galeria) {
+            edicao.fotos = [...(edicao.fotos ?? []), nova];
+            if (!snapshot.itens.find((item) => item.id === operacao.itemId)?.temFoto) {
+              edicao.imagemUrl ??= foto;
+            }
+          } else {
+            edicao.imagemUrl = foto;
+          }
+          contexto.ultimaFoto = { itemId: operacao.itemId, em: new Date().toISOString() };
         } else {
           avisarItemDesconhecido();
           break;
@@ -137,6 +165,23 @@ export function aplicarOperacoes(aplicacao: AplicacaoOperacoes, operacoes: Opera
           fotoAtual = undefined;
         } else {
           contexto.fotoPendente = undefined;
+        }
+        break;
+      }
+      case 'DEFINIR_GRADE': {
+        const validacao = validarGrade(operacao.grade);
+        validacao.avisos.forEach((aviso) => avisos.add(aviso));
+        if (operacao.ref && novoItem(operacao.ref)) {
+          novoItem(operacao.ref)!.grade = validacao.grade;
+        } else if (operacao.itemId && itemExiste(operacao.itemId)) {
+          let edicao = rascunho.edicoes.find((candidata) => candidata.itemId === operacao.itemId);
+          if (!edicao) {
+            edicao = { itemId: operacao.itemId };
+            rascunho.edicoes.push(edicao);
+          }
+          edicao.grade = validacao.grade;
+        } else {
+          avisarItemDesconhecido();
         }
         break;
       }
@@ -152,6 +197,18 @@ export function aplicarOperacoes(aplicacao: AplicacaoOperacoes, operacoes: Opera
         } else {
           contexto.fotoPendente = undefined;
         }
+        break;
+      }
+      case 'MEDIDAS_DA_CATEGORIA': {
+        if (!snapshot.categorias.some((categoria) => categoria.id === operacao.categoriaId)) {
+          avisos.add('⚠️ Não achei essa categoria. Confere o nome?');
+          break;
+        }
+        const { tipo: _tipo, ...medidas } = operacao;
+        rascunho.medidasDasCategorias = [
+          ...(rascunho.medidasDasCategorias ?? []).filter((anotada) => anotada.categoriaId !== operacao.categoriaId),
+          definidos(medidas) as typeof medidas,
+        ];
         break;
       }
       case 'NOVA_CATEGORIA':
@@ -195,6 +252,13 @@ export function aplicarOperacoes(aplicacao: AplicacaoOperacoes, operacoes: Opera
           }
           dados.corDestaque = escolha?.cor.hex;
         }
+        if (dados.instagram !== undefined) {
+          const perfil = normalizarInstagram(dados.instagram);
+          if (!perfil) {
+            avisos.add(`⚠️ Não reconheci "${dados.instagram}" como perfil do Instagram. Mande o @ da loja (ex.: _@modadaana_).`);
+          }
+          dados.instagram = perfil ?? undefined;
+        }
         if (dados.faixasEntrega !== undefined) {
           const validacao = validarFaixas(dados.faixasEntrega);
           validacao.avisos.forEach((aviso) => avisos.add(aviso));
@@ -204,6 +268,37 @@ export function aplicarOperacoes(aplicacao: AplicacaoOperacoes, operacoes: Opera
           if (validacao.faixas && dados.fazEntrega === undefined && !fazEntregaAtual) {
             dados.fazEntrega = true;
           }
+        }
+        if (dados.cepOrigem !== undefined) {
+          const cep = dados.cepOrigem.replace(/\D/g, '');
+          if (cep.length !== 8) {
+            avisos.add(`⚠️ O CEP ${dados.cepOrigem} não tem 8 números. Confere pra mim?`);
+          }
+          dados.cepOrigem = cep.length === 8 ? cep : undefined;
+        }
+        if (dados.taxaEntrega !== undefined) {
+          if (!Number.isFinite(dados.taxaEntrega) || dados.taxaEntrega < 0) {
+            avisos.add('⚠️ Não consegui aplicar a taxa de entrega: o valor não pode ser negativo.');
+            dados.taxaEntrega = undefined;
+          } else {
+            dados.taxaEntrega = Math.round(dados.taxaEntrega * 100) / 100;
+          }
+        }
+        if (dados.raioEntregaKm !== undefined) {
+          if (!Number.isFinite(dados.raioEntregaKm) || dados.raioEntregaKm < 0 || dados.raioEntregaKm > RAIO_MAXIMO_KM) {
+            avisos.add(`⚠️ Não consegui aplicar o limite da entrega: precisa ser até ${RAIO_MAXIMO_KM} km.`);
+            dados.raioEntregaKm = undefined;
+          } else {
+            dados.raioEntregaKm = Math.round(dados.raioEntregaKm * 100) / 100;
+          }
+        }
+        // O jeito de cobrar segue o que a pessoa acabou de informar: um valor só é taxa fixa; faixas, distância.
+        if (dados.modoEntrega === undefined) {
+          if (dados.taxaEntrega !== undefined && dados.faixasEntrega === undefined) dados.modoEntrega = 'FIXA';
+          if (dados.faixasEntrega !== undefined && dados.taxaEntrega === undefined) dados.modoEntrega = 'DISTANCIA';
+        }
+        if (dados.taxaEntrega !== undefined && dados.fazEntrega === undefined && !(rascunho.loja?.fazEntrega ?? snapshot.loja.fazEntrega)) {
+          dados.fazEntrega = true;
         }
         rascunho.loja = { ...rascunho.loja, ...definidos(dados) };
         break;
@@ -235,6 +330,46 @@ export function aplicarOperacoes(aplicacao: AplicacaoOperacoes, operacoes: Opera
     contexto.fotoPendente = fotoAtual;
   }
   return [...avisos];
+}
+
+/**
+ * Grade como a loja vai vender: estoque inteiro e não negativo, sem linha sem
+ * tamanho nem cor (a não ser que seja a única) e sem combinação repetida (a
+ * última vale). Devolve a grade arrumada e avisos para a pessoa.
+ */
+export function validarGrade(grade: LinhaGrade[]): { grade: LinhaGrade[]; avisos: string[] } {
+  const avisos: string[] = [];
+  const porChave = new Map<string, LinhaGrade>();
+  for (const linha of grade) {
+    const tamanho = linha.tamanho?.trim() || undefined;
+    const cor = linha.cor?.trim() || undefined;
+    if (!tamanho && !cor && grade.length > 1) {
+      avisos.push('⚠️ Uma linha da grade veio sem tamanho nem cor e ficou de fora.');
+      continue;
+    }
+    const estoque = Math.max(0, Math.floor(linha.estoque));
+    porChave.set(`${tamanho?.toLowerCase() ?? ''}|${cor?.toLowerCase() ?? ''}`, {
+      ...(tamanho && { tamanho: tamanho.toUpperCase().length <= 3 ? tamanho.toUpperCase() : tamanho }),
+      ...(cor && { cor: cor.charAt(0).toUpperCase() + cor.slice(1) }),
+      estoque,
+      ...(linha.preco !== undefined && linha.preco >= 0 && { preco: linha.preco }),
+    });
+  }
+  return { grade: [...porChave.values()], avisos };
+}
+
+/** "P Azul 5 · M Azul 3 (R$ 69,90) · G Azul esgotado" */
+export function descreverGrade(grade: LinhaGrade[]): string {
+  if (grade.length === 0) {
+    return 'sem tamanhos/cores';
+  }
+  return grade
+    .map((linha) => {
+      const nome = [linha.tamanho, linha.cor].filter(Boolean).join(' ');
+      const estoque = linha.estoque === 0 ? 'esgotado' : `${linha.estoque}`;
+      return `${nome} ${estoque}${linha.preco !== undefined ? ` (${formatarPreco(linha.preco)})` : ''}`;
+    })
+    .join(' · ');
 }
 
 /** Passa o endereço confirmado para o rascunho. Devolve false se não havia nada pendente. */
@@ -311,12 +446,13 @@ export function contarAlteracoes(rascunho: Rascunho): number {
     rascunho.novasCategorias.length +
     rascunho.categoriasRenomeadas.length +
     rascunho.categoriasRemovidas.length +
+    (rascunho.medidasDasCategorias?.length ?? 0) +
     (rascunho.loja && Object.keys(definidos(rascunho.loja)).length > 0 ? 1 : 0)
   );
 }
 
 /** O que falta para o rascunho poder ser salvo (vazio = pode salvar). */
-export function pendenciasParaSalvar(contexto: Contexto, snapshot: SnapshotCardapio): string[] {
+export function pendenciasParaSalvar(contexto: Contexto, snapshot: SnapshotCardapio, entregaPorDistancia = true): string[] {
   const { rascunho } = contexto;
   const pendencias: string[] = [];
   if (contexto.enderecoPendente) {
@@ -335,9 +471,15 @@ export function pendenciasParaSalvar(contexto: Contexto, snapshot: SnapshotCarda
   // Só cobra endereço e faixas quando a conversa mexeu na entrega: editar um
   // preço numa loja antiga (entrega por taxa fixa) não pode ficar travado.
   const loja = rascunho.loja;
-  const mexeuNaEntrega = loja?.fazEntrega === true || loja?.faixasEntrega !== undefined;
+  const mexeuNaEntrega =
+    loja?.fazEntrega === true || loja?.faixasEntrega !== undefined || loja?.taxaEntrega !== undefined || loja?.modoEntrega !== undefined;
   const fazEntrega = loja?.fazEntrega ?? snapshot.loja.fazEntrega;
-  if (mexeuNaEntrega && fazEntrega) {
+  const modo = loja?.modoEntrega ?? snapshot.loja.modoEntrega ?? 'DISTANCIA';
+  if (mexeuNaEntrega && fazEntrega && (modo === 'FIXA' || !entregaPorDistancia)) {
+    if ((loja?.taxaEntrega ?? snapshot.loja.taxaEntrega) === undefined) {
+      pendencias.push('quanto você cobra de entrega (um valor só) e, se quiser, até quantos km entrega (ex.: _R$ 5 até 4 km_)');
+    }
+  } else if (mexeuNaEntrega && fazEntrega) {
     if (!(loja?.enderecoVerificado ?? snapshot.loja.enderecoVerificado) && !contexto.enderecoPendente) {
       pendencias.push('o CEP e o número da loja (para calcular a distância das entregas)');
     }
@@ -368,12 +510,16 @@ export function descreverAlteracoes(rascunho: Rascunho, snapshot: SnapshotCardap
   }
 
   for (const novo of rascunho.novosItens) {
-    const extras = [novo.categoria && `(${novo.categoria})`, novo.imagemUrl ? '📷' : '(sem foto)'].filter(Boolean).join(' ');
+    const fotos = novo.fotos?.length ? `📷 ${novo.fotos.length} ${novo.fotos.length === 1 ? 'foto' : 'fotos'}` : novo.imagemUrl ? '📷' : '(sem foto)';
+    const extras = [novo.categoria && `(${novo.categoria})`, fotos].filter(Boolean).join(' ');
     linhas.push(`➕ *${novo.nome ?? 'sem nome'}* — ${novo.precoBase !== undefined ? formatarPreco(novo.precoBase) : 'sem preço'} ${extras}`);
     if (novo.descricao) {
       linhas.push(`   _${novo.descricao}_`);
     }
     linhas.push(...descreverVariacoes(novo.variacoes));
+    if (novo.grade) {
+      linhas.push(`   Grade: ${descreverGrade(novo.grade)}`);
+    }
   }
 
   for (const edicao of rascunho.edicoes) {
@@ -385,12 +531,22 @@ export function descreverAlteracoes(rascunho: Rascunho, snapshot: SnapshotCardap
     }
     if (edicao.descricao !== undefined) mudancas.push(`descrição → _${edicao.descricao}_`);
     if (edicao.categoria !== undefined) mudancas.push(`categoria → *${edicao.categoria ?? 'Outros'}*`);
-    if (edicao.imagemUrl !== undefined) mudancas.push('nova foto 📷');
+    if (edicao.fotos?.length) {
+      mudancas.push(`${edicao.fotos.length} ${edicao.fotos.length === 1 ? 'foto nova' : 'fotos novas'} 📷`);
+    } else if (edicao.imagemUrl !== undefined) {
+      mudancas.push('nova foto 📷');
+    }
+    if (edicao.grade !== undefined) mudancas.push(`grade → ${descreverGrade(edicao.grade)}`);
     if (edicao.variacoes !== undefined) mudancas.push('variações:');
     linhas.push(`✏️ *${atual?.nome ?? 'item'}*: ${mudancas.join(' · ') || 'sem mudanças'}`);
     if (edicao.variacoes !== undefined) {
       linhas.push(...(edicao.variacoes.length ? descreverVariacoes(edicao.variacoes) : ['   (sem variações)']));
     }
+  }
+
+  for (const medidas of rascunho.medidasDasCategorias ?? []) {
+    const nome = snapshot.categorias.find((categoria) => categoria.id === medidas.categoriaId)?.nome ?? 'categoria';
+    linhas.push(`📏 *${nome}* (padrão para o frete): ${descreverMedidas(medidas)}`);
   }
 
   const iconeStatus = { PAUSAR: '⏸️', REATIVAR: '▶️', REMOVER: '🗑️' } as const;
@@ -441,15 +597,29 @@ function descreverLoja(loja: DadosLoja, atual: DadosLoja): string[] {
       );
     }
   }
+  if (loja.taxaEntrega !== undefined || loja.raioEntregaKm !== undefined) {
+    const taxa = loja.taxaEntrega ?? atual.taxaEntrega;
+    const raio = loja.raioEntregaKm ?? atual.raioEntregaKm;
+    if (taxa !== undefined) {
+      linhas.push(`🛵 Entrega com taxa fixa: *${descreverTaxaFixa({ tipo: 'FIXA', taxa, ...(raio ? { raioKm: raio } : {}) })}*`);
+    }
+  } else if (loja.modoEntrega !== undefined && loja.faixasEntrega === undefined) {
+    linhas.push(`🛵 Entrega: *${loja.modoEntrega === 'FIXA' ? 'taxa fixa' : 'por distância'}*`);
+  }
   if (loja.pedidoMinimo !== undefined) linhas.push(`🧾 Pedido mínimo: *${formatarPreco(loja.pedidoMinimo)}*`);
   if (loja.horarios !== undefined) linhas.push(`🕒 Horários: ${formatarHorarios(loja.horarios)}`);
   if (loja.slug !== undefined) linhas.push(`🔗 Link do cardápio: ${atual.slug ? `${atual.slug} → ` : ''}*${loja.slug}*`);
   if (loja.corDestaque !== undefined) linhas.push(`🎨 Cor da loja: *${nomeDaCor(loja.corDestaque)}*`);
-  if (loja.logoUrl !== undefined) linhas.push('🖼️ Logo nova 📷');
-  if (loja.capaUrl !== undefined) linhas.push('🖼️ Foto de capa nova 📷');
+  if (loja.instagram !== undefined) linhas.push(`📸 Instagram: *@${loja.instagram}*`);
+  // Vazio = tirar (a foto antiga sai e a vitrine volta às iniciais / à faixa na cor da loja).
+  if (loja.logoUrl !== undefined) linhas.push(loja.logoUrl ? '🖼️ Logo nova 📷' : '🖼️ Tirar o logo');
+  if (loja.capaUrl !== undefined) linhas.push(loja.capaUrl ? '🖼️ Foto de capa nova 📷' : '🖼️ Tirar a foto de capa');
   if (loja.aceitaPagamentoNaEntrega !== undefined) {
     linhas.push(`💵 Pagamento na entrega (dinheiro ou cartão): *${simNao(loja.aceitaPagamentoNaEntrega)}*`);
   }
+  if (loja.usaMelhorEnvio !== undefined) linhas.push(`📦 Envio por transportadora (Melhor Envio): *${simNao(loja.usaMelhorEnvio)}*`);
+  if (loja.cepOrigem !== undefined) linhas.push(`📦 CEP de onde saem as encomendas: *${loja.cepOrigem.replace(/^(\d{5})(\d{3})$/, '$1-$2')}*`);
+  if (loja.politicaTroca !== undefined) linhas.push(`🔁 Política de troca: _${loja.politicaTroca}_`);
   return linhas;
 }
 
@@ -486,4 +656,15 @@ export function formatarPreco(valor: number): string {
 /** Remove chaves com valor undefined (para merges não apagarem dados). */
 export function definidos<T extends object>(dados: T): Partial<T> {
   return Object.fromEntries(Object.entries(dados).filter(([, valor]) => valor !== undefined)) as Partial<T>;
+}
+
+/** "500 g · 4 × 20 × 30 cm" (altura × largura × comprimento). */
+export function descreverMedidas(medidas: { pesoGramas?: number; alturaCm?: number; larguraCm?: number; comprimentoCm?: number }): string {
+  const partes: string[] = [];
+  if (medidas.pesoGramas !== undefined) partes.push(`${medidas.pesoGramas} g`);
+  const dimensoes = [medidas.alturaCm, medidas.larguraCm, medidas.comprimentoCm];
+  if (dimensoes.some((valor) => valor !== undefined)) {
+    partes.push(`${dimensoes.map((valor) => (valor === undefined ? '?' : String(valor).replace('.', ','))).join(' × ')} cm`);
+  }
+  return partes.join(' · ');
 }

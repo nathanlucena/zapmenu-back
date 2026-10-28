@@ -189,6 +189,21 @@ describe('confirmarRecebimentoCliente', () => {
     expect(expirados.map((p) => p.codigoCurto)).toEqual([criado.codigoCurto]);
   });
 
+  it('pedido em andamento ou concluído responde a situação real, não "expirou"', async () => {
+    const repositorio = criarOrdersRepositoryFake();
+    const enviado = await criarPedido(repositorio, carrinhoValido(), 20, new Date('2026-01-01T10:00:00Z'));
+    const concluido = await criarPedido(repositorio, carrinhoValido(), 20, new Date('2026-01-01T10:00:00Z'));
+    await repositorio.atualizar(enviado.id, { status: 'ENVIADO' });
+    await repositorio.atualizar(concluido.id, { status: 'CONCLUIDO' });
+
+    await expect(confirmarRecebimentoCliente(repositorio, enviado.codigoCurto, '5511999998888')).rejects.toThrow(
+      `O pedido ${enviado.codigoCurto} já está com a loja ✅ Agora: enviado.`,
+    );
+    await expect(confirmarRecebimentoCliente(repositorio, concluido.codigoCurto, '5511999998888')).rejects.toThrow(
+      `O pedido ${concluido.codigoCurto} já foi concluído ✅`,
+    );
+  });
+
   it('explica sem código técnico quando o pedido já foi pago', async () => {
     const repositorio = criarOrdersRepositoryFake();
     const criado = await criarPedido(repositorio, carrinhoValido(), 20, new Date('2026-01-01T10:00:00Z'));
@@ -209,8 +224,8 @@ describe('confirmarPagamento', () => {
 
     const pago = await confirmarPagamento(repositorio, criado.id, { status: 'AGUARDANDO_PAGAMENTO' });
 
-    expect(pago.status).toBe('PAGO');
-    expect(pago.confirmadoEm).toBeInstanceOf(Date);
+    expect(pago?.status).toBe('PAGO');
+    expect(pago?.confirmadoEm).toBeInstanceOf(Date);
   });
 
   it('lança DomainError se pedido não está em AGUARDANDO_PAGAMENTO', async () => {

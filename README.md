@@ -15,7 +15,7 @@ Roda como processo de longa duração (não serverless) porque usa o Baileys, qu
 - **PostgreSQL + Prisma** (ORM e migrations)
 - **Fastify** (API HTTP `/v1/...`, consumida pelo frontend Next.js)
 - **Baileys** (conexão direta com o WhatsApp, como um aparelho conectado — não é a API oficial)
-- **Mercado Pago** (geração de cobrança PIX + webhook de confirmação)
+- **Mercado Pago** (geração de cobrança PIX + webhook de confirmação; Mercado Pago Assinaturas para a mensalidade do ZapMenu)
 - **DeepSeek** via SDK `openai` (interpreta a conversa de gestão)
 - **ViaCEP + Google Geocoding** (endereço da loja e coordenada para a entrega por distância)
 - **Vitest** (testes)
@@ -30,6 +30,10 @@ Roda como processo de longa duração (não serverless) porque usa o Baileys, qu
 | [`src/menu/`](src/menu) | Cardápio público agrupado por categoria, preço calculado no servidor com variações |
 | [`src/orders/`](src/orders) | Carrinho → pedido com código curto (`PED-XXXX`), transições de status, expiração por prazo, aviso de pedido pago. Em camadas: `domain/`, `application/` (use cases e ports) e `infra/` |
 | [`src/payments/`](src/payments) | Cobrança PIX no Mercado Pago, webhook assinado e polling de reserva, reaproveitando a mesma rotina de confirmação (idempotente). Mesmas camadas de `orders/` |
+| [`src/promocoes/`](src/promocoes) | Promoções da loja (preço fixo ou %, por dia da semana e horário, com fim opcional): regras de quando valem e do preço (o menor, sem acumular), resumo, lista e o job que desliga as vencidas. Mesmas camadas de `orders/` |
+| [`src/relatorios/`](src/relatorios) | Relatório de vendas pelo WhatsApp: cálculos (total, pedidos, ticket, mais vendidos, divisões, pico, variação), períodos no fuso da loja e o envio semanal/diário. Mesmas camadas de `orders/` |
+| [`src/envio/`](src/envio) | Melhor Envio: conexão por OAuth, cotação com peso e medidas, etiqueta e aviso de falha. Mesmas camadas de `orders/` |
+| [`src/planos/`](src/planos) | Planos do ZapMenu (Básico e Profissional): catálogo único de preços, limites e recursos ([`domain/catalogo.ts`](src/planos/domain/catalogo.ts)), `podeUsar`/`limite`, teste de 14 dias, assinatura no Mercado Pago Assinaturas (conta do ZapMenu), webhook, job diário e avisos de 80%/100% dos pedidos. Mesmas camadas de `orders/` |
 | [`src/whatsapp/`](src/whatsapp) | Interface `WhatsAppClient` (com fake para testes), routers das duas sessões, implementação Baileys com reconexão e modo autoteste |
 | [`src/http/`](src/http) | API Fastify: `GET /v1/menu/:empreendedorId`, `POST /v1/orders`, `POST /v1/webhooks/mercado-pago` |
 | [`src/orders/infra/order-expiration.job.ts`](src/orders/infra/order-expiration.job.ts), [`src/payments/infra/payment-status-poller.job.ts`](src/payments/infra/payment-status-poller.job.ts) | Jobs de fundo: expira pedidos não confirmados e consulta pagamentos pendentes |
@@ -68,7 +72,9 @@ Edite o `.env` e preencha pelo menos:
 - `FRONTEND_URL_PUBLICA` (opcional) — endereço público do app, usado nos links mandados no WhatsApp. Para testar no celular com o ngrok, coloque o domínio do túnel aqui e aponte o `MERCADO_PAGO_NOTIFICATION_URL` para `https://<dominio>/api/webhooks/mercado-pago` (passo a passo no README do `zapmenu-front`, "Testar no celular")
 
 Opcionais, mas sem eles parte da gestão fica desligada:
+- `MELHOR_ENVIO_CLIENT_ID` e `MELHOR_ENVIO_CLIENT_SECRET` — app do Melhor Envio (use o **sandbox**; `MELHOR_ENVIO_SANDBOX=true` é o padrão). Sem eles, o envio por transportadora fica desligado. `MELHOR_ENVIO_URL_RETORNO` (padrão `FRONTEND_URL_PUBLICA/api/melhor-envio/retorno`) precisa ser a mesma cadastrada no app; `MELHOR_ENVIO_EMAIL_CONTATO` vai no User-Agent.
 - `DEEPSEEK_API_KEY` — sem ela, a gestão só entende as palavras-chave (`cardápio`, `cancelar`, `sim`, `não`).
+- `MERCADO_PAGO_ASSINATURAS_ACCESS_TOKEN` e `MERCADO_PAGO_ASSINATURAS_WEBHOOK_SECRET` — a assinatura do ZapMenu pelas lojas, na conta do **próprio ZapMenu** (credenciais separadas das que cobram os PIX). **Use só credenciais de teste.** Sem o token, o comando *assinar* responde que está indisponível; o teste de 14 dias e os limites dos planos funcionam igual. Opcionais: `MERCADO_PAGO_ASSINATURAS_SANDBOX` (padrão `true`, manda o link do sandbox), `ASSINATURA_URL_RETORNO` (para onde a loja volta depois do cartão) e `ASSINATURAS_VERIFICACAO_INTERVALO_MINUTOS` (padrão 60).
 - `GOOGLE_MAPS_API_KEY` — Google Geocoding, para o cadastro do endereço da loja e a entrega por distância. Restrinja a chave à Geocoding API. Sem ela, o bot avisa que o cadastro de endereço está indisponível.
 
 Para testar com um único celular, use `WPP_MODO_AUTOTESTE=true` (veja os comentários no `.env.example` e a seção 7 de [`docs/fluxos.md`](docs/fluxos.md#7-sessões-do-whatsapp)).
@@ -105,7 +111,7 @@ npm run typecheck     # só o TypeScript, sem rodar testes
 | `npm run typecheck` | Checa os tipos de `src/`, `test/` e `scripts/` |
 | `npm run lint:deps` | Verifica a regra de dependência das camadas (`.dependency-cruiser.cjs`) |
 | `npm run smoke -- <viacep\|google\|deepseek\|mercado-pago\|todos>` | Chama as integrações reais com as chaves do `.env` |
-| `npm run loja-demo [-- --telefone <número>]` | Cria a loja de exemplo (Pizzaria do Zé, `/pizzaria-do-ze`). O telefone (ou `LOJA_DEMO_TELEFONE`) é o dono da loja, quem recebe o resumo e a enquete de aceite dos pedidos; sem ele, o dono é um número fictício que o modo autoteste bloqueia. Se o telefone já for de um empreendedor sem loja, a loja passa para ele; se ele tiver outra loja, nada muda. `-- apagar` remove a loja de exemplo |
+| `npm run loja-demo [-- restaurante\|loja] [-- --telefone <número>] [-- --telefone-loja <número>]` | Cria as lojas de exemplo que a landing abre no "Ver exemplo": o restaurante Pizzaria do Zé (`/pizzaria-do-ze`) e a loja de produtos Casa Alecrim (`/casa-alecrim`, com tamanhos, cores, estoque, fotos por cor, envio pelos Correios e política de troca). Sem `restaurante` ou `loja`, cria as duas. `--telefone` (ou `LOJA_DEMO_TELEFONE`) é o dono do restaurante e `--telefone-loja` (ou `LOJA_DEMO_TELEFONE_LOJA`) o da loja: quem recebe o resumo e a enquete de aceite dos pedidos; sem eles, os donos são números fictícios que o modo autoteste bloqueia. Se o telefone já for de um empreendedor sem loja, a loja passa para ele; se ele tiver outra loja, nada muda. `-- apagar [restaurante\|loja]` remove as lojas de exemplo |
 | `npm run prisma:generate` | Regenera o Prisma Client após mudar o schema |
 | `npm run prisma:migrate` | Cria/aplica migrations em desenvolvimento |
 
@@ -124,6 +130,9 @@ src/
 │   ├── application/  # use cases + ports/ (interfaces de I/O)
 │   └── infra/        # Prisma e job de expiração
 ├── payments/     # cobrança PIX (mesmas camadas de orders/)
+├── planos/       # planos, assinatura do ZapMenu e limites (mesmas camadas de orders/)
+├── promocoes/    # promoções e descontos (mesmas camadas de orders/)
+├── relatorios/   # relatório de vendas (mesmas camadas de orders/)
 ├── whatsapp/     # interface WhatsAppClient, routers, Baileys
 ├── http/         # API Fastify v1 + webhook
 └── main.ts       # bootstrap
@@ -134,7 +143,7 @@ test/
 
 Mocks de dependências externas ficam em `src/<módulo>/__mocks__/`; testes unitários ficam colocados ao lado do arquivo testado (`*.test.ts`).
 
-**Camadas (clean architecture):** `orders/` e `payments/` já estão separados em `domain/` (sem dependências de fora), `application/` (use cases que falam com o mundo só por ports) e `infra/` (Prisma, Mercado Pago, jobs). `http/` e `whatsapp/` são as bordas: validam a entrada, chamam um use case e traduzem a resposta. Os outros módulos ganham camadas quando forem mexidos. O `npm run lint:deps` falha se `domain/` ou `application/` importarem infraestrutura, framework ou o `main.ts`.
+**Camadas (clean architecture):** `orders/`, `payments/` e `planos/` já estão separados em `domain/` (sem dependências de fora), `application/` (use cases que falam com o mundo só por ports) e `infra/` (Prisma, Mercado Pago, jobs). `http/` e `whatsapp/` são as bordas: validam a entrada, chamam um use case e traduzem a resposta. Os outros módulos ganham camadas quando forem mexidos. O `npm run lint:deps` falha se `domain/` ou `application/` importarem infraestrutura, framework ou o `main.ts`.
 
 ## Documentação
 

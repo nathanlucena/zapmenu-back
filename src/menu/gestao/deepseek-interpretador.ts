@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { logger } from '../../shared/logger/logger.js';
 import { z } from 'zod';
 import { DIAS_SEMANA, type DadosLoja, type Variacao } from '../conversation/conversation-state.types.js';
+import type { SegmentoLoja } from '../menu.types.js';
 import { listaDaPaleta } from '../vitrine.js';
 import type {
   DadosItemOperacao,
@@ -20,7 +21,7 @@ export interface DeepSeekConfig {
 export class RespostaInvalidaDaIA extends Error {}
 
 // O prompt precisa conter a palavra "json" para o modo JSON do DeepSeek.
-const PROMPT_SISTEMA = `Você é o assistente de WhatsApp que ajuda donos de pequenos negócios de comida a atualizar o próprio cardápio e os dados da loja, conversando de forma natural.
+const PROMPT_BASE = `Você é o assistente de WhatsApp que ajuda donos de pequenos negócios a atualizar o próprio cardápio ou catálogo e os dados da loja, conversando de forma natural. O TIPO DA LOJA (no fim) diz o que existe para esta loja: nunca proponha nada fora dele.
 
 COMO FUNCIONA
 - Você NÃO salva nada. Você monta um rascunho de alterações por meio de "operacoes". Quando a pessoa disser que terminou, o sistema mostra um resumo e só grava se ela responder "sim".
@@ -28,7 +29,7 @@ COMO FUNCIONA
 - Responda em português do Brasil, curto (1 a 3 frases), simpático, no estilo WhatsApp (*negrito* com asteriscos). Não repita a lista inteira do rascunho a cada mensagem.
 - Nunca invente preço, nome ou dado que a pessoa não disse. Se faltar algo importante (ex.: preço de um item novo), pergunte.
 
-ENTRADA (json): etapa ("conversando" ou "confirmando"), historico (mensagens anteriores), mensagem (a atual), foto_recebida (a mensagem atual trouxe uma foto), foto_pendente (há uma foto recebida antes ainda sem item), rascunho (alterações já anotadas), endereco_em_andamento (partes do endereço já informadas), endereco_pendente (endereço encontrado no mapa esperando a pessoa confirmar), cardapio (categorias e itens atuais, numerados), loja (dados atuais), cadastro_pendente (dados obrigatórios que ainda faltam para a loja entrar no ar, na ordem, com a pergunta sugerida).
+ENTRADA (json): etapa ("conversando" ou "confirmando"), historico (mensagens anteriores), mensagem (a atual), foto_recebida (a mensagem atual trouxe uma foto), foto_pendente (há uma foto recebida antes ainda sem item), rascunho (alterações já anotadas), endereco_em_andamento (partes do endereço já informadas), endereco_pendente (endereço encontrado no mapa esperando a pessoa confirmar), cardapio (categorias e itens atuais, numerados; na loja, cada produto traz a grade atual), loja (dados atuais), tipo_da_loja ("cardapio" ou "loja"), cadastro_pendente (dados obrigatórios que ainda faltam para a loja entrar no ar, na ordem, com a pergunta sugerida).
 
 SAÍDA: responda SOMENTE com um objeto json:
 {"resposta": "texto para a pessoa", "operacoes": [...], "finalizou": false, "mostrar_cardapio": false, "decisao": null}
@@ -51,17 +52,20 @@ OPERAÇÕES (cada uma é um objeto com "tipo"):
 - {"tipo": "nova_categoria", "nome": "Bebidas"}
 - {"tipo": "renomear_categoria", "categoria_id": "...", "novo_nome": "..."}
 - {"tipo": "remover_categoria", "categoria_id": "..."} — os itens dela ficam sem categoria.
-- {"tipo": "atualizar_loja", "nome": "...", "descricao": "...", "aceita_retirada": true, "faz_entrega": true, "faixas_entrega": [...], "pedido_minimo": 30, "horarios": [...], "link": "pizzaria-do-ze", "cor_destaque": "laranja", "aceita_pagamento_na_entrega": true} — só os campos que mudam. Endereço NÃO vai aqui. aceita_pagamento_na_entrega: se o cliente pode pagar em dinheiro ou cartão na entrega/no balcão, além do PIX ("não aceito dinheiro", "só PIX" → false).
+- {"tipo": "atualizar_loja", "nome": "...", "descricao": "...", "aceita_retirada": true, "faz_entrega": true, "taxa_entrega_fixa": 5, "raio_entrega_km": 4, "faixas_entrega": [...], "modo_entrega": "fixa", "pedido_minimo": 30, "horarios": [...], "link": "pizzaria-do-ze", "cor_destaque": "laranja", "aceita_pagamento_na_entrega": true, "instagram": "@pizzariadoze"} — só os campos que mudam (campos extras do tipo da loja no fim). Endereço NÃO vai aqui. aceita_pagamento_na_entrega: se o cliente pode pagar em dinheiro ou cartão na entrega/no balcão, além do PIX ("não aceito dinheiro", "só PIX" → false).
 - {"tipo": "definir_endereco", "cep": "50050000", "numero": "123", "complemento": "loja 2"} — endereço da loja. Também aceita "rua", "bairro", "cidade", "uf" e "sem_numero": true.
 - {"tipo": "confirmar_endereco"} / {"tipo": "recusar_endereco"} — resposta da pessoa quando endereco_pendente existe ("é aí mesmo" / "não é aí").
 - {"tipo": "descartar_tudo"} — a pessoa quer jogar fora todas as alterações anotadas.
+- {"tipo": "nova_promocao", "preco": 39.9, "itens": ["id"], "dias": ["qua", "qui"], "hora_inicio": "18:00", "hora_fim": "23:00", "ate": "2026-11-30"} ou {"tipo": "nova_promocao", "percentual": 10, "categorias": ["id"]} — promoção ou desconto. Mande "preco" (preço fixo, só com "itens") OU "percentual" (1 a 90). Alvo: "itens" (ids), "categorias" (ids) ou nenhum dos dois = a loja toda. "dias" vazio ou ausente = todos os dias. "ate": último dia da promoção (AAAA-MM-DD), só se a pessoa disser; use a data de hoje (hoje) para calcular "até domingo". Promoção NUNCA muda o preço do item: não use editar_item para promoção. O sistema mostra o resumo e pede confirmação: não use "finalizou" por causa da promoção.
 
 FORMATOS
-- preco, pedido_minimo, taxa (das faixas) e preco_adicional: número em reais com ponto decimal ("39,90" → 39.9; "42 reais" → 42).
+- preco, pedido_minimo, taxa (das faixas), taxa_entrega_fixa e preco_adicional: número em reais com ponto decimal ("39,90" → 39.9; "42 reais" → 42).
+- Só crie novo_item com um nome específico do produto. Se a pessoa disser só "mais uma pizza", "outro item" ou mandar só o preço, pergunte o nome antes; nunca invente um nome genérico ("Item", "Produto", "Pizza" sozinho quando ela tem vários sabores).
 - nome: nome do produto com iniciais maiúsculas, sem verbos ("coloca uma pizza calabresa" → "Pizza Calabresa"). descricao: detalhes (ingredientes, tamanho), sem o preço.
-- variacoes: lista COMPLETA de variações do item (substitui as anteriores): [{"nome": "Tamanho", "opcoes": [{"nome": "P", "preco_adicional": 0}, {"nome": "G", "preco_adicional": 15}]}]. O preço do item é o da opção mais barata; preco_adicional é a diferença.
+- taxa_entrega_fixa: um valor só de entrega ("entrega é 5 reais" → 5; "entrega grátis" → 0). raio_entrega_km: até onde essa taxa vale ("até 4 km" → 4; "entrego em qualquer lugar", "sem limite" → 0). modo_entrega: "fixa" ou "distancia", só quando a pessoa quiser trocar de um jeito de cobrar para o outro sem mandar valores novos.
 - faixas_entrega: lista COMPLETA (substitui a anterior), uma faixa por distância: [{"ate_km": 1, "taxa": 0}, {"ate_km": 3, "taxa": 5}]. "grátis", "de graça", "sem taxa" → taxa 0. "500 metros" → ate_km 0.5. A maior distância é o limite de entrega.
 - horarios: lista COMPLETA da semana (substitui a anterior), um objeto por dia aberto: [{"dia": "seg", "abre": "18:00", "fecha": "23:00"}]. Dias: dom, seg, ter, qua, qui, sex, sab. Dias fechados não aparecem.
+- instagram: o perfil da loja no Instagram, como a pessoa mandou (@perfil ou o link). É opcional: só mande quando a pessoa informar.
 - link: endereço curto do cardápio, só letras minúsculas, números e hífens ("Pizzaria do Zé" → "pizzaria-do-ze"). Só quando a pessoa pedir para mudar o link.
 - cor_destaque: a cor da loja (botões, destaques e a faixa da capa quando não há foto). Só existem estas cores: ${listaDaPaleta()}. Mande o nome da cor como a pessoa disse ("laranja", "3"), ou o código hex se ela mandar um; o sistema escolhe a cor mais parecida da lista. Se a pessoa não souber qual escolher ou perguntar as opções, mostre a lista numerada e sugira uma que combine com o tipo de loja, sem mandar cor_destaque até ela escolher.
 - item_id e categoria_id: SOMENTE ids que existem em cardapio. A pessoa pode citar um item pelo nome ou pelo número da lista.
@@ -76,7 +80,8 @@ CADASTRO DA LOJA
 - Quando a pessoa responder um item do cadastro, gere a operação correspondente e peça o próximo. Quando o último for respondido, peça para ela dizer *pronto* para revisar e salvar.
 
 ENDEREÇO E ENTREGA
-- A entrega é cobrada por distância: precisa do endereço da loja e das faixas. Quando a pessoa quiser começar a entregar, peça o CEP e o número da loja (e o complemento, se tiver) e como ela cobra em cada faixa.
+- A entrega pode ser cobrada com uma taxa fixa (um valor só, com um raio máximo opcional) ou por distância (faixas). Se entrega_por_distancia for false, o plano da loja só tem a taxa fixa: NÃO proponha faixas; peça um valor só e até onde ela entrega. Se for true, a pessoa escolhe: um valor só vira taxa_entrega_fixa; valores diferentes por distância viram faixas_entrega.
+- Quando a pessoa quiser começar a entregar, peça o CEP e o número da loja (e o complemento, se tiver) e como ela cobra a entrega.
 - definir_endereco leva SOMENTE o que a pessoa escreveu. Nunca complete rua, bairro ou cidade por conta própria: o sistema completa pelo CEP e procura no mapa.
 - Se a pessoa digitar o endereço de outro jeito (por extenso, sem CEP, com CEP errado), use definir_endereco com as partes que der para separar.
 - Correção ("o número é 132", "o CEP certo é 50050-010") → definir_endereco só com o campo que mudou.
@@ -95,9 +100,40 @@ ETAPA "confirmando" (o resumo já foi mostrado)
 - Se recusa ("não", "espera", "tá errado"), use "decisao": "recusar" e pergunte o que ajustar.
 - Se ela já pede uma correção, não use decisao: gere as operações e pergunte se tem mais algo.
 
+`;
+
+/** O que só existe no cardápio (comida). */
+const BLOCO_CARDAPIO = `
+TIPO DA LOJA: CARDÁPIO (comida)
+- Fale em *cardápio* e *itens*.
+- variacoes (adicionais, tamanhos com preço): lista COMPLETA de variações do item (substitui as anteriores): [{"nome": "Tamanho", "opcoes": [{"nome": "P", "preco_adicional": 0}, {"nome": "G", "preco_adicional": 15}]}]. O preço do item é o da opção mais barata; preco_adicional é a diferença.
+- NÃO EXISTE neste tipo: grade de tamanhos e cores com estoque, envio por transportadora (Melhor Envio) e política de troca. Nunca use definir_grade, melhor_envio, cep_origem ou politica_troca. Se a pessoa pedir algo assim, explique numa frase que isso é do tipo *Loja* e que ela pode mandar *mudar tipo da loja*.
+
 EXEMPLO
 mensagem: "entrou pizza calabresa 39,90 e a coca agora é 15" (com a Coca 2L no cardápio com id "abc")
 {"resposta": "Anotei a *Pizza Calabresa* e o novo preço da *Coca 2L*! Tem foto da pizza?", "operacoes": [{"tipo": "novo_item", "ref": "n1", "nome": "Pizza Calabresa", "preco": 39.9}, {"tipo": "editar_item", "item_id": "abc", "preco": 15}], "finalizou": false, "decisao": null}`;
+
+/** O que só existe na loja (varejo). */
+const BLOCO_LOJA = `
+TIPO DA LOJA: LOJA (produtos: roupas, acessórios…)
+- Fale em *catálogo* e *produtos*. Nunca diga cardápio, prato ou lanche. Os ids e operações continuam com os nomes "item" (novo_item, editar_item…).
+- Tamanho e cor com estoque: {"tipo": "definir_grade", "ref": "n1"} (produto novo) ou {"tipo": "definir_grade", "item_id": "..."} (existente), com "grade": [{"tamanho": "P", "cor": "Azul", "estoque": 5}, ...]. É a lista COMPLETA (substitui a anterior). "P, M e G, azul e preto, 5 de cada" → 6 linhas. "preco" só na linha que custa diferente do produto. Produto sem cor ou sem tamanho: deixe o campo de fora.
+- Estoque é número inteiro. Se a pessoa não disser quantas peças tem, PERGUNTE: nunca invente estoque. Para mudar só o estoque ("chegaram mais 3 M azul", "acabou o G preto"), mande a grade completa atual (cardapio.itens[].grade) com o número novo.
+- Fotos: cada produto pode ter várias. Cada anexar_foto ACRESCENTA uma foto à galeria (não troca a anterior). Se a legenda disser a cor da peça na foto ("essa é a azul", "preta"), mande "cor": "Azul" no anexar_foto.
+- NUNCA use variacoes (adicionais com preço) neste tipo. Se a pessoa pedir adicional, explique numa frase que adicionais são do tipo *Cardápio* e que ela pode mandar *mudar tipo da loja*.
+- COMO A LOJA ENTREGA: (1) envio próprio, com as mesmas regras da entrega (taxa_entrega_fixa com raio_entrega_km, ou faixas_entrega por distância) e "faz_entrega"; (2) transportadora pelo Melhor Envio, em atualizar_loja "melhor_envio": true/false, com "cep_origem" (CEP de onde saem as encomendas; se não disser, vale o do endereço da loja). Os dois podem estar ligados juntos, além da retirada. Se a pessoa perguntar "como você entrega?" ou quiser configurar envio, explique essas opções. Frete fixo por estado não existe mais: se pedirem, ofereça as opções acima.
+- Peso e medidas para o frete por transportadora: em novo_item/editar_item, "peso_g" (gramas) e "altura_cm", "largura_cm", "comprimento_cm" (centímetros do pacote). Para a categoria inteira: {"tipo": "medidas_da_categoria", "categoria_id": "...", "peso_g": 300, "altura_cm": 4, "largura_cm": 20, "comprimento_cm": 30}. "camiseta pesa 200g" → peso_g 200; "1,2 kg" → 1200. Nunca invente medidas.
+- Guia de medidas (tabela de tamanhos em cm) de uma categoria ou de um produto: {"tipo": "guia_de_medidas", "categoria_id": "..." (ou "item_id"), "nome": "Camisetas", "colunas": ["Busto", "Comprimento"], "linhas": [{"tamanho": "P", "medidas": [96, 68]}, {"tamanho": "M", "medidas": [100, 70]}]}. Uma medida por coluna, em centímetros, na mesma ordem. Use só os números que a pessoa mandou; se faltar algum, pergunte. O sistema mostra a tabela e pede confirmação.
+- Política de troca em atualizar_loja: "politica_troca": texto curto e claro com o que a pessoa disse ("troco em 7 dias com etiqueta" → "Troca em até 7 dias, com a etiqueta."). Não invente prazo nem regra que ela não disse. Lembre que compra online tem 7 dias de arrependimento (CDC) se ela perguntar.
+
+EXEMPLO
+mensagem: "camiseta básica 59,90, tem P M e G na azul, 4 de cada"
+{"resposta": "Anotei a *Camiseta Básica* com P, M e G na cor azul, 4 de cada! Tem foto?", "operacoes": [{"tipo": "novo_item", "ref": "n1", "nome": "Camiseta Básica", "preco": 59.9}, {"tipo": "definir_grade", "ref": "n1", "grade": [{"tamanho": "P", "cor": "Azul", "estoque": 4}, {"tamanho": "M", "cor": "Azul", "estoque": 4}, {"tamanho": "G", "cor": "Azul", "estoque": 4}]}], "finalizou": false, "decisao": null}`;
+
+/** Prompt do tipo da loja: a IA só conhece as ações daquele tipo. */
+export function promptDoSistema(segmento: SegmentoLoja | undefined): string {
+  return PROMPT_BASE + (segmento === 'VAREJO' ? BLOCO_LOJA : BLOCO_CARDAPIO);
+}
 
 // ---------------------------------------------------------------------------
 // Validação da saída
@@ -179,12 +215,20 @@ const horarios = z
   .nullish()
   .transform((valor) => valor ?? undefined);
 
+const medidas = {
+  peso_g: numero,
+  altura_cm: numero,
+  largura_cm: numero,
+  comprimento_cm: numero,
+};
+
 const camposItem = {
   nome: texto,
   descricao: texto,
   preco: numero,
   categoria: z.string().trim().nullish(),
   variacoes,
+  ...medidas,
 };
 
 function dadosItem(campos: {
@@ -193,6 +237,10 @@ function dadosItem(campos: {
   preco?: number;
   categoria?: string | null;
   variacoes?: Variacao[];
+  peso_g?: number;
+  altura_cm?: number;
+  largura_cm?: number;
+  comprimento_cm?: number;
 }): DadosItemOperacao {
   return {
     nome: campos.nome,
@@ -200,6 +248,10 @@ function dadosItem(campos: {
     precoBase: campos.preco,
     categoria: campos.categoria === '' ? null : campos.categoria,
     variacoes: campos.variacoes,
+    pesoGramas: campos.peso_g,
+    alturaCm: campos.altura_cm,
+    larguraCm: campos.largura_cm,
+    comprimentoCm: campos.comprimento_cm,
   };
 }
 
@@ -243,11 +295,25 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
       itemId: op.item_id,
     })),
   ),
-  z.object({ tipo: z.literal('anexar_foto'), ref: texto, item_id: texto }).transform((op): Operacao => ({
+  z.object({ tipo: z.literal('anexar_foto'), ref: texto, item_id: texto, cor: texto }).transform((op): Operacao => ({
     tipo: 'ANEXAR_FOTO',
     ref: op.ref,
     itemId: op.item_id,
+    cor: op.cor,
   })),
+  z
+    .object({
+      tipo: z.literal('definir_grade'),
+      ref: texto,
+      item_id: texto,
+      grade: z
+        .array(z.object({ tamanho: textoOuNumero, cor: texto, estoque: numero, preco: numero }))
+        .transform((linhas) =>
+          linhas.map((linha) => ({ tamanho: linha.tamanho, cor: linha.cor, estoque: linha.estoque ?? 0, preco: linha.preco })),
+        ),
+    })
+    .refine((op) => op.ref || op.item_id, 'definir_grade precisa de ref ou item_id')
+    .transform((op): Operacao => ({ tipo: 'DEFINIR_GRADE', ref: op.ref, itemId: op.item_id, grade: op.grade })),
   z
     .object({
       tipo: z.literal('nova_categoria'),
@@ -282,11 +348,21 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
       aceita_retirada: booleano,
       faz_entrega: booleano,
       faixas_entrega: faixasEntrega,
+      taxa_entrega_fixa: numero,
+      raio_entrega_km: numero,
+      modo_entrega: z
+        .enum(['fixa', 'distancia'])
+        .nullish()
+        .transform((modo) => (modo ? (modo === 'fixa' ? ('FIXA' as const) : ('DISTANCIA' as const)) : undefined)),
       pedido_minimo: numero,
       horarios,
       link: texto,
       cor_destaque: texto,
       aceita_pagamento_na_entrega: booleano,
+      melhor_envio: booleano,
+      cep_origem: textoOuNumero,
+      politica_troca: texto,
+      instagram: texto,
     })
     .transform((op): Operacao => ({
       tipo: 'ATUALIZAR_LOJA',
@@ -296,11 +372,18 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
         aceitaRetirada: op.aceita_retirada,
         fazEntrega: op.faz_entrega,
         faixasEntrega: op.faixas_entrega,
+        taxaEntrega: op.taxa_entrega_fixa,
+        raioEntregaKm: op.raio_entrega_km,
+        modoEntrega: op.modo_entrega,
         pedidoMinimo: op.pedido_minimo,
         horarios: op.horarios,
         slug: op.link,
         corDestaque: op.cor_destaque,
         aceitaPagamentoNaEntrega: op.aceita_pagamento_na_entrega,
+        usaMelhorEnvio: op.melhor_envio,
+        cepOrigem: op.cep_origem,
+        politicaTroca: op.politica_troca,
+        instagram: op.instagram,
       },
     })),
   z
@@ -334,6 +417,66 @@ const operacaoSchema = z.discriminatedUnion('tipo', [
   z.object({ tipo: z.literal('confirmar_endereco') }).transform((): Operacao => ({ tipo: 'CONFIRMAR_ENDERECO' })),
   z.object({ tipo: z.literal('recusar_endereco') }).transform((): Operacao => ({ tipo: 'RECUSAR_ENDERECO' })),
   z.object({ tipo: z.literal('descartar_tudo') }).transform((): Operacao => ({ tipo: 'DESCARTAR_TUDO' })),
+  z
+    .object({
+      tipo: z.literal('guia_de_medidas'),
+      item_id: z.string().trim().min(1).nullish(),
+      categoria_id: z.string().trim().min(1).nullish(),
+      nome: texto,
+      colunas: z.array(z.string().trim().min(1)).min(1),
+      linhas: z.array(z.object({ tamanho: z.union([z.string(), z.number()]).transform(String), medidas: z.array(numeroLivre) })).min(1),
+    })
+    .refine((op) => Boolean(op.item_id) !== Boolean(op.categoria_id), 'mande item_id OU categoria_id')
+    .transform(
+      (op): Operacao => ({
+        tipo: 'DEFINIR_GUIA_MEDIDAS',
+        alvo: op.item_id ? { tipo: 'ITEM', id: op.item_id } : { tipo: 'CATEGORIA', id: op.categoria_id! },
+        guia: { nome: op.nome ?? 'Guia de medidas', colunas: op.colunas, linhas: op.linhas.map((linha) => ({ tamanho: linha.tamanho.trim(), medidas: linha.medidas })) },
+      }),
+    ),
+  z
+    .object({ tipo: z.literal('medidas_da_categoria'), categoria_id: idObrigatorio, ...medidas })
+    .transform(
+      (op): Operacao => ({
+        tipo: 'MEDIDAS_DA_CATEGORIA',
+        categoriaId: op.categoria_id,
+        pesoGramas: op.peso_g,
+        alturaCm: op.altura_cm,
+        larguraCm: op.largura_cm,
+        comprimentoCm: op.comprimento_cm,
+      }),
+    ),
+  z
+    .object({
+      tipo: z.literal('nova_promocao'),
+      preco: numero,
+      percentual: numero,
+      itens: z.array(z.string()).nullish(),
+      categorias: z.array(z.string()).nullish(),
+      dias: z.array(z.enum(DIAS_SEMANA)).nullish(),
+      hora_inicio: z.string().regex(HORA).nullish(),
+      hora_fim: z.string().regex(HORA).nullish(),
+      ate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
+    })
+    .refine((op) => (op.preco === undefined) !== (op.percentual === undefined), 'mande preco OU percentual')
+    .transform(
+      (op): Operacao => ({
+        tipo: 'NOVA_PROMOCAO',
+        promocao: {
+          tipo: op.percentual !== undefined ? 'PERCENTUAL' : 'PRECO_FIXO',
+          valor: (op.percentual ?? op.preco)!,
+          alvo: op.itens?.length
+            ? { tipo: 'ITENS', ids: op.itens }
+            : op.categorias?.length
+              ? { tipo: 'CATEGORIAS', ids: op.categorias }
+              : { tipo: 'LOJA' },
+          diasSemana: (op.dias ?? []).map((dia) => DIAS_SEMANA.indexOf(dia)),
+          horaInicio: op.hora_inicio ?? undefined,
+          horaFim: op.hora_fim ?? undefined,
+          ate: op.ate ?? undefined,
+        },
+      }),
+    ),
 ]);
 
 const respostaSchema = z.object({
@@ -366,13 +509,13 @@ const respostaSchema = z.object({
 // Entrada
 // ---------------------------------------------------------------------------
 
-/** Loja como a IA vê: endereço em texto e faixas, sem coordenadas nem a taxa fixa antiga. */
+/** Loja como a IA vê: endereço em texto, faixas e taxa fixa, sem coordenadas. */
 function lojaParaIA(loja: DadosLoja | undefined) {
   if (!loja) {
     return null;
   }
   // Fotos de logo e capa são data URIs enormes: a IA só precisa saber se vieram.
-  const { enderecoVerificado, taxaEntrega: _taxaEntrega, logoUrl, capaUrl, ...resto } = loja;
+  const { enderecoVerificado, logoUrl, capaUrl, ...resto } = loja;
   return {
     ...resto,
     endereco: enderecoVerificado?.enderecoFormatado ?? loja.endereco,
@@ -382,7 +525,7 @@ function lojaParaIA(loja: DadosLoja | undefined) {
 }
 
 /** Visão do estado para a IA: só ids, nomes e valores — nunca as fotos em base64. */
-function montarEntrada(entrada: EntradaConversa) {
+export function montarEntrada(entrada: EntradaConversa) {
   const { snapshot, rascunho } = entrada;
   const nomeItem = (itemId: string) => snapshot.itens.find((item) => item.id === itemId)?.nome;
 
@@ -393,14 +536,16 @@ function montarEntrada(entrada: EntradaConversa) {
     foto_recebida: entrada.fotoRecebida,
     foto_pendente: entrada.fotoPendente,
     rascunho: {
-      novos_itens: rascunho.novosItens.map(({ imagemUrl, ...item }) => ({
+      novos_itens: rascunho.novosItens.map(({ imagemUrl, fotos, ...item }) => ({
         ...item,
         tem_foto: Boolean(imagemUrl),
+        ...(fotos?.length && { fotos: fotos.map((foto) => ({ cor: foto.cor ?? null })) }),
       })),
-      edicoes: rascunho.edicoes.map(({ imagemUrl, ...edicao }) => ({
+      edicoes: rascunho.edicoes.map(({ imagemUrl, fotos, ...edicao }) => ({
         ...edicao,
         nome_atual: nomeItem(edicao.itemId),
-        nova_foto: Boolean(imagemUrl),
+        nova_foto: Boolean(imagemUrl) || Boolean(fotos?.length),
+        ...(fotos?.length && { fotos_novas: fotos.map((foto) => ({ cor: foto.cor ?? null })) }),
       })),
       status: rascunho.status.map((status) => ({
         ...status,
@@ -424,11 +569,14 @@ function montarEntrada(entrada: EntradaConversa) {
         categoria: item.categoriaNome ?? null,
         pausado: !item.ativo,
         tem_foto: item.temFoto,
-        variacoes: item.variacoes,
+        ...(entrada.segmento === 'VAREJO' ? { grade: item.grade ?? [] } : { variacoes: item.variacoes }),
       })),
     },
     loja: lojaParaIA(snapshot.loja),
+    tipo_da_loja: entrada.segmento === 'VAREJO' ? 'loja' : 'cardapio',
     cadastro_pendente: entrada.cadastroPendente ?? [],
+    entrega_por_distancia: entrada.entregaPorDistancia ?? true,
+    ...(entrada.hoje && { hoje: entrada.hoje }),
   };
 }
 
@@ -532,7 +680,7 @@ export function criarInterpretadorDeepSeek(config: DeepSeekConfig): Interpretado
           max_tokens: 2000,
           response_format: { type: 'json_object' },
           messages: [
-            { role: 'system', content: PROMPT_SISTEMA },
+            { role: 'system', content: promptDoSistema(entrada.segmento) },
             { role: 'user', content: JSON.stringify(montarEntrada(entrada)) },
           ],
         }),

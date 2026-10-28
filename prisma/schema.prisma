@@ -16,6 +16,7 @@ model Empreendedor {
   loja            Loja?
   estadosConversa EstadoConversa[]
   pedidos         Pedido[]
+  assinatura      Assinatura?
 }
 
 model Cardapio {
@@ -35,11 +36,31 @@ model Categoria {
   nome       String
   ordem      Int      @default(0)
   criadoEm   DateTime @default(now())
+  /// Peso e medidas padrão dos produtos da categoria (frete do Melhor Envio).
+  pesoGramas    Int?
+  alturaCm      Decimal? @db.Decimal(6, 1)
+  larguraCm     Decimal? @db.Decimal(6, 1)
+  comprimentoCm Decimal? @db.Decimal(6, 1)
 
-  itens ItemCardapio[]
+  itens       ItemCardapio[]
+  promocoes   PromocaoAlvo[]
+  guiaMedidas GuiaMedidas?
 
   @@unique([cardapioId, nome])
   @@index([cardapioId])
+}
+
+/// Ramo da loja. Muda o vocabulário e os recursos (tamanhos e cores no varejo), nunca o fluxo de comida.
+enum SegmentoLoja {
+  COMIDA
+  VAREJO
+  SERVICOS
+}
+
+/// Entrega com um valor só (todos os planos) ou por faixas de distância (Profissional).
+enum ModoEntrega {
+  FIXA
+  DISTANCIA
 }
 
 /// Dados exibidos no cardápio público. Separada do Empreendedor para permitir
@@ -50,6 +71,9 @@ model Loja {
   empreendedor             Empreendedor @relation(fields: [empreendedorId], references: [id])
   nome                     String?
   descricao                String?
+  segmento                 SegmentoLoja @default(COMIDA)
+  /// O lojista escolheu o tipo no cadastro. Lojas anteriores à escolha ficam como já definidas (COMIDA).
+  segmentoDefinido         Boolean      @default(false)
   /// Texto exibido no cardápio; com endereço verificado, é o endereço formatado.
   endereco                 String?
   cep                      String?
@@ -71,8 +95,12 @@ model Loja {
   aceitaPagamentoNaEntrega Boolean      @default(true)
   /// [{ "ateKm": 1, "taxa": 0 }, { "ateKm": 3, "taxa": 5 }], ordenada por ateKm.
   faixasEntrega            Json         @default("[]")
-  /// Depreciada: taxa fixa antiga. Loja com ela e sem faixas fica com a entrega indisponível.
+  /// Taxa fixa de entrega (qualquer plano). Vale quando modoEntrega é FIXA, ou quando o plano não tem a entrega por distância.
   taxaEntrega              Decimal?     @db.Decimal(10, 2)
+  /// Até onde a taxa fixa vale, em km (opcional).
+  raioEntregaKm            Decimal?     @db.Decimal(5, 2)
+  /// Como a loja quer cobrar a entrega. Fora do plano Profissional, sempre a taxa fixa.
+  modoEntrega              ModoEntrega  @default(DISTANCIA)
   pedidoMinimo             Decimal?     @db.Decimal(10, 2)
   /// [{ "dia": "seg", "abre": "18:00", "fecha": "23:00" }]
   horarios                 Json         @default("[]")
@@ -82,13 +110,31 @@ model Loja {
   logoUrl                  String?
   /// Hex "#RRGGBB".
   corDestaque              String?
+  /// Perfil do Instagram, sem o @ (ex.: "modadaana"). Opcional.
+  instagram                String?
   /// Último lembrete dos dados opcionais (descrição, logo, capa…) mandado na gestão.
   lembreteOpcionaisEm      DateTime?
   /// A loja pediu para não lembrar mais dos opcionais.
   naoLembrarOpcionais      Boolean      @default(false)
   /// Fuso dos horários de funcionamento.
   fuso                     String       @default("America/Sao_Paulo")
+  /// Texto livre mostrado na vitrine (trocas e devoluções), usado no varejo.
+  politicaTroca            String?
+  /// CEP de onde saem as encomendas, para cotar frete. Só uso interno.
+  cepOrigem                String?
+  /// Envia por transportadora com o Melhor Envio (Profissional, conta conectada).
+  usaMelhorEnvio           Boolean      @default(false)
+  /// A loja usava o frete fixo por região (removido): avisa uma vez na gestão.
+  avisarFimDoFreteFixo     Boolean      @default(false)
   atualizadoEm             DateTime     @updatedAt
+
+  /// Relatório diário pelo WhatsApp (Profissional). O lojista desliga com "parar relatório diário".
+  relatorioDiario          Boolean      @default(true)
+
+  promocoes          Promocao[]
+  relatoriosEnviados RelatorioEnviado[]
+  contaMelhorEnvio   ContaMelhorEnvio?
+  guiasDeMedidas     GuiaMedidas[]
 }
 
 model ItemCardapio {
@@ -103,15 +149,39 @@ model ItemCardapio {
   precoBase   Decimal    @db.Decimal(10, 2)
   imagemUrl   String?
   ativo       Boolean    @default(true)
+  /// Para o frete do Melhor Envio. Sem eles, vale o padrão da categoria (e depois o geral).
+  pesoGramas    Int?
+  alturaCm      Decimal? @db.Decimal(6, 1)
+  larguraCm     Decimal? @db.Decimal(6, 1)
+  comprimentoCm Decimal? @db.Decimal(6, 1)
   // Remoção lógica: pedidos antigos continuam apontando para o item.
   removidoEm  DateTime?
   criadoEm    DateTime   @default(now())
 
   variacoes   Variacao[]
   itensPedido ItemPedido[]
+  fotos       FotoProduto[]
+  skus        Sku[]
+  promocoes   PromocaoAlvo[]
+  guiaMedidas GuiaMedidas?
 
   @@index([cardapioId])
   @@index([categoriaId])
+}
+
+/// Galeria do produto (varejo). Sem fotos, a vitrine usa o imagemUrl do item.
+model FotoProduto {
+  id       String       @id @default(cuid())
+  itemId   String
+  item     ItemCardapio @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  url      String
+  /// Menor primeiro; a primeira é a capa do produto.
+  ordem    Int          @default(0)
+  /// Cor que aparece na foto, para a vitrine trocar a foto ao escolher a cor.
+  cor      String?
+  criadoEm DateTime     @default(now())
+
+  @@index([itemId])
 }
 
 model Variacao {
@@ -124,6 +194,26 @@ model Variacao {
   @@index([itemId])
 }
 
+/// Combinação vendável de um produto (tamanho + cor) com estoque próprio. Item com
+/// SKU só é vendido escolhendo um; item sem SKU (comida) segue só com variações.
+model Sku {
+  id      String       @id @default(cuid())
+  itemId  String
+  item    ItemCardapio @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  tamanho String?
+  cor     String?
+  estoque Int          @default(0)
+  /// Sobrepõe o precoBase do item quando preenchido.
+  preco   Decimal?     @db.Decimal(10, 2)
+  ativo   Boolean      @default(true)
+
+  itensPedido ItemPedido[]
+
+  /// No banco o índice é NULLS NOT DISTINCT (migração 20261023130000, feita à mão):
+  /// dois "M" sem cor também contam como repetidos. Mesmo nome de índice, sem drift.
+  @@unique([itemId, tamanho, cor])
+}
+
 enum StatusPedido {
   AGUARDANDO_CONFIRMACAO
   AGUARDANDO_ACEITE
@@ -131,7 +221,11 @@ enum StatusPedido {
   PAGO
   /// Aceito pela loja, com pagamento na entrega ou no balcão.
   CONFIRMADO
+  /// Varejo: a loja separou as peças.
+  SEPARADO
   SAIU_PARA_ENTREGA
+  /// Varejo: despachado por transportadora, com rastreio.
+  ENVIADO
   PRONTO_PARA_RETIRADA
   CONCLUIDO
   EXPIRADO
@@ -173,6 +267,14 @@ model Pedido {
   enqueteAceiteId    String?          @unique
   /// Id da enquete de andamento (saiu/pronto, entregue/retirado) enviada à loja.
   enqueteAndamentoId String?          @unique
+  /// Melhor Envio: { id, nome, empresa, preco, prazoDias } escolhido no checkout; etiqueta em etiquetaId.
+  servicoEnvio       Json?
+  etiquetaId         String?
+  /// Rastreio informado pela loja ao enviar (varejo).
+  codigoRastreio     String?
+  transportadora     String?
+  /// Pago sem estoque para algum SKU (corrida entre dois pagamentos): [{ skuId, quantidade, disponivel }].
+  faltaEstoque       Json?
 
   itens     ItemPedido[]
   pagamento Pagamento?
@@ -184,6 +286,10 @@ model Pedido {
 enum ModalidadePedido {
   RETIRADA
   ENTREGA
+  /// Antigo frete fixo por região (removido): só em pedidos antigos.
+  ENVIO
+  /// Transportadora pelo Melhor Envio (o serviço escolhido fica em Pedido.servicoEnvio).
+  MELHOR_ENVIO
 }
 
 model ItemPedido {
@@ -192,6 +298,9 @@ model ItemPedido {
   pedido            Pedido       @relation(fields: [pedidoId], references: [id])
   itemCardapioId    String
   itemCardapio      ItemCardapio @relation(fields: [itemCardapioId], references: [id])
+  /// Tamanho/cor escolhido, quando o item tem SKUs.
+  skuId             String?
+  sku               Sku?         @relation(fields: [skuId], references: [id])
   quantidade        Int
   variacaoEscolhida Json?
   /**
@@ -268,4 +377,167 @@ model PreviaGestao {
   criadoEm DateTime @default(now())
 
   @@index([expiraEm])
+}
+
+enum PlanoAssinatura {
+  /// Exibido como "Básico".
+  ESSENCIAL
+  PROFISSIONAL
+}
+
+enum PeriodoAssinatura {
+  MENSAL
+  ANUAL
+}
+
+enum StatusAssinatura {
+  /// Loja nova: 14 dias no Profissional, sem cobrança.
+  TESTE
+  ATIVA
+  /// Última cobrança recusada; 5 dias até suspender.
+  PENDENTE
+  /// Vitrine fora do ar; a gestão só aceita assinar/regularizar.
+  SUSPENSA
+  /// Cancelada pela loja; vale até proximaCobranca.
+  CANCELADA
+}
+
+/// Assinatura do ZapMenu pelo empreendedor, cobrada no Mercado Pago (preapproval) na conta do ZapMenu.
+model Assinatura {
+  id                 String            @id @default(cuid())
+  empreendedorId     String            @unique
+  empreendedor       Empreendedor      @relation(fields: [empreendedorId], references: [id])
+  plano              PlanoAssinatura
+  periodo            PeriodoAssinatura @default(MENSAL)
+  status             StatusAssinatura
+  mpPreapprovalId    String?           @unique
+  /// E-mail da conta do Mercado Pago que paga.
+  emailCobranca      String?
+  fimTeste           DateTime?
+  /// Fim do período pago (próxima cobrança, ou até quando a cancelada vale).
+  proximaCobranca    DateTime?
+  canceladaEm        DateTime?
+  /// Downgrade marcado para a próxima cobrança.
+  planoProximoCiclo  PlanoAssinatura?
+  pendenteDesde      DateTime?
+  /// Último aviso do fim do teste já mandado (dia 10 ou 13).
+  avisoTesteDia      Int?
+  /// Dia ("2026-10-27") do último aviso de cobrança recusada.
+  avisoCobrancaDia   String?
+  /// Mês ("2026-10") em que os avisos de 80% e 100% dos pedidos já saíram.
+  avisoPedidos80Mes  String?
+  avisoPedidos100Mes String?
+  criadoEm           DateTime          @default(now())
+  atualizadoEm       DateTime          @updatedAt
+
+  @@index([status])
+}
+
+enum TipoPromocao {
+  /// Preço fixo em reais (ex.: calabresa por 39,90).
+  PRECO_FIXO
+  /// Desconto em % (1 a 90), arredondado para baixo no centavo.
+  PERCENTUAL
+}
+
+/// Promoção da loja. Nunca altera o precoBase: vale na vitrine e no preço do pedido enquanto estiver no dia e horário.
+model Promocao {
+  id         String         @id @default(cuid())
+  lojaId     String
+  loja       Loja           @relation(fields: [lojaId], references: [id])
+  tipo       TipoPromocao
+  /// Reais (PRECO_FIXO) ou porcentagem (PERCENTUAL).
+  valor      Decimal        @db.Decimal(10, 2)
+  /// 0 = domingo … 6 = sábado. Vazio = todos os dias.
+  diasSemana Int[]
+  /// "HH:MM" no fuso da loja; sem horário = o dia inteiro.
+  horaInicio String?
+  horaFim    String?
+  inicio     DateTime?
+  fim        DateTime?
+  ativa      Boolean        @default(true)
+  /// O lojista já foi avisado de que ela venceu.
+  avisoFimEm DateTime?
+  criadaEm   DateTime       @default(now())
+  alvos      PromocaoAlvo[]
+
+  @@index([lojaId])
+}
+
+/// Onde a promoção vale: um item, uma categoria, ou nenhuma linha = a loja toda.
+model PromocaoAlvo {
+  id          String        @id @default(cuid())
+  promocaoId  String
+  promocao    Promocao      @relation(fields: [promocaoId], references: [id], onDelete: Cascade)
+  itemId      String?
+  item        ItemCardapio? @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  categoriaId String?
+  categoria   Categoria?    @relation(fields: [categoriaId], references: [id], onDelete: Cascade)
+
+  @@index([promocaoId])
+}
+
+enum TipoRelatorio {
+  SEMANAL
+  DIARIO
+}
+
+/// Relatório automático já mandado: a chave é o período ("2026-10-19"), para não mandar duas vezes.
+model RelatorioEnviado {
+  id        String        @id @default(cuid())
+  lojaId    String
+  loja      Loja          @relation(fields: [lojaId], references: [id])
+  tipo      TipoRelatorio
+  chave     String
+  enviadoEm DateTime      @default(now())
+
+  @@unique([lojaId, tipo, chave])
+}
+
+/// Quanto a loja já usou de uma cota do plano no mês (fuso da loja): segundos de áudio, sugestões de IA.
+model UsoDeCota {
+  id             String   @id @default(cuid())
+  empreendedorId String
+  /// "2026-10".
+  mes            String
+  /// "minutosAudioMes" (guardado em segundos) ou "sugestoesIaMes".
+  chave          String
+  usado          Int      @default(0)
+  atualizadoEm   DateTime @updatedAt
+
+  @@unique([empreendedorId, mes, chave])
+}
+
+/// Conta do Melhor Envio da loja, conectada por OAuth. Os tokens se renovam sozinhos.
+model ContaMelhorEnvio {
+  id            String    @id @default(cuid())
+  lojaId        String    @unique
+  loja          Loja      @relation(fields: [lojaId], references: [id])
+  accessToken   String    @db.Text
+  refreshToken  String    @db.Text
+  expiraEm      DateTime
+  /// Primeira falha seguida da API (cotação); o lojista é avisado depois de 30 min.
+  falhaDesde    DateTime?
+  avisoFalhaEm  DateTime?
+  conectadaEm   DateTime  @default(now())
+  atualizadoEm  DateTime  @updatedAt
+}
+
+/// Tabela de medidas (cm) por tamanho, de uma categoria ou de um produto (o do produto vale primeiro).
+model GuiaMedidas {
+  id          String        @id @default(cuid())
+  lojaId      String
+  loja        Loja          @relation(fields: [lojaId], references: [id])
+  nome        String
+  /// Ex.: ["Busto", "Cintura", "Comprimento"].
+  colunas     String[]
+  /// [{ "tamanho": "P", "medidas": [88, 70, 65] }], uma medida por coluna.
+  linhas      Json
+  categoriaId String?       @unique
+  categoria   Categoria?    @relation(fields: [categoriaId], references: [id], onDelete: Cascade)
+  itemId      String?       @unique
+  item        ItemCardapio? @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  criadoEm    DateTime      @default(now())
+
+  @@index([lojaId])
 }

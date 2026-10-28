@@ -1,5 +1,12 @@
 import { DomainError } from '../../shared/errors/domain-error.js';
-import { estaExpirado, podeTransicionar, type Pedido, type StatusPedido } from '../domain/pedido.js';
+import {
+  estaExpirado,
+  podeTransicionar,
+  ROTULO_STATUS_PEDIDO,
+  STATUS_EM_ANDAMENTO,
+  type Pedido,
+  type StatusPedido,
+} from '../domain/pedido.js';
 import type { OrdersRepository } from './ports/orders.repository.js';
 
 /** Quanto tempo a loja tem para aceitar ou recusar, se ninguém disser outro valor. */
@@ -13,6 +20,9 @@ export interface RecebimentoCliente {
 
 /** Resposta ao cliente que manda o código de um pedido que não pode mais ser confirmado. */
 function motivoSemConfirmacao(codigoCurto: string, status: StatusPedido): string {
+  if (STATUS_EM_ANDAMENTO.includes(status) && status !== 'PAGO' && status !== 'CONFIRMADO') {
+    return `O pedido ${codigoCurto} já está com a loja ✅ Agora: ${ROTULO_STATUS_PEDIDO[status].toLowerCase()}.`;
+  }
   switch (status) {
     case 'PAGO':
       return `O pedido ${codigoCurto} já foi pago ✅`;
@@ -22,6 +32,8 @@ function motivoSemConfirmacao(codigoCurto: string, status: StatusPedido): string
       return `A loja não pôde aceitar o pedido ${codigoCurto}. Se quiser, faça um novo pedido pelo cardápio.`;
     case 'CANCELADO':
       return `O pedido ${codigoCurto} foi cancelado pela loja.`;
+    case 'CONCLUIDO':
+      return `O pedido ${codigoCurto} já foi concluído ✅ Se quiser, faça um novo pedido pelo cardápio.`;
     default:
       return `O pedido ${codigoCurto} expirou. Faça um novo pedido pelo cardápio.`;
   }

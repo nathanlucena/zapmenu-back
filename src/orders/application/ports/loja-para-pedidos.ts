@@ -17,9 +17,17 @@ export interface RegrasDaLoja {
   /** Coordenada do endereço verificado da loja; sem ela não há entrega. */
   origem?: { latitude: number; longitude: number };
   faixasEntrega: FaixaTaxaEntrega[];
+  /** Entrega com um valor só (raio opcional). Quando presente, vale no lugar das faixas. */
+  taxaFixa?: { taxa: number; raioKm?: number };
   pedidoMinimo?: number;
   horarios: HorarioFuncionamento[];
   fuso?: string;
+  /** Envio por transportadora (Melhor Envio), com o CEP de onde saem as encomendas. Ausente = não envia. */
+  melhorEnvio?: { cepOrigem: string };
+  /** Ramo da loja; muda as etapas oferecidas à loja (varejo tem "Separado"). */
+  segmento?: 'COMIDA' | 'VAREJO' | 'SERVICOS';
+  /** Assinatura do ZapMenu suspensa: não recebe pedidos. */
+  indisponivel?: boolean;
 }
 
 export interface LojaParaPedidos {
@@ -48,6 +56,20 @@ export type ResultadoLocalizacao =
   | { tipo: 'INVALIDO'; motivo: string }
   | { tipo: 'NAO_ENCONTRADO' }
   | { tipo: 'INDISPONIVEL' };
+
+/** Dados do CEP (ViaCEP), para o envio: só precisa da UF e da rua, sem mapa. */
+export interface DadosDoCep {
+  cep: string;
+  logradouro?: string;
+  bairro?: string;
+  cidade?: string;
+  uf?: string;
+}
+
+export interface ConsultaCepParaEnvio {
+  /** null = CEP não existe. Lança erro se o serviço falhar. */
+  buscarCep(cep: string): Promise<DadosDoCep | null>;
+}
 
 /** Transforma o endereço digitado numa coordenada (ViaCEP + mapa). */
 export interface LocalizadorEndereco {

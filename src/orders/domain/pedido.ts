@@ -4,7 +4,9 @@ export type StatusPedido =
   | 'AGUARDANDO_PAGAMENTO'
   | 'PAGO'
   | 'CONFIRMADO'
+  | 'SEPARADO'
   | 'SAIU_PARA_ENTREGA'
+  | 'ENVIADO'
   | 'PRONTO_PARA_RETIRADA'
   | 'CONCLUIDO'
   | 'EXPIRADO'
@@ -19,7 +21,9 @@ export const ROTULO_STATUS_PEDIDO: Record<StatusPedido, string> = {
   // Pago (PIX) e confirmado (pagamento na entrega) são os dois "a loja está preparando".
   PAGO: 'Pago, em preparo',
   CONFIRMADO: 'Confirmado, em preparo (pagamento na entrega)',
+  SEPARADO: 'Separado',
   SAIU_PARA_ENTREGA: 'Saiu para entrega',
+  ENVIADO: 'Enviado',
   PRONTO_PARA_RETIRADA: 'Pronto para retirar',
   CONCLUIDO: 'Concluído',
   EXPIRADO: 'Expirado',
@@ -27,7 +31,26 @@ export const ROTULO_STATUS_PEDIDO: Record<StatusPedido, string> = {
   CANCELADO: 'Cancelado',
 };
 
-export type ModalidadePedido = 'RETIRADA' | 'ENTREGA';
+/**
+ * ENTREGA: envio próprio da loja (taxa fixa ou por distância), no restaurante e
+ * no varejo. MELHOR_ENVIO: transportadora cotada no Melhor Envio. ENVIO: o
+ * antigo frete fixo por região, removido; só aparece em pedidos antigos.
+ */
+export type ModalidadePedido = 'RETIRADA' | 'ENTREGA' | 'ENVIO' | 'MELHOR_ENVIO';
+
+/** Despachado por transportadora (com rastreio): o Melhor Envio e o antigo frete fixo. */
+export function porTransportadora(modalidade: ModalidadePedido | undefined): boolean {
+  return modalidade === 'MELHOR_ENVIO' || modalidade === 'ENVIO';
+}
+
+/** Serviço do Melhor Envio escolhido no checkout (o preço é o do momento do pedido). */
+export interface ServicoEnvio {
+  id: string;
+  nome: string;
+  empresa: string;
+  preco: number;
+  prazoDias?: number;
+}
 
 /** PIX antes; dinheiro ou cartão na maquininha, na entrega ou no balcão. */
 export type FormaPagamento = 'PIX' | 'DINHEIRO' | 'CARTAO';
@@ -38,7 +61,7 @@ export function pagaNaEntrega(forma: FormaPagamento | undefined): boolean {
 
 /** "Dinheiro na entrega (troco para R$ 100.00)", "Cartão no balcão", "PIX". */
 export function descreverPagamento(pedido: Pick<DetalhesPedido, 'formaPagamento' | 'trocoPara' | 'modalidade'>): string {
-  const onde = pedido.modalidade === 'ENTREGA' ? 'na entrega' : 'no balcão';
+  const onde = pedido.modalidade === 'RETIRADA' ? 'no balcão' : 'na entrega';
   switch (pedido.formaPagamento) {
     case 'DINHEIRO':
       return `Dinheiro ${onde}${pedido.trocoPara ? ` (troco para R$ ${pedido.trocoPara.toFixed(2)})` : ' (sem troco)'}`;
@@ -64,22 +87,29 @@ export interface EnderecoEntrega {
   distanciaKm: number;
 }
 
+/** Endereço de envio por transportadora: vem do CEP, sem mapa nem distância. */
+export type EnderecoEnvio = Omit<EnderecoEntrega, 'latitude' | 'longitude' | 'distanciaKm'>;
+
 /** O que o cliente informou além dos itens. Pedidos antigos não têm esses campos. */
 export interface DetalhesPedido {
   modalidade?: ModalidadePedido;
   nomeCliente?: string;
   observacao?: string;
-  /** Já somada no valorTotal. */
+  /** Taxa de entrega ou frete do envio. Já somada no valorTotal. */
   taxaEntrega?: number;
-  entrega?: EnderecoEntrega;
+  entrega?: EnderecoEntrega | EnderecoEnvio;
   /** Ausente = PIX (pedidos antigos). */
   formaPagamento?: FormaPagamento;
   /** Só no dinheiro: quanto o cliente vai entregar. */
   trocoPara?: number;
+  /** Só no Melhor Envio. */
+  servicoEnvio?: ServicoEnvio;
 }
 
 export interface ItemPedidoInput {
   itemCardapioId: string;
+  /** Tamanho/cor vendido, quando o item tem SKUs. */
+  skuId?: string;
   /** Nome do item no cardápio; só vem na leitura do pedido, para mensagens. */
   nome?: string;
   quantidade: number;
@@ -87,6 +117,30 @@ export interface ItemPedidoInput {
   variacaoEscolhida?: Record<string, unknown>;
   /** Pedido do cliente para este item, ex.: "bem assada". */
   observacao?: string;
+}
+
+/**
+ * SKU vendido sem estoque suficiente: dois pagamentos disputaram as últimas
+ * unidades e o PIX já tinha sido pago. A loja combina com o cliente.
+ */
+export interface FaltaEstoque {
+  skuId: string;
+  /** Total pedido desse SKU. */
+  quantidade: number;
+  /** O que havia no estoque na hora do pagamento (já baixado para zero). */
+  disponivel: number;
+}
+
+/** "falta estoque de Camiseta (Tamanho: M, Cor: Azul): pediu 2, havia 1". */
+export function descreverFaltas(pedido: Pick<Pedido, 'itens'>, faltas: FaltaEstoque[]): string {
+  return faltas
+    .map((falta) => {
+      const item = pedido.itens.find((candidato) => candidato.skuId === falta.skuId);
+      const opcoes = Object.entries(item?.variacaoEscolhida ?? {}).map(([nome, escolha]) => `${nome}: ${String(escolha)}`);
+      const nome = `${item?.nome ?? 'um item'}${opcoes.length > 0 ? ` (${opcoes.join(', ')})` : ''}`;
+      return `falta estoque de ${nome}: pediu ${falta.quantidade}, havia ${falta.disponivel}`;
+    })
+    .join('; ');
 }
 
 export interface CarrinhoInput {
@@ -109,6 +163,11 @@ export interface Pedido extends DetalhesPedido {
   enqueteAceiteId?: string;
   /** Enquete de andamento (saiu/pronto, entregue/retirado) enviada à loja depois do pago/confirmado. */
   enqueteAndamentoId?: string;
+  faltaEstoque?: FaltaEstoque[];
+  codigoRastreio?: string;
+  transportadora?: string;
+  /** Etiqueta comprada no Melhor Envio. */
+  etiquetaId?: string;
 }
 
 /** O que o app do cliente vê de um pedido: sem telefone, endereço do cliente nem ids internos. */
@@ -124,6 +183,9 @@ export interface ResumoPedidoPublico {
   expiraEm: Date;
   criadoEm: Date;
   nomeLoja?: string;
+  /** Depois que a loja envia por transportadora. */
+  codigoRastreio?: string;
+  transportadora?: string;
   /** Só enquanto o pedido aguarda pagamento: o mesmo PIX enviado no WhatsApp, para copiar na tela. */
   pix?: { copiaCola: string; qrCodeBase64?: string };
   itens: {
@@ -140,15 +202,26 @@ const TRANSICOES_PERMITIDAS: Record<StatusPedido, StatusPedido[]> = {
   AGUARDANDO_ACEITE: ['AGUARDANDO_PAGAMENTO', 'CONFIRMADO', 'RECUSADO', 'EXPIRADO', 'CANCELADO'],
   AGUARDANDO_PAGAMENTO: ['PAGO', 'EXPIRADO', 'CANCELADO'],
   // Pago e confirmado são "em preparo"; dali a loja avisa que saiu/está pronto e depois conclui.
-  PAGO: ['SAIU_PARA_ENTREGA', 'PRONTO_PARA_RETIRADA', 'CONCLUIDO'],
-  CONFIRMADO: ['SAIU_PARA_ENTREGA', 'PRONTO_PARA_RETIRADA', 'CONCLUIDO'],
+  // Separado e enviado são as etapas do varejo; a comida pode seguir sem elas.
+  PAGO: ['SEPARADO', 'SAIU_PARA_ENTREGA', 'ENVIADO', 'PRONTO_PARA_RETIRADA', 'CONCLUIDO'],
+  CONFIRMADO: ['SEPARADO', 'SAIU_PARA_ENTREGA', 'ENVIADO', 'PRONTO_PARA_RETIRADA', 'CONCLUIDO'],
+  SEPARADO: ['SAIU_PARA_ENTREGA', 'ENVIADO', 'PRONTO_PARA_RETIRADA', 'CONCLUIDO'],
   SAIU_PARA_ENTREGA: ['CONCLUIDO'],
+  ENVIADO: ['CONCLUIDO'],
   PRONTO_PARA_RETIRADA: ['CONCLUIDO'],
   CONCLUIDO: [],
   EXPIRADO: [],
   RECUSADO: [],
   CANCELADO: [],
 };
+
+/**
+ * Status em que o pedido virou venda e o estoque dos SKUs já foi baixado. Nenhum
+ * deles volta para EXPIRADO, RECUSADO ou CANCELADO, então não há estoque a devolver.
+ */
+export const STATUS_DE_VENDA = ['PAGO', 'CONFIRMADO'] as const satisfies readonly StatusPedido[];
+
+export type StatusDeVenda = (typeof STATUS_DE_VENDA)[number];
 
 export function podeTransicionar(atual: StatusPedido, proximo: StatusPedido): boolean {
   return TRANSICOES_PERMITIDAS[atual].includes(proximo);
@@ -199,30 +272,92 @@ export function validarCarrinho(carrinho: CarrinhoInput): string[] {
   return erros;
 }
 
-/** Pedido aceito e ainda não concluído: em preparo, saiu para entrega ou pronto para retirar. */
-export const STATUS_EM_ANDAMENTO: StatusPedido[] = ['PAGO', 'CONFIRMADO', 'SAIU_PARA_ENTREGA', 'PRONTO_PARA_RETIRADA'];
+/** Pedido aceito e ainda não concluído: em preparo, separado, a caminho ou pronto para retirar. */
+export const STATUS_EM_ANDAMENTO: StatusPedido[] = [
+  'PAGO',
+  'CONFIRMADO',
+  'SEPARADO',
+  'SAIU_PARA_ENTREGA',
+  'ENVIADO',
+  'PRONTO_PARA_RETIRADA',
+];
 
-/** O que a loja informa depois do preparo: saiu/está pronto (conforme a modalidade) ou foi entregue/retirado. */
-export type AndamentoPedido = 'A_CAMINHO' | 'CONCLUIDO';
+/**
+ * Os que a conclusão automática fecha depois de algumas horas (comida). Separado
+ * e enviado ficam de fora: uma encomenda pelos Correios leva dias.
+ */
+export const STATUS_QUE_CONCLUEM_SOZINHOS: StatusPedido[] = ['PAGO', 'CONFIRMADO', 'SAIU_PARA_ENTREGA', 'PRONTO_PARA_RETIRADA'];
 
-const REGEX_ANDAMENTO = /^\s*(saiu|pronto|pronta|entregue|retirado|retirada|conclu[ií]do)\b.*?(PED-[A-Z0-9]{4})/i;
+/**
+ * O que a loja informa depois do preparo: separou (varejo), saiu/está pronto
+ * (conforme a modalidade), enviou por transportadora ou foi entregue/retirado.
+ */
+export type AndamentoPedido = 'SEPARADO' | 'A_CAMINHO' | 'ENVIADO' | 'CONCLUIDO';
 
-/** "saiu PED-7KQ2", "pronto PED-7KQ2", "entregue PED-7KQ2": alternativa em texto à enquete de andamento. */
-export function extrairAndamentoPedido(texto: string): { andamento: AndamentoPedido; codigoCurto: string } | null {
+export interface Rastreio {
+  codigoRastreio?: string;
+  transportadora?: string;
+}
+
+const REGEX_ANDAMENTO =
+  /^\s*(separei|separado|separada|enviei|enviado|enviada|despachei|despachado|saiu|pronto|pronta|entregue|entreguei|retirado|retirada|conclu[ií]do)\b.*?(PED-[A-Z0-9]{4})/i;
+/** Formato dos códigos dos Correios: AA123456789BR. */
+const CODIGO_CORREIOS = /\b([A-Z]{2}\d{9}[A-Z]{2})\b/i;
+const REGEX_RASTREIO = /\b(?:rastreio|rastreamento|c[oó]digo)\s*:?\s*([A-Z0-9]{6,40})\b/i;
+const REGEX_TRANSPORTADORA = /\b(?:pel[oa]|via|transportadora)\s+(\p{L}[\p{L}\d-]*)/iu;
+
+function andamentoDaPalavra(palavra: string): AndamentoPedido {
+  if (palavra.startsWith('separ')) return 'SEPARADO';
+  if (palavra.startsWith('envi') || palavra.startsWith('despach')) return 'ENVIADO';
+  if (palavra === 'saiu' || palavra.startsWith('pront')) return 'A_CAMINHO';
+  return 'CONCLUIDO';
+}
+
+/** "rastreio NX123BR pela Jadlog"; um código no formato dos Correios dispensa a palavra "rastreio". */
+function extrairRastreio(texto: string): Rastreio | undefined {
+  const codigoRastreio = (REGEX_RASTREIO.exec(texto)?.[1] ?? CODIGO_CORREIOS.exec(texto)?.[1])?.toUpperCase();
+  const transportadora =
+    REGEX_TRANSPORTADORA.exec(texto)?.[1] ?? (codigoRastreio && CODIGO_CORREIOS.test(codigoRastreio) ? 'Correios' : undefined);
+  if (!codigoRastreio && !transportadora) {
+    return undefined;
+  }
+  return {
+    codigoRastreio,
+    transportadora: transportadora && transportadora.charAt(0).toUpperCase() + transportadora.slice(1),
+  };
+}
+
+/**
+ * Alternativa em texto à enquete de andamento: "separei PED-7KQ2", "saiu PED-7KQ2",
+ * "enviei PED-7KQ2 rastreio NX123456789BR", "entreguei PED-7KQ2".
+ */
+export function extrairAndamentoPedido(
+  texto: string,
+): { andamento: AndamentoPedido; codigoCurto: string; rastreio?: Rastreio } | null {
   const match = REGEX_ANDAMENTO.exec(texto);
   if (!match) {
     return null;
   }
-  const palavra = match[1]!.toLowerCase();
+  const andamento = andamentoDaPalavra(match[1]!.toLowerCase());
+  const depoisDoCodigo = texto.slice(match.index + match[0].length);
   return {
-    andamento: palavra === 'saiu' || palavra.startsWith('pront') ? 'A_CAMINHO' : 'CONCLUIDO',
+    andamento,
     codigoCurto: match[2]!.toUpperCase(),
+    ...(andamento === 'ENVIADO' && { rastreio: extrairRastreio(depoisDoCodigo) }),
   };
 }
 
-/** Saiu para entrega ou pronto para retirar, conforme a modalidade. */
+/** Saiu para entrega, enviado ou pronto para retirar, conforme a modalidade. */
 export function statusACaminho(modalidade: ModalidadePedido | undefined): StatusPedido {
-  return modalidade === 'ENTREGA' ? 'SAIU_PARA_ENTREGA' : 'PRONTO_PARA_RETIRADA';
+  switch (modalidade) {
+    case 'ENTREGA':
+      return 'SAIU_PARA_ENTREGA';
+    case 'ENVIO':
+    case 'MELHOR_ENVIO':
+      return 'ENVIADO';
+    default:
+      return 'PRONTO_PARA_RETIRADA';
+  }
 }
 
 /** Status que vencem em `expiraEm`: o cliente não mandou o código ou a loja não respondeu. */

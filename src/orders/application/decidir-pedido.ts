@@ -1,6 +1,14 @@
 import { DomainError } from '../../shared/errors/domain-error.js';
 import { chaveTelefone } from '../../shared/telefone/telefone.js';
-import { estaExpirado, pagaNaEntrega, ROTULO_STATUS_PEDIDO, type DecisaoPedido, type Pedido } from '../domain/pedido.js';
+import {
+  descreverFaltas,
+  estaExpirado,
+  pagaNaEntrega,
+  ROTULO_STATUS_PEDIDO,
+  type DecisaoPedido,
+  type FaltaEstoque,
+  type Pedido,
+} from '../domain/pedido.js';
 import type { ContatoEmpreendedores } from './ports/avisos-empreendedor.js';
 import type { OrdersRepository } from './ports/orders.repository.js';
 
@@ -24,6 +32,14 @@ export async function garantirDonoDaLoja(
   if (!telefoneDono || chaveTelefone(telefoneDono) !== chaveTelefone(telefone)) {
     throw new DomainError(`O pedido ${pedido.codigoCurto} não é da sua loja.`, 'PEDIDO_DE_OUTRA_LOJA', 'CONFLITO');
   }
+}
+
+function semEstoque(pedido: Pedido, faltas: FaltaEstoque[]): DomainError {
+  return new DomainError(
+    `Não dá para aceitar o pedido ${pedido.codigoCurto}: ${descreverFaltas(pedido, faltas)}. Recuse o pedido ou ajuste o estoque.`,
+    'SEM_ESTOQUE',
+    'CONFLITO',
+  );
 }
 
 export async function decidirPedido(
@@ -52,7 +68,27 @@ export async function decidirPedido(
   if (decisao === 'RECUSAR') {
     return deps.ordersRepo.atualizar(pedido.id, { status: 'RECUSADO' });
   }
-  return pagaNaEntrega(pedido.formaPagamento)
-    ? deps.ordersRepo.atualizar(pedido.id, { status: 'CONFIRMADO', confirmadoEm: agora })
-    : deps.ordersRepo.atualizar(pedido.id, { status: 'AGUARDANDO_PAGAMENTO' });
+  if (!pagaNaEntrega(pedido.formaPagamento)) {
+    // O estoque só baixa com o PIX pago, mas não vale cobrar o que já acabou.
+    const faltas = await deps.ordersRepo.faltasDeEstoque(pedido.id);
+    if (faltas.length > 0) {
+      throw semEstoque(pedido, faltas);
+    }
+    return deps.ordersRepo.atualizar(pedido.id, { status: 'AGUARDANDO_PAGAMENTO' });
+  }
+  // Pago na entrega: aceitar já é a venda, então o estoque baixa aqui. Nada foi
+  // pago ainda, então, faltando estoque, o pedido não é aceito.
+  const venda = await deps.ordersRepo.registrarVenda(pedido.id, {
+    de: 'AGUARDANDO_ACEITE',
+    para: 'CONFIRMADO',
+    confirmadoEm: agora,
+    seFaltarEstoque: 'NAO_VENDER',
+  });
+  if (venda.tipo === 'SEM_ESTOQUE') {
+    throw semEstoque(pedido, venda.faltas);
+  }
+  if (venda.tipo === 'JA_REGISTRADA') {
+    throw new DomainError(`O pedido ${pedido.codigoCurto} já foi respondido.`, 'PEDIDO_JA_DECIDIDO', 'CONFLITO');
+  }
+  return venda.pedido;
 }

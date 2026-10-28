@@ -1,4 +1,4 @@
-import { calcularEntrega, entregaConfigurada } from '../../menu/entrega.js';
+import { calcularEntrega, entregaConfigurada, type ConfigEntrega } from '../../menu/entrega.js';
 import { DomainError } from '../../shared/errors/domain-error.js';
 import type { EnderecoEntrega } from '../domain/pedido.js';
 import type { EnderecoDigitado, LocalizadorEndereco, RegrasDaLoja } from './ports/loja-para-pedidos.js';
@@ -20,7 +20,16 @@ export async function cotarEntrega(
   localizador: LocalizadorEndereco | undefined,
   digitado: EnderecoDigitado,
 ): Promise<CotacaoEntrega> {
-  const loja = { fazEntrega: regras.fazEntrega, enderecoVerificado: regras.origem, faixasEntrega: regras.faixasEntrega };
+  const loja: ConfigEntrega = {
+    fazEntrega: regras.fazEntrega,
+    enderecoVerificado: regras.origem,
+    faixasEntrega: regras.faixasEntrega,
+    ...(regras.taxaFixa && {
+      modoEntrega: 'FIXA',
+      taxaEntrega: regras.taxaFixa.taxa,
+      raioEntregaKm: regras.taxaFixa.raioKm,
+    }),
+  };
   // Antes de gastar uma consulta ao mapa, confere se a loja entrega.
   if (!regras.fazEntrega) {
     throw new DomainError('Esta loja não faz entrega.', 'ENTREGA_INDISPONIVEL');

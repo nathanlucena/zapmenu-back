@@ -8,7 +8,7 @@ import type {
 
 export interface MensagemEnviada {
   telefone: string;
-  tipo: 'texto' | 'imagem' | 'enquete';
+  tipo: 'texto' | 'imagem' | 'enquete' | 'documento';
   conteudo: string;
   legenda?: string;
   /** Só nas enquetes. */
@@ -20,12 +20,15 @@ export interface MensagemEnviada {
 export interface WhatsAppClientFake {
   client: WhatsAppClient;
   mensagensEnviadas: MensagemEnviada[];
+  /** Telefones que receberam o "digitando...". */
+  digitando: string[];
   emitirMensagem(mensagem: MensagemRecebida): Promise<void>;
   emitirVoto(voto: VotoRecebido): Promise<void>;
 }
 
 export function criarWhatsAppClientFake(): WhatsAppClientFake {
   const mensagensEnviadas: MensagemEnviada[] = [];
+  const digitando: string[] = [];
   const manipuladores: ManipuladorMensagem[] = [];
   const manipuladoresVoto: ManipuladorVoto[] = [];
   let proximaEnquete = 1;
@@ -37,10 +40,16 @@ export function criarWhatsAppClientFake(): WhatsAppClientFake {
     async sendImage(telefone, imagemUrlOuBase64, legenda) {
       mensagensEnviadas.push({ telefone, tipo: 'imagem', conteudo: imagemUrlOuBase64, legenda });
     },
+    async sendDocument(telefone, _dados, nomeArquivo, _mimetype, legenda) {
+      mensagensEnviadas.push({ telefone, tipo: 'documento', conteudo: nomeArquivo, legenda });
+    },
     async sendPoll(telefone, pergunta, opcoes) {
       const enqueteId = `enquete-${proximaEnquete++}`;
       mensagensEnviadas.push({ telefone, tipo: 'enquete', conteudo: pergunta, opcoes, enqueteId });
       return enqueteId;
+    },
+    async sendTyping(telefone) {
+      digitando.push(telefone);
     },
     onMessage(h) {
       manipuladores.push(h);
@@ -53,6 +62,7 @@ export function criarWhatsAppClientFake(): WhatsAppClientFake {
   return {
     client,
     mensagensEnviadas,
+    digitando,
     async emitirMensagem(mensagem) {
       if (manipuladores.length === 0) {
         throw new Error('Nenhum manipulador de mensagens registrado.');

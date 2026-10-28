@@ -12,8 +12,15 @@ import {
   type Pedido,
 } from '../domain/pedido.js';
 import { cotarEntrega } from './cotar-entrega.js';
+import { enderecoDeEnvio } from './endereco-de-envio.js';
+import type { CotadorDeFrete } from './ports/cotador-de-frete.js';
 import type { CardapioDePrecos, ItemCarrinho } from './ports/cardapio-de-precos.js';
-import type { EnderecoDigitado, LocalizadorEndereco, LojaParaPedidos } from './ports/loja-para-pedidos.js';
+import type {
+  ConsultaCepParaEnvio,
+  EnderecoDigitado,
+  LocalizadorEndereco,
+  LojaParaPedidos,
+} from './ports/loja-para-pedidos.js';
 import type { OrdersRepository } from './ports/orders.repository.js';
 
 async function gerarCodigoUnico(repositorio: OrdersRepository): Promise<string> {
@@ -63,6 +70,10 @@ export interface CriarPedidoDoCarrinhoDeps {
   lojaParaPedidos: LojaParaPedidos;
   /** Sem ele (ex.: sem chave do Google), a loja só aceita retirada. */
   localizador?: LocalizadorEndereco;
+  /** Completa o endereço pelo CEP no envio por transportadora. */
+  consultaCep?: ConsultaCepParaEnvio;
+  /** Melhor Envio. Sem ele, não há envio por transportadora. */
+  cotadorDeFrete?: CotadorDeFrete;
   pedidoTtlMinutos: number;
 }
 
@@ -70,7 +81,7 @@ export interface CarrinhoDoApp {
   empreendedorId: string;
   itens: ItemCarrinho[];
   modalidade: ModalidadePedido;
-  /** Obrigatório na entrega. */
+  /** Obrigatório na entrega e no envio. */
   endereco?: EnderecoDigitado;
   nomeCliente?: string;
   observacao?: string;
@@ -78,6 +89,8 @@ export interface CarrinhoDoApp {
   formaPagamento?: FormaPagamento;
   /** Só no dinheiro. */
   trocoPara?: number;
+  /** Só no Melhor Envio: o serviço escolhido na cotação (o preço é recalculado aqui). */
+  servicoEnvioId?: string;
 }
 
 /**
@@ -95,6 +108,9 @@ export async function criarPedidoDoCarrinho(
     throw new DomainError('Loja não encontrada.', 'LOJA_NAO_ENCONTRADA', 'NAO_ENCONTRADO');
   }
 
+  if (regras.indisponivel) {
+    throw new DomainError('Esta loja está temporariamente indisponível.', 'LOJA_INDISPONIVEL');
+  }
   if (!regras.cadastroCompleto) {
     throw new DomainError(
       'Esta loja ainda está terminando o cadastro e não recebe pedidos.',
@@ -116,6 +132,12 @@ export async function criarPedidoDoCarrinho(
   if (pagaNaEntrega(formaPagamento) && !regras.aceitaPagamentoNaEntrega) {
     throw new DomainError('Esta loja só aceita pagamento por PIX.', 'PAGAMENTO_NA_ENTREGA_INDISPONIVEL');
   }
+  if (pagaNaEntrega(formaPagamento) && carrinho.modalidade === 'MELHOR_ENVIO') {
+    throw new DomainError('No envio por transportadora o pagamento é só por PIX.', 'PAGAMENTO_NA_ENTREGA_INDISPONIVEL');
+  }
+  if (carrinho.modalidade === 'ENVIO') {
+    throw new DomainError('Esta forma de envio não existe mais. Escolha outra.', 'ENVIO_INDISPONIVEL');
+  }
 
   const detalhes: DetalhesPedido = {
     modalidade: carrinho.modalidade,
@@ -132,9 +154,29 @@ export async function criarPedidoDoCarrinho(
     if (!carrinho.endereco) {
       throw new DomainError('Informe o endereço de entrega.', 'ENDERECO_INVALIDO');
     }
-    const cotacao = await cotarEntrega(regras, deps.localizador, carrinho.endereco);
-    detalhes.taxaEntrega = cotacao.taxa;
-    detalhes.entrega = cotacao.endereco;
+    if (carrinho.modalidade === 'MELHOR_ENVIO') {
+      if (!regras.melhorEnvio || !deps.cotadorDeFrete) {
+        throw new DomainError('Esta loja não envia por transportadora.', 'ENVIO_INDISPONIVEL');
+      }
+      const endereco = await enderecoDeEnvio(deps.consultaCep, carrinho.endereco);
+      const servicos = await deps.cotadorDeFrete.cotar(carrinho.empreendedorId, {
+        cepOrigem: regras.melhorEnvio.cepOrigem,
+        cepDestino: endereco.cep!,
+        itens: itens.map((item) => ({ itemCardapioId: item.itemCardapioId, quantidade: item.quantidade, precoUnitario: item.precoUnitario })),
+      });
+      // O preço vale o do momento: o que o app mostrou é só referência.
+      const servico = servicos.find((candidato) => candidato.id === carrinho.servicoEnvioId);
+      if (!servico) {
+        throw new DomainError('Esse frete não está mais disponível. Escolha de novo.', 'FRETE_MUDOU', 'CONFLITO');
+      }
+      detalhes.taxaEntrega = servico.preco;
+      detalhes.entrega = endereco;
+      detalhes.servicoEnvio = servico;
+    } else {
+      const cotacao = await cotarEntrega(regras, deps.localizador, carrinho.endereco);
+      detalhes.taxaEntrega = cotacao.taxa;
+      detalhes.entrega = cotacao.endereco;
+    }
   }
 
   const total = arredondar(subtotal + (detalhes.taxaEntrega ?? 0));

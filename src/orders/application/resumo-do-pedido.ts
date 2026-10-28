@@ -1,4 +1,4 @@
-import { descreverPagamento, type Pedido } from '../domain/pedido.js';
+import { descreverFaltas, descreverPagamento, type Pedido } from '../domain/pedido.js';
 
 function reais(valor: number): string {
   return `R$ ${valor.toFixed(2)}`;
@@ -29,8 +29,19 @@ export function linhasDoPedido(pedido: Pedido): string[] {
       linhas.push(`   📝 ${item.observacao}`);
     }
   }
+  if (pedido.faltaEstoque?.length) {
+    linhas.push(`⚠️ Pago, mas ${descreverFaltas(pedido, pedido.faltaEstoque)}. Combine com o cliente (troca ou devolução).`);
+  }
   linhas.push('');
-  if (pedido.modalidade === 'ENTREGA' && pedido.entrega) {
+  if (pedido.modalidade === 'MELHOR_ENVIO' && pedido.entrega) {
+    const servico = pedido.servicoEnvio ? `${pedido.servicoEnvio.empresa} ${pedido.servicoEnvio.nome}` : 'transportadora';
+    const frete = pedido.taxaEntrega ? ` (frete ${reais(pedido.taxaEntrega)})` : '';
+    linhas.push(`📦 Enviar por ${servico} para ${pedido.entrega.enderecoFormatado}${frete}`);
+    linhas.push(`🏷️ Com o pagamento confirmado, mande *gerar etiqueta do ${pedido.codigoCurto}*.`);
+  } else if (pedido.modalidade === 'ENVIO' && pedido.entrega) {
+    const frete = pedido.taxaEntrega ? ` (frete ${reais(pedido.taxaEntrega)})` : '';
+    linhas.push(`📦 Enviar pelos Correios para ${pedido.entrega.enderecoFormatado}${frete}`);
+  } else if (pedido.modalidade === 'ENTREGA' && pedido.entrega) {
     const taxa = pedido.taxaEntrega ? ` (taxa ${reais(pedido.taxaEntrega)})` : '';
     linhas.push(`🛵 Entrega em ${pedido.entrega.enderecoFormatado}${taxa}`);
   } else {

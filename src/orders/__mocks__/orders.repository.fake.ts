@@ -1,17 +1,21 @@
 import { DomainError } from '../../shared/errors/domain-error.js';
 import type { OrdersRepository } from '../application/ports/orders.repository.js';
-import { estaExpirado, STATUS_EM_ANDAMENTO, type Pedido } from '../domain/pedido.js';
+import { estaExpirado, STATUS_QUE_CONCLUEM_SOZINHOS, type FaltaEstoque, type Pedido } from '../domain/pedido.js';
 
 let proximoId = 1;
 
 export interface OrdersRepositoryFake extends OrdersRepository {
   /** O fake não conhece pagamentos: o teste diz qual PIX o pedido tem. */
   definirPix(pedidoId: string, pix: { copiaCola: string; qrCodeBase64?: string }): void;
+  /** O fake não conhece o cardápio: o teste diz o estoque de cada SKU. */
+  definirEstoque(skuId: string, estoque: number): void;
+  estoqueDe(skuId: string): number | undefined;
 }
 
 export function criarOrdersRepositoryFake(): OrdersRepositoryFake {
   const pedidos = new Map<string, Pedido>();
   const pixPorPedido = new Map<string, { copiaCola: string; qrCodeBase64?: string }>();
+  const estoquePorSku = new Map<string, number>();
 
   return {
     async codigoJaExiste(codigoCurto: string) {
@@ -45,6 +49,8 @@ export function criarOrdersRepositoryFake(): OrdersRepositoryFake {
         valorTotal,
         expiraEm,
         criadoEm,
+        codigoRastreio: pedido.codigoRastreio,
+        transportadora: pedido.transportadora,
         pix: status === 'AGUARDANDO_PAGAMENTO' ? pixPorPedido.get(pedido.id) : undefined,
         // O fake não conhece o cardápio: usa o id do item como nome.
         itens: pedido.itens.map(({ itemCardapioId, quantidade, precoUnitario, variacaoEscolhida, observacao }) => ({
@@ -65,6 +71,11 @@ export function criarOrdersRepositoryFake(): OrdersRepositoryFake {
       return Array.from(pedidos.values()).find((pedido) => pedido.codigoCurto === codigoCurto) ?? null;
     },
 
+    async ultimoDoCliente(telefoneCliente: string) {
+      const doCliente = Array.from(pedidos.values()).filter((pedido) => pedido.telefoneCliente === telefoneCliente);
+      return doCliente.sort((a, b) => b.criadoEm.getTime() - a.criadoEm.getTime())[0] ?? null;
+    },
+
     async buscarPorEnquete(enqueteId: string) {
       return (
         Array.from(pedidos.values()).find(
@@ -79,7 +90,10 @@ export function criarOrdersRepositoryFake(): OrdersRepositoryFake {
 
     async listarEmAndamentoAntesDe(limite: Date) {
       return Array.from(pedidos.values()).filter(
-        (pedido) => STATUS_EM_ANDAMENTO.includes(pedido.status) && pedido.criadoEm < limite,
+        (pedido) =>
+          STATUS_QUE_CONCLUEM_SOZINHOS.includes(pedido.status) &&
+          pedido.criadoEm < limite &&
+          !pedido.itens.some((item) => item.skuId),
       );
     },
 
@@ -93,8 +107,68 @@ export function criarOrdersRepositoryFake(): OrdersRepositoryFake {
       return atualizado;
     },
 
+    async atualizarSeStatus(id, de, alteracoes) {
+      const pedido = pedidos.get(id);
+      if (!pedido || pedido.status !== de) {
+        return null;
+      }
+      const atualizado = { ...pedido, ...alteracoes };
+      pedidos.set(id, atualizado);
+      return atualizado;
+    },
+
     definirPix(pedidoId, pix) {
       pixPorPedido.set(pedidoId, pix);
+    },
+
+    definirEstoque(skuId, estoque) {
+      estoquePorSku.set(skuId, estoque);
+    },
+
+    estoqueDe(skuId) {
+      return estoquePorSku.get(skuId);
+    },
+
+    async faltasDeEstoque(id) {
+      const total = new Map<string, number>();
+      for (const { skuId, quantidade } of pedidos.get(id)?.itens ?? []) {
+        if (skuId) total.set(skuId, (total.get(skuId) ?? 0) + quantidade);
+      }
+      return [...total]
+        .map(([skuId, quantidade]) => ({ skuId, quantidade, disponivel: Math.max(estoquePorSku.get(skuId) ?? 0, 0) }))
+        .filter((falta) => falta.disponivel < falta.quantidade);
+    },
+
+    async registrarVenda(id, venda) {
+      const pedido = pedidos.get(id);
+      if (!pedido || pedido.status !== venda.de) {
+        return { tipo: 'JA_REGISTRADA' };
+      }
+      const total = new Map<string, number>();
+      for (const { skuId, quantidade } of pedido.itens) {
+        if (skuId) total.set(skuId, (total.get(skuId) ?? 0) + quantidade);
+      }
+      const faltas: FaltaEstoque[] = [];
+      const baixas = new Map<string, number>();
+      for (const [skuId, quantidade] of total) {
+        const disponivel = Math.max(estoquePorSku.get(skuId) ?? 0, 0);
+        if (disponivel < quantidade) faltas.push({ skuId, quantidade, disponivel });
+        baixas.set(skuId, Math.min(quantidade, disponivel));
+      }
+      if (faltas.length > 0 && venda.seFaltarEstoque === 'NAO_VENDER') {
+        return { tipo: 'SEM_ESTOQUE', faltas };
+      }
+      for (const [skuId, baixa] of baixas) {
+        estoquePorSku.set(skuId, (estoquePorSku.get(skuId) ?? 0) - baixa);
+      }
+      const vendido: Pedido = {
+        ...pedido,
+        status: venda.para,
+        confirmadoEm: venda.confirmadoEm,
+        ...(faltas.length > 0 && { faltaEstoque: faltas }),
+      };
+      pedidos.set(id, vendido);
+      return { tipo: 'REGISTRADA', pedido: vendido };
     },
 
     async listarExpirados(agora: Date) {

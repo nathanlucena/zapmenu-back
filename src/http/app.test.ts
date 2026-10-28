@@ -32,6 +32,31 @@ describe('GET /v1/menu/:empreendedorId', () => {
     expect(resposta.json().itens[0].nome).toBe('Bolo');
   });
 
+  it('mostra a galeria do produto e, sem galeria, a imagem do item como única foto', async () => {
+    const menuRepo = criarMenuRepositoryFake();
+    const camiseta = await criarItem(menuRepo, 'emp-1', { nome: 'Camiseta', precoBase: 60, variacoes: [] });
+    await criarItem(menuRepo, 'emp-1', { nome: 'Bolo', precoBase: 25, imagemUrl: 'bolo.jpg', variacoes: [] });
+    menuRepo.definirFotos(camiseta.id, [
+      { url: 'costas.jpg', ordem: 1 },
+      { url: 'frente.jpg', ordem: 0, cor: 'Azul' },
+    ]);
+    const app = buildApp({
+      menuRepo,
+      ordersRepo: criarOrdersRepositoryFake(),
+      pedidoTtlMinutos: 20,
+      frontendAllowedOrigin: 'http://localhost:3001',
+    });
+
+    const [itemCamiseta, itemBolo] = (await app.inject({ method: 'GET', url: '/v1/menu/emp-1' })).json().itens;
+
+    expect(itemCamiseta.fotos).toEqual([
+      { url: 'frente.jpg', ordem: 0, cor: 'Azul' },
+      { url: 'costas.jpg', ordem: 1 },
+    ]);
+    expect(itemBolo.imagemUrl).toBe('bolo.jpg');
+    expect(itemBolo.fotos).toEqual([{ url: 'bolo.jpg', ordem: 0 }]);
+  });
+
   it('retorna lista vazia para empreendedor que ainda não cadastrou itens', async () => {
     const menuRepo = criarMenuRepositoryFake();
     await menuRepo.obterOuCriarCardapio('emp-novo');
@@ -184,6 +209,20 @@ describe('POST /v1/orders', () => {
     expect(resposta.json().codigo).toBe('LOJA_EM_MONTAGEM');
   });
 
+  it('loja com a assinatura suspensa não recebe pedidos (LOJA_INDISPONIVEL)', async () => {
+    const { app, bolo, menuRepo } = await montarAppComBolo();
+    menuRepo.definirRegras('emp-1', { indisponivel: true });
+
+    const resposta = await app.inject({
+      method: 'POST',
+      url: '/v1/orders',
+      payload: { empreendedorId: 'emp-1', itens: [{ itemCardapioId: bolo.id, quantidade: 1 }] },
+    });
+
+    expect(resposta.statusCode).toBe(400);
+    expect(resposta.json().codigo).toBe('LOJA_INDISPONIVEL');
+  });
+
   it('validação em português, um erro por campo', async () => {
     const app = montarApp();
 
@@ -204,7 +243,7 @@ describe('POST /v1/orders', () => {
         campos: {
           empreendedorId: 'é obrigatório',
           'itens.0.quantidade': 'deve ser maior que 0',
-          modalidade: 'deve ser um destes: RETIRADA, ENTREGA',
+          modalidade: 'deve ser um destes: RETIRADA, ENTREGA, MELHOR_ENVIO, ENVIO',
           'endereco.uf': expect.stringContaining('2'),
         },
       },

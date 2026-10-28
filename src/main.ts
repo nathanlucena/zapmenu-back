@@ -21,6 +21,7 @@ import { comPagamentoSimulado } from './payments/infra/pagamento-simulado.js';
 import { pedirAceiteDaLoja } from './orders/application/pedir-aceite-da-loja.js';
 import { mensagemPagamentoConfirmado } from './orders/application/avisos-cliente.js';
 import { pedirAndamentoDaLoja } from './orders/application/andamento-pedido.js';
+import { criarLojaParaPedidos } from './menu/loja-para-pedidos.js';
 import { criarEnquetesRepositoryPrisma } from './whatsapp/baileys/enquetes.repository.prisma.js';
 import { criarPreviasRepositoryPrisma } from './menu/gestao/previas.repository.prisma.js';
 import type { PaymentsServiceDeps } from './payments/application/dependencias.js';
@@ -35,6 +36,26 @@ import { iniciarSessaoWhatsApp } from './whatsapp/baileys/session-manager.js';
 import { dividirMensagens } from './whatsapp/numero-unico/dividir-mensagens.js';
 import { identificarBot, ROTULO_GESTAO, ROTULO_PEDIDOS } from './whatsapp/identificacao/identificar-bot.js';
 import { chaveTelefone } from './shared/telefone/telefone.js';
+import { criarMelhorEnvioClient } from './envio/infra/melhor-envio.client.js';
+import { criarContasMelhorEnvioRepositoryPrisma } from './envio/infra/contas-melhor-envio.repository.prisma.js';
+import { contaConectada, linkParaConectar } from './envio/application/conexao.js';
+import { criarCotadorMelhorEnvio } from './envio/application/cotador.js';
+import { gerarEtiqueta } from './envio/application/etiqueta.js';
+import { criarGuiasRepositoryPrisma } from './menu/guia-medidas/guias.repository.prisma.js';
+import type { MelhorEnvioDeps } from './envio/application/dependencias.js';
+import { criarAssinaturasRepositoryPrisma } from './planos/infra/assinaturas.repository.prisma.js';
+import { avisarLimiteDePedidos } from './planos/application/avisar-limite-de-pedidos.js';
+import type { PlanosDeps } from './planos/application/dependencias.js';
+import { criarMercadoPagoAssinaturasClient } from './planos/infra/mercado-pago-assinaturas.client.js';
+import { iniciarJobAssinaturas } from './planos/infra/assinaturas.job.js';
+import { criarPromocoesRepositoryPrisma } from './promocoes/infra/promocoes.repository.prisma.js';
+import { iniciarJobPromocoes } from './promocoes/infra/promocoes.job.js';
+import { criarRelatoriosRepositoryPrisma } from './relatorios/infra/relatorios.repository.prisma.js';
+import { iniciarJobRelatorios } from './relatorios/infra/relatorios.job.js';
+import { criarTranscritorOpenAiCompativel } from './audio/infra/transcritor-openai-compativel.js';
+import { ouvirAudio, type OuvirAudioDeps } from './audio/application/ouvir-audio.js';
+import { criarGeradorDeDescricoesDeepSeek } from './menu/gestao/deepseek-descricoes.js';
+import { criarImagensDaLojaSharp } from './menu/imagens/imagens-da-loja.sharp.js';
 
 async function main(): Promise<void> {
   const env = getEnv();
@@ -87,6 +108,7 @@ async function main(): Promise<void> {
   let pedidosWhatsAppClient: WhatsAppClient | undefined;
 
   const contatos = criarContatoEmpreendedoresPrisma(prisma);
+  const lojaParaPedidos = criarLojaParaPedidos(menuRepo);
   const mensageiroLoja = {
     async enviarTexto(telefone: string, texto: string) {
       if (!menuWhatsAppClient) {
@@ -100,10 +122,64 @@ async function main(): Promise<void> {
     },
   };
   const avisoPedidoPago = { contatos, mensageiro: mensageiroLoja };
+  const urlPublicaDoApp = (env.FRONTEND_URL_PUBLICA ?? env.FRONTEND_ALLOWED_ORIGIN).replace(/\/$/, '');
+  const melhorEnvio: MelhorEnvioDeps | undefined =
+    env.MELHOR_ENVIO_CLIENT_ID && env.MELHOR_ENVIO_CLIENT_SECRET
+      ? {
+          gateway: criarMelhorEnvioClient({
+            clientId: env.MELHOR_ENVIO_CLIENT_ID,
+            clientSecret: env.MELHOR_ENVIO_CLIENT_SECRET,
+            urlDeRetorno: env.MELHOR_ENVIO_URL_RETORNO ?? `${urlPublicaDoApp}/api/melhor-envio/retorno`,
+            sandbox: env.MELHOR_ENVIO_SANDBOX,
+            emailDeContato: env.MELHOR_ENVIO_EMAIL_CONTATO,
+          }),
+          contas: criarContasMelhorEnvioRepositoryPrisma(prisma),
+          mensageiro: mensageiroLoja,
+          // O state do OAuth é assinado com o segredo do app (não sai do servidor).
+          segredo: env.MELHOR_ENVIO_CLIENT_SECRET,
+        }
+      : undefined;
+  if (!melhorEnvio) {
+    logger.warn('MELHOR_ENVIO_CLIENT_ID/SECRET não definidos: o envio por transportadora fica desligado');
+  }
+  const urlPublica = (env.FRONTEND_URL_PUBLICA ?? env.FRONTEND_ALLOWED_ORIGIN).replace(/\/$/, '');
+  const tokenAssinaturas = env.MERCADO_PAGO_ASSINATURAS_ACCESS_TOKEN;
+  if (!tokenAssinaturas) {
+    logger.warn('MERCADO_PAGO_ASSINATURAS_ACCESS_TOKEN não definida: as lojas não conseguem assinar (o teste e os limites continuam valendo)');
+  } else if (env.MERCADO_PAGO_ASSINATURAS_SANDBOX && !tokenAssinaturas.startsWith('TEST-')) {
+    logger.warn('assinaturas em modo sandbox: confira que o token é de um usuário de teste do Mercado Pago');
+  }
+  const planos: PlanosDeps = {
+    repo: criarAssinaturasRepositoryPrisma(prisma),
+    mensageiro: mensageiroLoja,
+    idempotency,
+    linkDosPlanos: `${urlPublica}/#planos`,
+    gateway: tokenAssinaturas
+      ? criarMercadoPagoAssinaturasClient(tokenAssinaturas, {
+          urlDeRetorno: env.ASSINATURA_URL_RETORNO ?? urlPublica,
+          sandbox: env.MERCADO_PAGO_ASSINATURAS_SANDBOX,
+        })
+      : undefined,
+  };
+  const promocoes = { repo: criarPromocoesRepositoryPrisma(prisma), mensageiro: mensageiroLoja };
+  const relatorios = { repo: criarRelatoriosRepositoryPrisma(prisma), mensageiro: mensageiroLoja };
+  const audio: OuvirAudioDeps = {
+    transcritor: env.TRANSCRICAO_API_KEY
+      ? criarTranscritorOpenAiCompativel({ url: env.TRANSCRICAO_API_URL, chave: env.TRANSCRICAO_API_KEY, modelo: env.TRANSCRICAO_MODELO })
+      : undefined,
+    cotas: planos.repo,
+    linkDosPlanos: planos.linkDosPlanos,
+  };
+  if (!audio.transcritor) {
+    logger.warn('TRANSCRICAO_API_KEY não definida: os áudios não são transcritos (o bot pede para escrever)');
+  }
+  // Cada venda confere o limite de pedidos do mês (aviso de 80% e 100%; o cliente nunca é barrado).
+  const aoVirarVenda = (pedido: Pedido) => avisarLimiteDePedidos(planos, pedido.empreendedorId);
   // Pago: a loja recebe os dados completos e a enquete de andamento (saiu/pronto, entregue/retirado).
   const notificarEmpreendedor = async (pedido: Pedido) => {
     await avisarPedidoPago(avisoPedidoPago, pedido);
-    await pedirAndamentoDaLoja({ ordersRepo, contatos, mensageiro: mensageiroLoja }, pedido);
+    await pedirAndamentoDaLoja({ ordersRepo, contatos, mensageiro: mensageiroLoja, lojaParaPedidos }, pedido);
+    await aoVirarVenda(pedido);
   };
   const avisarCliente = async (pedido: Pedido) => {
     if (!pedidosWhatsAppClient || !pedido.telefoneCliente) {
@@ -148,8 +224,39 @@ async function main(): Promise<void> {
         repo: previas,
         urlDaImagem: (id) => `${(env.FRONTEND_URL_INTERNA ?? env.FRONTEND_ALLOWED_ORIGIN).replace(/\/$/, '')}/api/previa/${id}`,
       },
-      urlDoCardapio: (slug) => `${(env.FRONTEND_URL_PUBLICA ?? env.FRONTEND_ALLOWED_ORIGIN).replace(/\/$/, '')}/${slug}`,
-      decisoes: { ordersRepo, contatos, geradorCobranca, clientePedidos: () => pedidosWhatsAppClient },
+      urlDoCardapio: (slug) => `${urlPublica}/${slug}`,
+      // Mensagens seguidas viram uma rodada: 3 s de silêncio, no máximo 10 s desde a primeira.
+      agrupamento: { silencioMs: 3_000, maximoMs: 10_000 },
+      planos,
+      promocoes,
+      guias: criarGuiasRepositoryPrisma(prisma),
+      melhorEnvio: melhorEnvio && {
+        linkParaConectar: (telefone: string) => linkParaConectar(melhorEnvio, telefone),
+        conectada: (telefone: string) => contaConectada(melhorEnvio, telefone),
+      },
+      relatorios,
+      audio,
+      imagens: criarImagensDaLojaSharp(),
+      // Descrições pela IA usam o mesmo DeepSeek da gestão; sem chave, a oferta não aparece.
+      descricoes: env.DEEPSEEK_API_KEY
+        ? {
+            gerador: criarGeradorDeDescricoesDeepSeek({
+              apiKey: env.DEEPSEEK_API_KEY,
+              modelo: env.DEEPSEEK_MODEL,
+              baseURL: env.DEEPSEEK_BASE_URL,
+            }),
+            cotas: planos.repo,
+          }
+        : undefined,
+      decisoes: {
+        ordersRepo,
+        contatos,
+        geradorCobranca,
+        clientePedidos: () => pedidosWhatsAppClient,
+        lojaParaPedidos,
+        aoVirarVenda,
+        gerarEtiqueta: melhorEnvio && ((pedido: Pedido) => gerarEtiqueta(melhorEnvio, pedido)),
+      },
     });
   };
   const registrarPedidos = (conexao: WhatsAppClient) => {
@@ -162,6 +269,14 @@ async function main(): Promise<void> {
       geradorCobranca,
       pedirAceite: (pedido) => pedirAceiteDaLoja({ ordersRepo, contatos, mensageiro: mensageiroLoja }, pedido),
       prazoAceiteMs: env.PEDIDO_ACEITE_MINUTOS * 60_000,
+      // O áudio do cliente conta na cota da loja do pedido mais recente dele.
+      ouvirAudio: async (telefone, audioRecebido) => {
+        const pedido = await ordersRepo.ultimoDoCliente(telefone);
+        if (!pedido) {
+          return { tipo: 'RESPOSTA', texto: 'Não consegui ouvir o áudio. Pode escrever o código do pedido (PED-XXXX)?' };
+        }
+        return ouvirAudio(audio, pedido.empreendedorId, audioRecebido, 'CLIENTE');
+      },
     });
   };
   const sessao = (sessionName: string, tokenStorePath: string) => ({
@@ -202,6 +317,11 @@ async function main(): Promise<void> {
     env.PAGAMENTO_POLLING_INTERVALO_SEGUNDOS * 1000,
     env.PAGAMENTO_POLLING_INTERVALO_SEGUNDOS,
   );
+  iniciarJobAssinaturas(planos, env.ASSINATURAS_VERIFICACAO_INTERVALO_MINUTOS * 60_000);
+  // Promoção vencida desliga sozinha; o aviso ao lojista sai no dia seguinte. Mesmo ritmo do job das assinaturas.
+  iniciarJobPromocoes(promocoes, env.ASSINATURAS_VERIFICACAO_INTERVALO_MINUTOS * 60_000);
+  // Relatórios: confere a cada 10 min se chegou a hora (segunda 9h e todo dia 8h, no fuso de cada loja).
+  iniciarJobRelatorios(relatorios, 10 * 60_000);
   // Prévias em imagem vencem em 1 h; limpa de hora em hora.
   setInterval(() => {
     previas.apagarVencidas().catch((erro: unknown) => logger.error({ err: erro }, 'falha ao apagar prévias vencidas'));
@@ -223,6 +343,12 @@ async function main(): Promise<void> {
     paymentsDeps,
     mercadoPagoWebhookSecret: env.MERCADO_PAGO_WEBHOOK_SECRET,
     previas,
+    planos,
+    assinaturasWebhookSecret: env.MERCADO_PAGO_ASSINATURAS_WEBHOOK_SECRET,
+    // O CEP do envio por transportadora só precisa do ViaCEP (não do Google).
+    consultaCep: criarViaCepClient(),
+    cotadorDeFrete: melhorEnvio && criarCotadorMelhorEnvio(melhorEnvio),
+    melhorEnvio,
   });
 
   await app.listen({ port: env.PORT, host: '0.0.0.0' });

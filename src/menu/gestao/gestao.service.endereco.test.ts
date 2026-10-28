@@ -50,6 +50,8 @@ function criarCenario(loja: DadosLoja = {}, opcoes: { semEndereco?: boolean } = 
       salvos.push(structuredClone(rascunho));
     },
     async registrarLembreteOpcionais() {},
+    async limparAvisoDoFreteFixo() {},
+    async definirSegmento() {},
   };
   const interpretador: InterpretadorMensagem = {
     async conversar() {
@@ -205,7 +207,7 @@ describe('gestão: loja antiga com taxa fixa', () => {
   it('avisa no começo da conversa que a entrega precisa ser configurada', async () => {
     const cenario = criarCenario(lojaAntiga);
     cenario.roteiro.push(resposta({ resposta: 'Oi!' }));
-    expect(await cenario.enviar('oi')).toContain('Agora a entrega é calculada pela distância');
+    expect(await cenario.enviar('oi')).toContain('Para voltar a entregar');
   });
 
   it('não trava outras alterações', async () => {

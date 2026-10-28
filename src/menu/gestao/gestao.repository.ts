@@ -1,4 +1,5 @@
-import type { DadosLoja, Rascunho, Variacao } from '../conversation/conversation-state.types.js';
+import type { DadosLoja, LinhaGrade, Rascunho, Variacao } from '../conversation/conversation-state.types.js';
+import type { SegmentoLoja } from '../menu.types.js';
 
 export interface CategoriaSnapshot {
   id: string;
@@ -17,6 +18,8 @@ export interface ItemSnapshot {
   categoriaId?: string;
   categoriaNome?: string;
   variacoes: Variacao[];
+  /** Tamanhos/cores à venda (loja); vazio ou ausente na comida. */
+  grade?: LinhaGrade[];
 }
 
 /** Foto do cardápio atual de um empreendedor, base para a IA e para o resumo. */
@@ -27,6 +30,8 @@ export interface SnapshotCardapio {
   itens: ItemSnapshot[];
   /** Sem as fotos de logo e capa (pesadas): só se existem. */
   loja: DadosLoja;
+  /** Tipo da loja; ausente = COMIDA (lojas anteriores à escolha). */
+  segmento?: SegmentoLoja;
   /** O que a gestão precisa saber da loja salva além dos dados editáveis. */
   lojaSalva: {
     existe: boolean;
@@ -37,6 +42,10 @@ export interface SnapshotCardapio {
     capaUrl?: string;
     lembreteOpcionaisEm?: Date;
     naoLembrarOpcionais: boolean;
+    /** Usava o frete fixo por região (removido): recebe o aviso uma vez. */
+    avisarFimDoFreteFixo?: boolean;
+    /** Loja nova que ainda não escolheu entre cardápio e loja: é a primeira pergunta. */
+    tipoPendente?: boolean;
   };
 }
 
@@ -44,6 +53,10 @@ export interface GestaoRepository {
   carregarSnapshot(empreendedorId: string): Promise<SnapshotCardapio>;
   /** Grava o rascunho inteiro numa transação: ou tudo entra, ou nada. */
   salvarRascunho(empreendedorId: string, rascunho: Rascunho): Promise<void>;
+  /** Grava o tipo escolhido na hora (não passa pelo rascunho): é a base de todo o resto. */
+  definirSegmento(empreendedorId: string, segmento: SegmentoLoja): Promise<void>;
   /** Anota o lembrete dos opcionais (data) ou que a loja não quer mais ser lembrada. */
   registrarLembreteOpcionais(empreendedorId: string, registro: { em?: Date; desligar?: boolean }): Promise<void>;
+  /** O aviso do fim do frete fixo já foi dado. */
+  limparAvisoDoFreteFixo(empreendedorId: string): Promise<void>;
 }

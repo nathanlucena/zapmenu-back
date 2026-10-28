@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { corDaPaleta, gerarSlug, nomeDaCor, normalizarCor, PALETA_DA_LOJA, problemaNoSlug } from './vitrine.js';
+import { corDaPaleta, gerarSlug, nomeDaCor, normalizarCor, normalizarInstagram, PALETA_DA_LOJA, problemaNoSlug } from './vitrine.js';
 
 describe('gerarSlug', () => {
   it('tira acentos, símbolos e espaços', () => {
@@ -76,5 +76,19 @@ describe('paleta da loja', () => {
   it('mostra o nome da cor da paleta e o hex das cores antigas', () => {
     expect(nomeDaCor('#c62828')).toBe('Vermelho');
     expect(nomeDaCor('#E53935')).toBe('#E53935');
+  });
+});
+
+describe('normalizarInstagram', () => {
+  it('aceita @, link e perfil puro, sempre sem o @ e em minúsculas', () => {
+    expect(normalizarInstagram('@Moda.Ana')).toBe('moda.ana');
+    expect(normalizarInstagram('https://www.instagram.com/moda_ana/?hl=pt-br')).toBe('moda_ana');
+    expect(normalizarInstagram('instagram.com/pizzariadoze')).toBe('pizzariadoze');
+  });
+
+  it('recusa o que não é perfil', () => {
+    expect(normalizarInstagram('moda da ana')).toBeNull();
+    expect(normalizarInstagram('@')).toBeNull();
+    expect(normalizarInstagram('moda..ana')).toBeNull();
   });
 });

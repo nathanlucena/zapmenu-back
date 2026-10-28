@@ -16,11 +16,48 @@ export interface ItemDraft {
   variacoes: VariacaoInput[];
 }
 
+export interface FotoProduto {
+  url: string;
+  ordem: number;
+  /** Cor que aparece na foto (varejo). */
+  cor?: string;
+}
+
+/** Tamanho + cor vendável de um produto, com estoque próprio (varejo). */
+export interface Sku {
+  id: string;
+  tamanho?: string;
+  cor?: string;
+  estoque: number;
+  /** Sobrepõe o precoBase do item. */
+  preco?: number;
+  ativo: boolean;
+}
+
+/** Promoção que vale agora para o item (a vencedora, sem acumular). Só na leitura do cardápio. */
+export interface PromocaoDoItem {
+  promocaoId: string;
+  tipo: 'PRECO_FIXO' | 'PERCENTUAL';
+  valor: number;
+  /** "Promoção de quarta", "-10%". */
+  rotulo: string;
+  /** O precoBase com a promoção (as variações somam por cima, como sempre). */
+  precoPromocional: number;
+}
+
 export interface ItemCardapio extends ItemDraft {
   id: string;
+  /** Promoção valendo no momento da leitura; o precoBase continua o normal. */
+  promocao?: PromocaoDoItem;
+  /** Guia de medidas (loja, Profissional): o do produto, ou o da categoria. */
+  guiaMedidas?: { nome: string; colunas: string[]; linhas: { tamanho: string; medidas: number[] }[] };
   cardapioId: string;
   categoriaId?: string;
   ativo: boolean;
+  /** Galeria em ordem; sem galeria, só o imagemUrl. Vem na leitura do cardápio. */
+  fotos?: FotoProduto[];
+  /** Vazio para item sem tamanho/cor (toda comida). Vem na leitura do cardápio. */
+  skus?: Sku[];
 }
 
 export interface HorarioLoja {
@@ -29,9 +66,13 @@ export interface HorarioLoja {
   fecha: string;
 }
 
+/** Ramo da loja. Lojas antigas são todas COMIDA. */
+export type SegmentoLoja = 'COMIDA' | 'VAREJO' | 'SERVICOS';
+
 export interface LojaPublica {
   nome?: string;
   descricao?: string;
+  segmento: SegmentoLoja;
   endereco?: string;
   aceitaRetirada: boolean;
   /** Dinheiro ou cartão na entrega/balcão. Opcional: só o cardápio público preenche. */
@@ -52,8 +93,18 @@ export interface LojaPublica {
   logoUrl?: string;
   /** Hex "#RRGGBB". */
   corDestaque?: string;
+  /** Perfil do Instagram, sem o @. */
+  instagram?: string;
   /** Fuso dos horários, ex.: "America/Sao_Paulo". */
   fuso: string;
+  /** Trocas e devoluções, em texto livre (varejo). */
+  politicaTroca?: string;
+  /** Envia por transportadora (Melhor Envio): o app cota com o CEP do cliente. */
+  melhorEnvio?: boolean;
+  /** Rodapé "Feito com ZapMenu": o plano da loja não inclui tirar o selo. Só o cardápio público preenche. */
+  mostrarSelo?: boolean;
+  /** Assinatura suspensa: o app mostra "Loja temporariamente indisponível" e não aceita pedidos. */
+  indisponivel?: boolean;
 }
 
 /** Uma seção do cardápio; `id` null é o grupo "Outros" (itens sem categoria). */

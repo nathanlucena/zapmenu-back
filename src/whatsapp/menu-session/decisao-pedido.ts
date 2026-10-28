@@ -8,6 +8,7 @@ import {
 } from '../../orders/application/andamento-pedido.js';
 import { mensagemAndamento } from '../../orders/application/avisos-cliente.js';
 import type { ContatoEmpreendedores } from '../../orders/application/ports/avisos-empreendedor.js';
+import type { LojaParaPedidos } from '../../orders/application/ports/loja-para-pedidos.js';
 import type { OrdersRepository } from '../../orders/application/ports/orders.repository.js';
 import {
   descreverPagamento,
@@ -15,6 +16,7 @@ import {
   extrairDecisaoPedido,
   ROTULO_STATUS_PEDIDO,
   type AndamentoPedido,
+  type Rastreio,
   type DecisaoPedido,
   type Pedido,
 } from '../../orders/domain/pedido.js';
@@ -25,6 +27,7 @@ import { logger } from '../../shared/logger/logger.js';
 import { enviarPix } from '../orders-session/orders-inbound.router.js';
 import type { MensagemRecebida, VotoRecebido, WhatsAppClient } from '../whatsapp-client.interface.js';
 import { criarAvisoDeFalha } from '../falhas.js';
+import { chaveTelefone } from '../../shared/telefone/telefone.js';
 
 const ORIGEM_VOTO = 'whatsapp_voto_aceite';
 
@@ -35,6 +38,12 @@ export interface DecisaoPedidoDeps {
   idempotency: IdempotencyRepository;
   /** Sessão que fala com os clientes; pode ainda não estar conectada. */
   clientePedidos: () => WhatsAppClient | undefined;
+  /** Para saber o segmento da loja (varejo tem "Separado" na enquete de andamento). */
+  lojaParaPedidos?: LojaParaPedidos;
+  /** Etiqueta do Melhor Envio ("gerar etiqueta do PED-XXXX"). Sem isso, o comando explica que não está disponível. */
+  gerarEtiqueta?: (pedido: Pedido) => Promise<{ etiquetaId: string; pdf: Uint8Array; rastreio?: string; transportadora: string }>;
+  /** Pedido virou venda no aceite (pagamento na entrega): confere o limite de pedidos do plano. */
+  aoVirarVenda?: (pedido: Pedido) => Promise<void>;
 }
 
 /** Como foi o aviso ao cliente: avisado, não deu para avisar, ou (aceite com PIX) o PIX não saiu. */
@@ -152,6 +161,7 @@ async function aplicarDecisao(
   // Pago na entrega já está em preparo: a loja recebe a enquete de andamento agora (no PIX, ela vem com o pagamento).
   if (decidido.status === 'CONFIRMADO') {
     await pedirAndamentoDaLoja({ ...deps, mensageiro: mensageiroDa(whatsapp) }, decidido);
+    await deps.aoVirarVenda?.(decidido);
   }
 }
 
@@ -163,17 +173,18 @@ function mensageiroDa(whatsapp: WhatsAppClient) {
   };
 }
 
-/** Loja avisou que saiu/está pronto ou foi entregue/retirado: atualiza e avisa o cliente. */
+/** Loja avisou que separou, saiu/está pronto, enviou ou foi entregue/retirado: atualiza e avisa o cliente. */
 async function aplicarAndamento(
   deps: DecisaoPedidoDeps,
   whatsapp: WhatsAppClient,
   telefoneLoja: string,
   pedido: Pedido,
   andamento: AndamentoPedido,
+  rastreio?: Rastreio,
 ): Promise<void> {
   let atualizado: Pedido;
   try {
-    atualizado = await atualizarAndamento(deps, pedido, andamento, telefoneLoja);
+    atualizado = await atualizarAndamento(deps, pedido, andamento, telefoneLoja, rastreio);
   } catch (erro) {
     if (erro instanceof DomainError) {
       await whatsapp.sendText(telefoneLoja, erro.message);
@@ -200,11 +211,67 @@ async function aplicarAndamento(
  * Resposta da loja em texto ("aceitar PED-XXXX"). Devolve true quando a
  * mensagem era uma decisão (e já foi tratada), false para seguir para a gestão.
  */
+const PEDIDO_DE_ETIQUETA = /\b(?:gerar|gera|gere|emitir|emite|imprimir)\s+(?:a\s+)?etiqueta\b.*?(PED-[A-Z0-9]{4})/i;
+
+/**
+ * "gerar etiqueta do PED-XXXX": compra a etiqueta no Melhor Envio, manda o PDF
+ * para a loja, marca o pedido como ENVIADO com o rastreio e avisa o cliente.
+ */
+async function aplicarEtiqueta(deps: DecisaoPedidoDeps, whatsapp: WhatsAppClient, telefoneLoja: string, pedido: Pedido): Promise<void> {
+  if (!deps.gerarEtiqueta) {
+    await whatsapp.sendText(telefoneLoja, 'A etiqueta do Melhor Envio ainda não está disponível por aqui.');
+    return;
+  }
+  const dono = await deps.contatos.telefoneDe(pedido.empreendedorId);
+  if (!dono || chaveTelefone(dono) !== chaveTelefone(telefoneLoja)) {
+    await whatsapp.sendText(telefoneLoja, `Não encontrei o pedido ${pedido.codigoCurto}.`);
+    return;
+  }
+  let etiqueta;
+  try {
+    etiqueta = await deps.gerarEtiqueta(pedido);
+  } catch (erro) {
+    if (erro instanceof DomainError) {
+      await whatsapp.sendText(telefoneLoja, erro.message);
+      return;
+    }
+    logger.error({ err: erro, codigoCurto: pedido.codigoCurto }, 'falha ao gerar a etiqueta no Melhor Envio');
+    await whatsapp.sendText(
+      telefoneLoja,
+      `Não consegui gerar a etiqueta do ${pedido.codigoCurto} agora 😕 Confira o saldo da sua conta do Melhor Envio e tente de novo.`,
+    );
+    return;
+  }
+  const comEtiqueta = await deps.ordersRepo.atualizar(pedido.id, { etiquetaId: etiqueta.etiquetaId });
+  await whatsapp.sendDocument?.(
+    telefoneLoja,
+    etiqueta.pdf,
+    `etiqueta-${pedido.codigoCurto}.pdf`,
+    'application/pdf',
+    `🏷️ Etiqueta do ${pedido.codigoCurto} (${etiqueta.transportadora}). Imprima e cole no pacote.`,
+  );
+  await aplicarAndamento(deps, whatsapp, telefoneLoja, comEtiqueta, 'A_CAMINHO', {
+    codigoRastreio: etiqueta.rastreio,
+    transportadora: etiqueta.transportadora,
+  });
+}
+
 export async function tratarRespostaDaLojaEmTexto(
   deps: DecisaoPedidoDeps,
   whatsapp: WhatsAppClient,
   mensagem: MensagemRecebida,
 ): Promise<boolean> {
+  const etiqueta = mensagem.corpo.match(PEDIDO_DE_ETIQUETA);
+  if (etiqueta) {
+    const codigo = etiqueta[1]!.toUpperCase();
+    const pedido = await deps.ordersRepo.buscarPorCodigo(codigo);
+    if (!pedido) {
+      await whatsapp.sendText(mensagem.telefone, `Não encontrei o pedido ${codigo}.`);
+      return true;
+    }
+    await aplicarEtiqueta(deps, whatsapp, mensagem.telefone, pedido);
+    return true;
+  }
   const decisao = extrairDecisaoPedido(mensagem.corpo);
   const andamento = decisao ? null : extrairAndamentoPedido(mensagem.corpo);
   const codigoCurto = decisao?.codigoCurto ?? andamento?.codigoCurto;
@@ -219,7 +286,7 @@ export async function tratarRespostaDaLojaEmTexto(
   if (decisao) {
     await aplicarDecisao(deps, whatsapp, mensagem.telefone, pedido, decisao.decisao);
   } else if (andamento) {
-    await aplicarAndamento(deps, whatsapp, mensagem.telefone, pedido, andamento.andamento);
+    await aplicarAndamento(deps, whatsapp, mensagem.telefone, pedido, andamento.andamento, andamento.rastreio);
   }
   return true;
 }

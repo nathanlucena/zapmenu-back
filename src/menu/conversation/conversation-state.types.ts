@@ -71,19 +71,46 @@ export interface DadosLoja {
   aceitaRetirada?: boolean;
   fazEntrega?: boolean;
   faixasEntrega?: FaixaEntrega[];
-  /** Depreciada: taxa fixa antiga. Só leitura (identifica lojas que precisam configurar as faixas). */
+  /** Taxa fixa de entrega (todos os planos). */
   taxaEntrega?: number;
+  /** Até onde a taxa fixa vale (opcional). */
+  raioEntregaKm?: number;
+  /** FIXA ou DISTANCIA. Fora do Profissional, vale sempre a taxa fixa. */
+  modoEntrega?: 'FIXA' | 'DISTANCIA';
   pedidoMinimo?: number;
   horarios?: Horario[];
   /** Endereço curto do cardápio. Sem ele, um é gerado pelo nome da loja ao salvar. */
   slug?: string;
   /** Hex "#RRGGBB". */
   corDestaque?: string;
+  /** Perfil do Instagram, sem o @. */
+  instagram?: string;
   /** Foto do logo (data URI), vinda de uma foto mandada na conversa. */
   logoUrl?: string;
   /** Foto de capa (data URI), vinda de uma foto mandada na conversa. */
   capaUrl?: string;
   aceitaPagamentoNaEntrega?: boolean;
+  /** Envia por transportadora com o Melhor Envio (loja, Profissional). */
+  usaMelhorEnvio?: boolean;
+  /** CEP de onde saem as encomendas (8 números). Sem ele, vale o CEP do endereço da loja. */
+  cepOrigem?: string;
+  /** Trocas e devoluções, em texto livre (loja). */
+  politicaTroca?: string;
+}
+
+/** Foto nova da galeria de um produto (loja); `cor` liga a foto à cor da grade. */
+export interface FotoNova {
+  url: string;
+  cor?: string;
+}
+
+/** Uma combinação vendável de um produto da loja (varejo): vira um SKU com estoque. */
+export interface LinhaGrade {
+  tamanho?: string;
+  cor?: string;
+  estoque: number;
+  /** Só quando esse tamanho/cor custa diferente do produto. */
+  preco?: number;
 }
 
 /** Item que ainda não existe no cardápio; `ref` é o apelido usado pela IA (ex.: "n1"). */
@@ -96,6 +123,15 @@ export interface NovoItem {
   categoria?: string | null;
   variacoes?: Variacao[];
   imagemUrl?: string;
+  /** Grade completa de tamanhos/cores com estoque (só loja). */
+  grade?: LinhaGrade[];
+  /** Galeria (só loja), na ordem em que as fotos chegaram. */
+  fotos?: FotoNova[];
+  /** Para o frete do Melhor Envio (sem eles, vale o padrão da categoria). */
+  pesoGramas?: number;
+  alturaCm?: number;
+  larguraCm?: number;
+  comprimentoCm?: number;
 }
 
 /** Alterações num item existente; só os campos presentes mudam. */
@@ -108,6 +144,15 @@ export interface EdicaoItem {
   categoria?: string | null;
   variacoes?: Variacao[];
   imagemUrl?: string;
+  /** Substitui a grade inteira; o que sair dela fica pausado (pedidos antigos apontam para ele). */
+  grade?: LinhaGrade[];
+  /** Fotos que entram no fim da galeria (só loja). */
+  fotos?: FotoNova[];
+  /** Para o frete do Melhor Envio (sem eles, vale o padrão da categoria). */
+  pesoGramas?: number;
+  alturaCm?: number;
+  larguraCm?: number;
+  comprimentoCm?: number;
 }
 
 export type AcaoStatus = 'PAUSAR' | 'REATIVAR' | 'REMOVER';
@@ -120,6 +165,8 @@ export interface Rascunho {
   categoriasRenomeadas: { categoriaId: string; novoNome: string }[];
   categoriasRemovidas: string[];
   loja?: DadosLoja;
+  /** Peso e medidas padrão dos produtos de uma categoria (frete do Melhor Envio). */
+  medidasDasCategorias?: { categoriaId: string; pesoGramas?: number; alturaCm?: number; larguraCm?: number; comprimentoCm?: number }[];
 }
 
 export interface MensagemHistorico {
@@ -139,11 +186,42 @@ export interface Contexto {
   historico: MensagemHistorico[];
   /** Foto recebida que a IA ainda não associou a nenhum item. */
   fotoPendente?: string;
+  /** Foto sem legenda esperando a resposta "item, capa ou logo?". */
+  fotoSemDestino?: string;
   /** Partes do endereço já informadas; correções parciais ("o número é 132") se somam a isso. */
   consultaEndereco?: ConsultaEndereco;
   /** Endereço encontrado no mapa esperando o "sim" da pessoa para entrar no rascunho. */
   enderecoPendente?: EnderecoPendente;
   proximaRef: number;
+  /** Produto que recebeu a última foto (loja): a próxima foto sem legenda logo em seguida vai para ele. */
+  ultimaFoto?: { ref?: string; itemId?: string; em: string };
+  /** Guia de medidas mostrado, esperando o "sim". */
+  guiaPendente?: {
+    alvo: { tipo: 'CATEGORIA' | 'ITEM'; id: string };
+    guia: { nome: string; colunas: string[]; linhas: { tamanho: string; medidas: number[] }[] };
+  };
+  /** "mudar tipo da loja" em andamento: sem `para`, esperando a escolha; com `para`, esperando o sim. */
+  trocaDeTipo?: { para?: 'COMIDA' | 'VAREJO' };
+  /** Conversa da assinatura em andamento: esperando o e-mail do Mercado Pago ou o "sim" de uma mudança. */
+  assinatura?:
+    | { etapa: 'EMAIL'; plano: 'ESSENCIAL' | 'PROFISSIONAL'; periodo: 'MENSAL' | 'ANUAL' }
+    | { etapa: 'CONFIRMAR_MUDANCA'; plano: 'ESSENCIAL' | 'PROFISSIONAL' }
+    | { etapa: 'CONFIRMAR_CANCELAMENTO' };
+  /** Descrições pela IA: a oferta depois de cadastrar, ou a escolha entre as 2 opções do item atual. */
+  descricoes?:
+    | { etapa: 'OFERTA'; itemIds: string[] }
+    | { etapa: 'ESCOLHA'; fila: string[]; atual: { itemId: string; nome: string; opcoes: [string, string] } };
+  /** Promoção mostrada no resumo, esperando o "sim" (duas vezes acima de 50%). Datas em ISO. */
+  promocaoPendente?: {
+    tipo: 'PRECO_FIXO' | 'PERCENTUAL';
+    valor: number;
+    alvo: { tipo: 'LOJA' } | { tipo: 'CATEGORIAS'; ids: string[] } | { tipo: 'ITENS'; ids: string[] };
+    diasSemana: number[];
+    horaInicio?: string;
+    horaFim?: string;
+    fim?: string;
+    confirmacoes: number;
+  };
   /** ISO; usado para retomar/expirar rascunhos abandonados. */
   atualizadoEm?: string;
 }

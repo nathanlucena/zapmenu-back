@@ -144,3 +144,19 @@ export function nomeDaCor(hex: string): string {
 export function listaDaPaleta(): string {
   return PALETA_DA_LOJA.map((cor, i) => `${i + 1}. ${cor.nome}`).join(' · ');
 }
+
+const PERFIL_INSTAGRAM = /^[a-z0-9._]{1,30}$/;
+
+/**
+ * "@Moda.Ana", "instagram.com/moda.ana" ou o link inteiro → "moda.ana".
+ * null se não parecer um perfil do Instagram.
+ */
+export function normalizarInstagram(texto: string): string | null {
+  const perfil = texto
+    .trim()
+    .replace(/^(https?:\/\/)?(www\.)?instagram\.com\//i, '')
+    .replace(/[/?#].*$/, '')
+    .replace(/^@/, '')
+    .toLowerCase();
+  return PERFIL_INSTAGRAM.test(perfil) && !perfil.includes('..') ? perfil : null;
+}

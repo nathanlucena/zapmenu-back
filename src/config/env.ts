@@ -65,6 +65,57 @@ const envSchema = z.object({
     .optional()
     .transform((valor) => valor || undefined),
 
+  // Assinatura do ZapMenu pelas lojas (Mercado Pago Assinaturas), na conta do próprio ZapMenu:
+  // credenciais separadas das que cobram os PIX das lojas. Sem token, "assinar" fica indisponível.
+  MERCADO_PAGO_ASSINATURAS_ACCESS_TOKEN: z
+    .string()
+    .optional()
+    .transform((valor) => valor?.trim() || undefined),
+  // Assinatura secreta do webhook dessa aplicação. Obrigatória junto com o token.
+  MERCADO_PAGO_ASSINATURAS_WEBHOOK_SECRET: z
+    .string()
+    .optional()
+    .transform((valor) => valor?.trim() || undefined),
+  // Credenciais de teste: manda o link do sandbox. Só desligue com credenciais de produção.
+  MERCADO_PAGO_ASSINATURAS_SANDBOX: z.stringbool().default(true),
+  // Para onde o Mercado Pago leva a loja depois de cadastrar o cartão. Vazio: o endereço público do app.
+  ASSINATURA_URL_RETORNO: z
+    .string()
+    .optional()
+    .transform((valor) => valor?.trim() || undefined),
+  // De quanto em quanto tempo o job das assinaturas roda (cada aviso sai uma vez por dia).
+  ASSINATURAS_VERIFICACAO_INTERVALO_MINUTOS: z.coerce.number().positive().default(60),
+
+  // Transcrição de áudios (Profissional) por uma API compatível com a da OpenAI (/audio/transcriptions):
+  // OpenAI (https://api.openai.com/v1, whisper-1) ou Groq (https://api.groq.com/openai/v1, whisper-large-v3).
+  // Sem chave, o bot pede para escrever.
+  TRANSCRICAO_API_URL: z.string().url().default('https://api.openai.com/v1'),
+  TRANSCRICAO_API_KEY: z
+    .string()
+    .optional()
+    .transform((valor) => valor?.trim() || undefined),
+  TRANSCRICAO_MODELO: z.string().default('whisper-1'),
+
+  // Melhor Envio (envio por transportadora, Profissional): app criado no painel do Melhor Envio.
+  // Sem client id, o envio por transportadora fica desligado. Use o sandbox até ir para produção.
+  MELHOR_ENVIO_CLIENT_ID: z
+    .string()
+    .optional()
+    .transform((valor) => valor?.trim() || undefined),
+  MELHOR_ENVIO_CLIENT_SECRET: z
+    .string()
+    .optional()
+    .transform((valor) => valor?.trim() || undefined),
+  MELHOR_ENVIO_SANDBOX: z.stringbool().default(true),
+  // Para onde o Melhor Envio volta depois da autorização: <API>/v1/melhor-envio/retorno
+  // (com o ngrok, https://<dominio>/api/melhor-envio/retorno: o front repassa). Igual ao cadastrado no app.
+  MELHOR_ENVIO_URL_RETORNO: z
+    .string()
+    .optional()
+    .transform((valor) => valor?.trim() || undefined),
+  // Contato que vai no User-Agent (o Melhor Envio pede).
+  MELHOR_ENVIO_EMAIL_CONTATO: z.string().default('contato@zapmenu.com.br'),
+
   PEDIDO_TTL_MINUTOS: z.coerce.number().default(20),
   // Quanto tempo a loja tem para aceitar ou recusar um pedido depois que o cliente manda o código.
   PEDIDO_ACEITE_MINUTOS: z.coerce.number().int().positive().default(15),
@@ -87,10 +138,18 @@ const envSchema = z.object({
     .transform((valor) => valor?.trim() || undefined),
 });
 
+const envValidado = envSchema.refine(
+  (env) => !env.MERCADO_PAGO_ASSINATURAS_ACCESS_TOKEN || env.MERCADO_PAGO_ASSINATURAS_WEBHOOK_SECRET,
+  {
+    message: 'MERCADO_PAGO_ASSINATURAS_WEBHOOK_SECRET é obrigatória junto com MERCADO_PAGO_ASSINATURAS_ACCESS_TOKEN',
+    path: ['MERCADO_PAGO_ASSINATURAS_WEBHOOK_SECRET'],
+  },
+);
+
 export type Env = z.infer<typeof envSchema>;
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
-  const parsed = envSchema.safeParse(source);
+  const parsed = envValidado.safeParse(source);
   if (!parsed.success) {
     throw new Error(`Configuração de ambiente inválida:\n${parsed.error.toString()}`);
   }

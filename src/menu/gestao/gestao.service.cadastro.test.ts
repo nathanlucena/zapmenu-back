@@ -149,7 +149,7 @@ describe('gestão: lembrete dos dados opcionais', () => {
 
   it('não lembra quando os opcionais estão completos', async () => {
     const cenario = criarCenario(
-      { ...COMPLETA, descricao: 'Pizzas', corDestaque: '#C2410C', pedidoMinimo: 30 },
+      { ...COMPLETA, descricao: 'Pizzas', corDestaque: '#C2410C', pedidoMinimo: 30, instagram: 'pizzariadoze' },
       { temLogo: true, temCapa: true },
     );
 
